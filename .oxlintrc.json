@@ -26,7 +26,7 @@
     "max-lines-per-function":        ["error", { "max": 80 }],
     "max-params":                    ["error", { "max": 5 }],
     "max-depth":                     ["error", { "max": 3 }],
-    "no-magic-numbers":              "error",
+    "no-magic-numbers":              ["error", { "ignore": [-1, 0, 1, 2] }],
     "no-duplicate-imports":          "error",
     "perfectionist/sort-imports":          ["error", { "groups": ["builtin", "external", "internal", ["parent", "sibling", "index"]], "newlinesBetween": "always" }],
     "perfectionist/sort-named-imports":    ["error", { "groups": ["side-effect", "multiple", "single", "type"] }],
