@@ -1,5 +1,44 @@
 {
   "name": "@casualtheorics/argdown-2",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
   "packageManager": "yarn@4.17.0",
-  "private": true
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./ast": {
+      "types": "./dist/ast.d.ts",
+      "import": "./dist/ast.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint src",
+    "format": "oxfmt src",
+    "format:check": "oxfmt --check ."
+  },
+  "dependencies": {
+    "chevrotain": "^11.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "oxfmt": "^0.6.0",
+    "oxlint": "^0.6.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
 }
