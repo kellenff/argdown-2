@@ -378,16 +378,8 @@ export class ArgdownParser extends CstParser {
 
     $.RULE('fact', () => {
       $.SUBRULE($.factRef);
-      // Optional claim text: try to consume it, but tolerate failure.
-      $.OPTION1({
-        GATE: () => this.LA(1).tokenType === ClaimText,
-        DEF: () => $.CONSUME(ClaimText),
-      });
-      // Optional attribute block.
-      $.OPTION2({
-        GATE: () => this.LA(1).tokenType === LBrace,
-        DEF: () => $.SUBRULE($.attributeBlock),
-      });
+      $.OPTION1(() => $.CONSUME(ClaimText));
+      $.OPTION2(() => $.SUBRULE($.attributeBlock));
     });
 
     $.RULE('factStatement', () => {
