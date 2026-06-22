@@ -1006,9 +1006,9 @@ exports[`DESIGN.md example: Climate Policy > produces a stable AST (snapshot) 1`
           "kind": "YamlLine",
           "loc": {
             "end": {
-              "column": 24,
+              "column": 6,
               "line": 33,
-              "offset": 746,
+              "offset": 728,
             },
             "start": {
               "column": 1,
@@ -1020,17 +1020,17 @@ exports[`DESIGN.md example: Climate Policy > produces a stable AST (snapshot) 1`
             "kind": "PlainScalar",
             "loc": {
               "end": {
-                "column": 24,
-                "line": 33,
-                "offset": 746,
+                "column": 43,
+                "line": 1,
+                "offset": 1,
               },
               "start": {
-                "column": 7,
-                "line": 33,
-                "offset": 729,
+                "column": 1,
+                "line": 1,
+                "offset": 0,
               },
             },
-            "text": "Intergovernmental",
+            "text": "Intergovernmental Panel on Climate Change",
           },
         },
         {
@@ -1038,9 +1038,9 @@ exports[`DESIGN.md example: Climate Policy > produces a stable AST (snapshot) 1`
           "kind": "YamlLine",
           "loc": {
             "end": {
-              "column": 22,
+              "column": 6,
               "line": 34,
-              "offset": 792,
+              "offset": 776,
             },
             "start": {
               "column": 1,
@@ -1052,14 +1052,14 @@ exports[`DESIGN.md example: Climate Policy > produces a stable AST (snapshot) 1`
             "kind": "PlainScalar",
             "loc": {
               "end": {
-                "column": 22,
-                "line": 34,
-                "offset": 792,
+                "column": 17,
+                "line": 1,
+                "offset": 1,
               },
               "start": {
-                "column": 7,
-                "line": 34,
-                "offset": 777,
+                "column": 1,
+                "line": 1,
+                "offset": 0,
               },
             },
             "text": "scientific_body",
@@ -1070,9 +1070,9 @@ exports[`DESIGN.md example: Climate Policy > produces a stable AST (snapshot) 1`
           "kind": "YamlLine",
           "loc": {
             "end": {
-              "column": 18,
+              "column": 13,
               "line": 35,
-              "offset": 810,
+              "offset": 805,
             },
             "start": {
               "column": 1,
@@ -1084,14 +1084,14 @@ exports[`DESIGN.md example: Climate Policy > produces a stable AST (snapshot) 1`
             "kind": "PlainScalar",
             "loc": {
               "end": {
-                "column": 18,
-                "line": 35,
-                "offset": 810,
+                "column": 6,
+                "line": 1,
+                "offset": 1,
               },
               "start": {
-                "column": 14,
-                "line": 35,
-                "offset": 806,
+                "column": 1,
+                "line": 1,
+                "offset": 0,
               },
             },
             "text": "high",
@@ -1136,41 +1136,41 @@ exports[`DESIGN.md example: Climate Policy > produces a stable AST (snapshot) 1`
         "kind": "PlainScalar",
         "loc": {
           "end": {
-            "column": 17,
-            "line": 3,
-            "offset": 51,
+            "column": 15,
+            "line": 1,
+            "offset": 1,
           },
           "start": {
-            "column": 9,
-            "line": 3,
-            "offset": 43,
+            "column": 1,
+            "line": 1,
+            "offset": 0,
           },
         },
-        "text": "Research",
+        "text": "Research Team",
       },
       "title": {
         "kind": "PlainScalar",
         "loc": {
           "end": {
-            "column": 15,
-            "line": 2,
-            "offset": 18,
+            "column": 25,
+            "line": 1,
+            "offset": 1,
           },
           "start": {
-            "column": 8,
-            "line": 2,
-            "offset": 11,
+            "column": 1,
+            "line": 1,
+            "offset": 0,
           },
         },
-        "text": "Climate",
+        "text": "Climate Policy Analysis",
       },
     },
     "kind": "Frontmatter",
     "loc": {
       "end": {
-        "column": 17,
-        "line": 3,
-        "offset": 51,
+        "column": 9,
+        "line": 4,
+        "offset": 65,
       },
       "start": {
         "column": 1,

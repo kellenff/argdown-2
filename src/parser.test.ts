@@ -27,6 +27,18 @@ describe('production: document', () => {
       loc: expect.any(Object),
     });
   });
+
+  it('parses a frontmatter with multi-word yaml values', () => {
+    const ast = parseOk('===\ntitle: Climate Policy Analysis\nauthor: Research Team\n===\n');
+    expect(ast.frontmatter?.entries['title']).toMatchObject({
+      kind: 'PlainScalar',
+      text: 'Climate Policy Analysis',
+    });
+    expect(ast.frontmatter?.entries['author']).toMatchObject({
+      kind: 'PlainScalar',
+      text: 'Research Team',
+    });
+  });
 });
 
 describe('production: facts', () => {
@@ -144,6 +156,33 @@ describe('production: blocks', () => {
     const ast = parseOk(':::evidence[Satellite Data]\nmethod: satellite\n:::');
     const block = ast.elements[0] as Block;
     expect(block.title?.text).toBe('Satellite Data');
+  });
+
+  it('parses a block title containing digits and a space', () => {
+    const ast = parseOk(':::evidence[Source 1]\ntype: empirical\n:::');
+    const block = ast.elements[0] as Block;
+    expect(block.title?.text).toBe('Source 1');
+  });
+
+  it('parses block-body yaml lines with multi-word values', () => {
+    const ast = parseOk(':::evidence[X]\nname: Alice Anderson\nrole: principal investigator\n:::');
+    const block = ast.elements[0] as Block;
+    const yamlLines = block.body.filter((l) => l.kind === 'YamlLine') as Array<{
+      kind: 'YamlLine';
+      key: string;
+      value: unknown;
+    }>;
+    expect(yamlLines).toHaveLength(2);
+    expect(yamlLines[0]?.key).toBe('name');
+    expect(yamlLines[0]?.value).toMatchObject({
+      kind: 'PlainScalar',
+      text: 'Alice Anderson',
+    });
+    expect(yamlLines[1]?.key).toBe('role');
+    expect(yamlLines[1]?.value).toMatchObject({
+      kind: 'PlainScalar',
+      text: 'principal investigator',
+    });
   });
 });
 

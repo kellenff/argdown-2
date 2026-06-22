@@ -266,7 +266,10 @@ function isNonEmptyImage(tok: IToken): boolean {
 }
 
 function parseTitleText(s: TokenStream): CstNode | undefined {
-  for (const name of ['TitleText', 'ClaimText', 'HeadingText', 'Identifier']) {
+  // Numbers are accepted so titles like `[Source 1]` tokenize correctly
+  // (the lexer emits Number for `1`, which the parser must consume as part
+  // of the title rather than bailing on missing RBrack).
+  for (const name of ['TitleText', 'ClaimText', 'HeadingText', 'Identifier', 'Number']) {
     const tok = s.peek();
     if (tok.tokenType.name === name && isNonEmptyImage(tok)) {
       s.pos++;
@@ -779,6 +782,22 @@ function parseYamlLine(s: TokenStream): CstNode | undefined {
   return cst;
 }
 
+// Scalar value tokens that may appear inside a yaml value run. The order
+// matches parseTitleText / parseHeadingText — see those for the lexer
+// disambiguation rationale.
+const YAML_SCALAR_TOKEN_NAMES = [
+  'PlainScalar',
+  'HeadingText',
+  'TitleText',
+  'ClaimText',
+  'Identifier',
+  'Number',
+] as const;
+
+function isYamlScalarToken(name: string): boolean {
+  return (YAML_SCALAR_TOKEN_NAMES as readonly string[]).includes(name);
+}
+
 function parseYamlValue(s: TokenStream): CstNode | undefined {
   const cst: CstChildren = {};
   if (s.check('LBrack')) {
@@ -795,16 +814,42 @@ function parseYamlValue(s: TokenStream): CstNode | undefined {
       return cst;
     }
   }
-  // PlainScalar-shaped values: Identifier or any text-run token.
-  for (const name of ['PlainScalar', 'HeadingText', 'TitleText', 'ClaimText', 'Identifier']) {
+  // PlainScalar-shaped values: consume a run of consecutive scalar tokens
+  // so multi-word values like `Climate Policy Analysis` are captured as
+  // a single value (not truncated to the first word). Stop the run when
+  // we see a non-scalar token, or an Identifier followed by Colon (the
+  // next yaml line's key), or the frontmatter/block close delimiter.
+  const parts: string[] = [];
+  while (!s.eof()) {
     const tok = s.peek();
-    if (tok.tokenType.name === name && (tok.image ?? '').trim().length > 0) {
-      s.pos++;
-      cst['plainScalar'] = [tokenNode(tok)];
-      return cst;
+    if (!isYamlScalarToken(tok.tokenType.name)) break;
+    // Look ahead: `Identifier Colon` is the start of the next yaml line.
+    if (tok.tokenType.name === 'Identifier' && s.peek(1).tokenType.name === 'Colon') {
+      break;
     }
+    const image = tok.image ?? '';
+    if (image.trim().length === 0) {
+      s.pos++;
+      continue;
+    }
+    parts.push(image);
+    s.pos++;
   }
-  return undefined;
+  if (parts.length === 0) return undefined;
+  const joined = parts.join(' ').trim();
+  cst['plainScalar'] = [
+    {
+      kind: 'Token',
+      image: joined,
+      startOffset: 0,
+      endOffset: 0,
+      startLine: 1,
+      startColumn: 1,
+      endLine: 1,
+      endColumn: joined.length + 1,
+    },
+  ];
+  return cst;
 }
 
 // ----- Blocks -----
@@ -877,10 +922,15 @@ function parseBlockBody(s: TokenStream): CstChildren {
   const cst: CstChildren = {};
   const lines: CstNode[] = [];
   while (!s.eof() && !s.check('BlockMarker')) {
+    // parseBlockLine / parseYamlLine may consume tokens before bailing on
+    // a multi-word value mismatch. Save/restore so the recovery `pos++`
+    // below skips exactly one token, not two.
+    const before = s.save();
     const line = parseBlockLine(s);
     if (line) {
       lines.push(line);
     } else {
+      s.restore(before);
       // Skip an unparseable token to make progress.
       if (!s.eof()) s.pos++;
     }
@@ -1031,11 +1081,17 @@ function parseFrontmatter(s: TokenStream): CstNode | undefined {
       continue;
     }
     if (s.check('Identifier')) {
+      // parseYamlLine may consume the identifier before bailing on a
+      // missing colon (e.g. a multi-word yaml value whose second word
+      // gets re-interpreted as a new yaml line). Save/restore so the
+      // recovery `pos++` below skips exactly one token, not two.
+      const before = s.save();
       const yl = parseYamlLine(s);
       if (yl) {
         lines.push(yl);
         continue;
       }
+      s.restore(before);
     }
     // Unknown line — skip one token to make progress.
     if (!s.eof()) s.pos++;

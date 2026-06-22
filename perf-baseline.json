@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-06-22T18:25:51.055Z",
+  "capturedAt": "2026-06-22T19:32:15.689Z",
   "environment": {
     "nodeVersion": "v24.17.0",
     "platform": "darwin",
@@ -9,52 +9,52 @@
   "fixtures": {
     "small-claim": {
       "sizeBytes": 181,
-      "opsPerSec": 44041.41085804693,
-      "marginOfError": 0.255484091987801,
-      "p99Ms": 0.033707999999933236,
-      "peakHeapDeltaMB": 0.6903457641601562
+      "opsPerSec": 41478.68654556603,
+      "marginOfError": 0.30200673710510106,
+      "p99Ms": 0.03787499999998545,
+      "peakHeapDeltaMB": 0.60552978515625
     },
     "small-rule": {
       "sizeBytes": 127,
-      "opsPerSec": 52138.928909982,
-      "marginOfError": 0.18300448607146072,
-      "p99Ms": 0.026165999999875567,
-      "peakHeapDeltaMB": 0.26399993896484375
+      "opsPerSec": 56723.372696216364,
+      "marginOfError": 0.16723026335405702,
+      "p99Ms": 0.023959000000104425,
+      "peakHeapDeltaMB": 0.33959197998046875
     },
     "small-relation": {
       "sizeBytes": 216,
-      "opsPerSec": 34152.90293745062,
-      "marginOfError": 0.27022297384158234,
-      "p99Ms": 0.041459000000031665,
-      "peakHeapDeltaMB": 0.570770263671875
+      "opsPerSec": 31131.679094651143,
+      "marginOfError": 0.2159974426711691,
+      "p99Ms": 0.045499999999719876,
+      "peakHeapDeltaMB": 0.7081832885742188
     },
     "medium-climate": {
       "sizeBytes": 1646,
-      "opsPerSec": 5140.900945120479,
-      "marginOfError": 0.39734930077153324,
-      "p99Ms": 0.3109580000000278,
-      "peakHeapDeltaMB": 0.960235595703125
+      "opsPerSec": 5260.6048707076225,
+      "marginOfError": 0.4353720477430189,
+      "p99Ms": 0.32641700000021956,
+      "peakHeapDeltaMB": 0.9394989013671875
     },
     "heavy-relations": {
       "sizeBytes": 2311,
-      "opsPerSec": 2316.805798387534,
-      "marginOfError": 0.6886346747315417,
-      "p99Ms": 0.6736250000003565,
-      "peakHeapDeltaMB": 1.1537399291992188
+      "opsPerSec": 2486.8046987929697,
+      "marginOfError": 0.5441689837312662,
+      "p99Ms": 0.5852909999994154,
+      "peakHeapDeltaMB": 1.1596832275390625
     },
     "deep-nesting": {
-      "sizeBytes": 1337,
-      "opsPerSec": 8889.261666815413,
-      "marginOfError": 0.3337408408776544,
-      "p99Ms": 0.1677079999999478,
-      "peakHeapDeltaMB": 0.5715255737304688
+      "sizeBytes": 1439,
+      "opsPerSec": 7415.103684511864,
+      "marginOfError": 0.27157778951445194,
+      "p99Ms": 0.1680419999993319,
+      "peakHeapDeltaMB": 0.3997955322265625
     },
     "large-stress": {
       "sizeBytes": 120873,
-      "opsPerSec": 39.57092451959232,
-      "marginOfError": 3.0538819432604543,
-      "p99Ms": 42.64729100000022,
-      "peakHeapDeltaMB": 35.529075622558594
+      "opsPerSec": 41.242601202103195,
+      "marginOfError": 4.224764954402863,
+      "p99Ms": 39.657375000000684,
+      "peakHeapDeltaMB": 34.84309387207031
     }
   }
 }
