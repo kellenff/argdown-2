@@ -1,7 +1,6 @@
 // src/parser.bench.ts
 // Tinybench harness for the parse() pipeline.
-// Runner: `node --experimental-strip-types src/parser.bench.ts [--baseline|--check]`
-// Requires Node 22+ for native TypeScript stripping.
+// Runner: `yarn bench [--baseline|--check]` (uses tsx for .ts execution under PnP).
 
 import { Bench } from 'tinybench';
 import { readFile, writeFile } from 'node:fs/promises';
