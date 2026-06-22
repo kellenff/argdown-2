@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { makeRng } from './parser.mutate.js';
+import {
+  makeRng,
+  insertLine,
+  deleteLine,
+  swapLines,
+  duplicateRange,
+  spliceGarbage,
+  replaceLine,
+} from './parser.mutate.js';
 
 describe('makeRng', () => {
   it('produces numbers in [0, 1)', () => {
@@ -27,15 +35,6 @@ describe('makeRng', () => {
     expect(seqA).not.toEqual(seqB);
   });
 });
-
-import {
-  insertLine,
-  deleteLine,
-  swapLines,
-  duplicateRange,
-  spliceGarbage,
-  replaceLine,
-} from './parser.mutate.js';
 
 const SRC = 'line1\nline2\nline3\nline4';
 const SINGLE = 'only';
