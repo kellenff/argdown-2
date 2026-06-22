@@ -1,0 +1,21 @@
+// src/index.ts
+// Public API surface.
+
+export { parse, formatError } from './parser.js';
+export type {
+  ParseResult, ParseOptions, ParseError, ParseErrorCode,
+} from './parser.js';
+
+export type {
+  Document, Frontmatter, Heading, Block, BlockLine, BlockTitle, ListItem,
+  FactStatement, RuleStatement, RelationStatement,
+  Fact, FactRef, FactHead, IdentifierHead, TitleHead,
+  Rule, Relation, RelationEndpoint, RuleExpr, Arrow,
+  AttributeBlock,
+  Value, StringValue, NumberValue, BooleanValue, NullValue,
+  FlowSequence, FlowMapping, FlowScalar,
+  YamlLine, YamlValue, PlainScalar,
+  LineComment, BlockComment,
+  BlockType, Element,
+  SourceLocation, Position,
+} from './ast.js';
