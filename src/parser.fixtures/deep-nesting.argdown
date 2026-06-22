@@ -1,0 +1,95 @@
+===
+title: BlockStress
+author: perf
+===
+
+[#thesis] The thesis under examination
+
+:::evidence[Source1]
+type: empirical
+method: randomized
+confidence: 0.92
+sample_size: 1200
+year: 2024
+:::
+
+:::evidence[Source2]
+type: empirical
+method: meta
+confidence: 0.88
+sample_size: 50
+year: 2023
+:::
+
+:::evidence[Source3]
+type: empirical
+method: observational
+confidence: 0.75
+sample_size: 30000
+year: 2025
+:::
+
+:::evidence[Source4]
+type: theoretical
+method: proof
+confidence: 0.99
+year: 2022
+:::
+
+:::evidence[Source5]
+type: empirical
+method: case
+confidence: 0.65
+sample_size: 4
+year: 2024
+:::
+
+:::stakeholder[stakeholder-1]
+name: Alice
+role: investigator
+affiliation: UniversityA
+:::
+
+:::stakeholder[stakeholder-2]
+name: Bob
+role: investigator
+affiliation: UniversityB
+:::
+
+:::stakeholder[stakeholder-3]
+name: Carol
+role: statistician
+affiliation: InstituteC
+:::
+
+:::meta[methodology]
+approach: mixed
+phase: collection
+status: ongoing
+:::
+
+:::position[expert-a]
+person: A
+stance: supportive
+strength: 0.8
+:::
+
+:::position[expert-b]
+person: B
+stance: critical
+strength: 0.6
+:::
+
+:::domain[field-1]
+name: Epidemiology
+relevance: high
+:::
+
+:::domain[field-2]
+name: PublicHealth
+relevance: high
+:::
+
+[#thesis] --> [#supporting] { from: "evidence-1" }
+[#thesis] --> [#supporting] { from: "evidence-2" }
+[#thesis] --> [#supporting] { from: "evidence-3" }

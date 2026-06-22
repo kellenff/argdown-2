@@ -1,0 +1,66 @@
+===
+title: Climate Policy Analysis
+author: Research Team
+version: 2.1
+date: 2026-06-22
+===
+
+# Position: Aggressive Mitigation
+
+[#co2] Human CO2 emissions are the primary cause {
+  source: "@IPCC-AR6",
+  confidence: 0.95,
+  scheme: "expert_consensus"
+}
+
+[#impacts] Current warming trends threaten critical systems {
+  certainty: 0.60,
+  tags: ["urgent", "biosphere"]
+}
+
+[#coord] International coordination is achieved { certainty: 0.45 }
+
+[#gradual] Gradual transition is sufficient { author: "Industry Group A" }
+
+[#moral-imperative] We have a duty to act { strength: "strong" }
+
+[#economic-opportunity] Green economy creates jobs { certainty: 0.70 }
+
+[#mitigation] :- [#co2], [#impacts], [#coord].
+[#mitigation] :- [#moral-imperative].
+[#mitigation] :- [#economic-opportunity].
+
+# Relations
+[#impacts] --x [#gradual] { type: "undercut" }
+[#gradual] --x ([#mitigation] :- [#co2], [#impacts], [#coord]) { reason: "sufficiency" }
+[#co2] --> [#mitigation] { type: "support" }
+[#impacts] --> [#mitigation] { type: "support" }
+[#coord] --> [#mitigation] { type: "support" }
+[#moral-imperative] --> [#mitigation] { type: "support" }
+[#economic-opportunity] --> [#mitigation] { type: "support" }
+
+:::evidence[Satellite Data]
+type: empirical
+method: satellite_measurement
+confidence: 0.95
+source: "@NASA-2024"
+:::
+
+:::evidence[Ocean Warming]
+type: empirical
+method: argo_floats
+confidence: 0.92
+source: "@NOAA-2024"
+:::
+
+:::stakeholder[ipcc]
+name: Intergovernmental Panel on Climate Change
+type: scientific_body
+credibility: high
+:::
+
+:::stakeholder[Industry-Group-A]
+name: Industry Group A
+type: industry_lobby
+interests: "fossil_fuel_continuation"
+:::

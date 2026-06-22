@@ -1,0 +1,67 @@
+=== title: Relation Stress === author: perf === ===
+
+# 20 anchor facts
+[#n0] Node zero { type: "anchor" }
+[#n1] Node one { type: "anchor" }
+[#n2] Node two { type: "anchor" }
+[#n3] Node three { type: "anchor" }
+[#n4] Node four { type: "anchor" }
+[#n5] Node five { type: "anchor" }
+[#n6] Node six { type: "anchor" }
+[#n7] Node seven { type: "anchor" }
+[#n8] Node eight { type: "anchor" }
+[#n9] Node nine { type: "anchor" }
+[#n10] Node ten { type: "anchor" }
+[#n11] Node eleven { type: "anchor" }
+[#n12] Node twelve { type: "anchor" }
+[#n13] Node thirteen { type: "anchor" }
+[#n14] Node fourteen { type: "anchor" }
+[#n15] Node fifteen { type: "anchor" }
+[#n16] Node sixteen { type: "anchor" }
+[#n17] Node seventeen { type: "anchor" }
+[#n18] Node eighteen { type: "anchor" }
+[#n19] Node nineteen { type: "anchor" }
+
+# Dense graph: every node attacks its successor and supports its predecessor
+[#n0] --> [#n1] { weight: 1.0 }
+[#n1] --> [#n2] { weight: 1.0 }
+[#n2] --> [#n3] { weight: 1.0 }
+[#n3] --> [#n4] { weight: 1.0 }
+[#n4] --> [#n5] { weight: 1.0 }
+[#n5] --> [#n6] { weight: 1.0 }
+[#n6] --> [#n7] { weight: 1.0 }
+[#n7] --> [#n8] { weight: 1.0 }
+[#n8] --> [#n9] { weight: 1.0 }
+[#n9] --> [#n10] { weight: 1.0 }
+[#n10] --> [#n11] { weight: 1.0 }
+[#n11] --> [#n12] { weight: 1.0 }
+[#n12] --> [#n13] { weight: 1.0 }
+[#n13] --> [#n14] { weight: 1.0 }
+[#n14] --> [#n15] { weight: 1.0 }
+[#n15] --> [#n16] { weight: 1.0 }
+[#n16] --> [#n17] { weight: 1.0 }
+[#n17] --> [#n18] { weight: 1.0 }
+[#n18] --> [#n19] { weight: 1.0 }
+[#n1] --x [#n0] { weight: 0.5 }
+[#n2] --x [#n1] { weight: 0.5 }
+[#n3] --x [#n2] { weight: 0.5 }
+[#n4] --x [#n3] { weight: 0.5 }
+[#n5] --x [#n4] { weight: 0.5 }
+[#n6] --x [#n5] { weight: 0.5 }
+[#n7] --x [#n6] { weight: 0.5 }
+[#n8] --x [#n7] { weight: 0.5 }
+[#n9] --x [#n8] { weight: 0.5 }
+[#n10] --x [#n9] { weight: 0.5 }
+[#n11] --x [#n10] { weight: 0.5 }
+[#n12] --x [#n11] { weight: 0.5 }
+[#n13] --x [#n12] { weight: 0.5 }
+[#n14] --x [#n13] { weight: 0.5 }
+[#n15] --x [#n14] { weight: 0.5 }
+[#n16] --x [#n15] { weight: 0.5 }
+[#n17] --x [#n16] { weight: 0.5 }
+[#n18] --x [#n17] { weight: 0.5 }
+[#n19] --x [#n18] { weight: 0.5 }
+[#n0] ~> [#n19] { concession: "boundary" }
+[#n19] ?> [#n0] { qualification: "scope" }
+[#n0] <-> [#n10] { equivalence: "weak" }
+[#n5] <-> [#n15] { equivalence: "weak" }

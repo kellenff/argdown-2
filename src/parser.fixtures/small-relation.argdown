@@ -1,0 +1,8 @@
+[#impacts] --x [#gradual] {
+  type: "undercut",
+  reason: "impacts negate the sufficiency of gradualism"
+}
+
+[#gradual] --x ([#mitigation] :- [#co2], [#impacts], [#coord]) {
+  reason: "attacks the inferential link"
+}
