@@ -374,9 +374,9 @@ exports[`DESIGN.md example: Climate Policy > produces a stable AST (snapshot) 1`
       "kind": "RuleStatement",
       "loc": {
         "end": {
-          "column": 46,
+          "column": 47,
           "line": 23,
-          "offset": 480,
+          "offset": 481,
         },
         "start": {
           "column": 1,
@@ -388,9 +388,9 @@ exports[`DESIGN.md example: Climate Policy > produces a stable AST (snapshot) 1`
         "kind": "Rule",
         "loc": {
           "end": {
-            "column": 46,
+            "column": 47,
             "line": 23,
-            "offset": 480,
+            "offset": 481,
           },
           "start": {
             "column": 1,

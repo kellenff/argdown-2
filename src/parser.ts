@@ -639,7 +639,8 @@ function parseRule(s: TokenStream): CstNode | undefined {
   const list = parseFactRefList(s);
   if (!list) return undefined;
   cst['factRefList'] = [list];
-  s.consume('Period'); // optional trailing period
+  // Optional trailing period — attach to CST so derived loc includes it.
+  if (s.consume('Period')) cst['Period'] = [tokenNode(s.peek(-1))];
   return cst;
 }
 
