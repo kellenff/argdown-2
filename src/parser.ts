@@ -1,57 +1,26 @@
 // src/parser.ts
-// ArgdownParser: Chevrotain-based parser for Argdown Extended.
+// Hand-written recursive descent parser for Argdown Extended.
+//
+// We walk a flat token stream produced by the Chevrotain lexer (src/tokens.ts)
+// and build a CST (concrete syntax tree) shaped to match what the visitor
+// (src/visitor.ts) consumes. Each BNF production is a standalone function
+// `parseX(s: TokenStream): CstNode | undefined` that returns either a CST
+// node for the matched production or `undefined` to signal failure.
+//
+// The CST shape follows the Chevrotain default: token-bearing children live
+// under their token-type name (e.g. `cst['LBrack']`); subrules live under
+// the rule name (e.g. `cst['factRef']`). The visitor uses `pickFirst` to
+// pull the first entry from each child slot.
 
-import { CstParser, EOF } from 'chevrotain';
-import type { ParserMethod, CstNode } from 'chevrotain';
+import type { IToken, ILexingResult } from 'chevrotain';
 
 import type { Document } from './ast.js';
-import {
-  allTokens,
-  ArgdownLexer,
-  Identifier,
-  StringTok,
-  Number,
-  TitleText,
-  ClaimText,
-  HeadingText,
-  PlainScalar,
-  FlowScalar,
-  LBrack,
-  RBrack,
-  LBrace,
-  RBrace,
-  LParen,
-  RParen,
-  Colon,
-  Comma,
-  Period,
-  Minus,
-  Plus,
-  RuleOp,
-  LineCommentTok,
-  BlockCommentTok,
-  True,
-  False,
-  Null,
-  HeadingMarker,
-  Support,
-  Attack,
-  Undercut,
-  Undermine,
-  Concession,
-  Qualification,
-  Equivalence,
-  FrontmatterDelim,
-  BlockMarker,
-  Meta,
-  Evidence,
-  PositionKw,
-  Stakeholder,
-  Domain,
-} from './tokens.js';
+import { ArgdownLexer } from './tokens.js';
 import { buildAst } from './visitor.js';
 
-// ----- Result types -----
+// =========================================================================
+// Public API
+// =========================================================================
 
 export type ParseErrorCode =
   | 'parse.mismatchedToken'
@@ -83,550 +52,959 @@ export type ParseResult =
   | { ok: true; ast: Document; errors: ParseError[] }
   | { ok: false; errors: ParseError[]; partial?: Document };
 
-// ----- Parser class -----
+// =========================================================================
+// CST shape
+// =========================================================================
 
-export class ArgdownParser extends CstParser {
-  // ----- Rule field declarations (populated by $.RULE at runtime) -----
-  declare document: ParserMethod<[], CstNode>;
-  declare element: ParserMethod<[], CstNode>;
-  declare statement: ParserMethod<[], CstNode>;
-  declare frontmatter: ParserMethod<[], CstNode>;
-  declare blankLine: ParserMethod<[], CstNode>;
-  declare comment: ParserMethod<[], CstNode>;
-  declare lineComment: ParserMethod<[], CstNode>;
-  declare blockComment: ParserMethod<[], CstNode>;
-  declare heading: ParserMethod<[], CstNode>;
-  declare block: ParserMethod<[], CstNode>;
-  declare factStatement: ParserMethod<[], CstNode>;
-  declare ruleStatement: ParserMethod<[], CstNode>;
-  declare relationStatement: ParserMethod<[], CstNode>;
-  // Terminals
-  declare identifier: ParserMethod<[], CstNode>;
-  declare string: ParserMethod<[], CstNode>;
-  declare number: ParserMethod<[], CstNode>;
-  declare titleText: ParserMethod<[], CstNode>;
-  declare claimText: ParserMethod<[], CstNode>;
-  declare headingText: ParserMethod<[], CstNode>;
-  declare plainScalar: ParserMethod<[], CstNode>;
-  declare flowScalar: ParserMethod<[], CstNode>;
-  // Fact refs and heads
-  declare factRef: ParserMethod<[], CstNode>;
-  declare factHead: ParserMethod<[], CstNode>;
-  declare identifierHead: ParserMethod<[], CstNode>;
-  declare titleHead: ParserMethod<[], CstNode>;
-  // Values and attributes
-  declare value: ParserMethod<[], CstNode>;
-  declare boolean: ParserMethod<[], CstNode>;
-  declare nullValue: ParserMethod<[], CstNode>;
-  declare flowSequence: ParserMethod<[], CstNode>;
-  declare flowMapping: ParserMethod<[], CstNode>;
-  declare attributeBlock: ParserMethod<[], CstNode>;
-  declare attributeEntry: ParserMethod<[], CstNode>;
-  // Facts and rules
-  declare fact: ParserMethod<[], CstNode>;
-  declare rule: ParserMethod<[], CstNode>;
-  declare factRefList: ParserMethod<[], CstNode>;
-  // Relations (Task 12)
-  declare relation:              ParserMethod<[], CstNode>;
-  declare relationEndpoint:      ParserMethod<[], CstNode>;
-  declare ruleExpr:              ParserMethod<[], CstNode>;
-  declare arrow:                 ParserMethod<[], CstNode>;
-  // Headings (Task 13)
-  // (heading already declared in Task 6)
-  // List items and YAML (Task 14)
-  declare listItem:              ParserMethod<[], CstNode>;
-  declare yamlLine:              ParserMethod<[], CstNode>;
-  declare yamlValue:             ParserMethod<[], CstNode>;
-  // Blocks (Task 15)
-  // (block already declared in Task 6)
-  declare blockOpen:             ParserMethod<[], CstNode>;
-  declare blockClose:            ParserMethod<[], CstNode>;
-  declare blockType:             ParserMethod<[], CstNode>;
-  declare blockTitle:            ParserMethod<[], CstNode>;
-  declare blockBody:             ParserMethod<[], CstNode>;
-  declare blockLine:             ParserMethod<[], CstNode>;
-  // Frontmatter (Task 16)
-  // (frontmatter already declared in Task 6)
+export type CstNode = {
+  image?: string | undefined;
+  tokenType?: { name: string } | undefined;
+  startLine?: number | undefined;
+  startColumn?: number | undefined;
+  startOffset?: number | undefined;
+  endLine?: number | undefined;
+  endColumn?: number | undefined;
+  endOffset?: number | undefined;
+} & Record<string, unknown>;
 
-  constructor() {
-    super(allTokens, {
-      recoveryEnabled: true,
-      maxLookahead: 3,
-      // The BNF's note-4 disambiguation uses a backtracking OR for fact/rule/relation
-      // (each alternative starts with [ref] but diverges on the next token: ':-' for rule,
-      // an arrow for relation, anything else for fact). Chevrotain's static ambiguity
-      // check would flag this as ambiguous. We know the runtime behavior is correct
-      // (OR tries alternatives in order) so we skip the validation. This is safe here
-      // because the alternatives are mutually exclusive at the second token.
-      skipValidations: true,
-    });
+export type CstChildren = Record<string, CstNode[] | unknown[] | undefined>;
 
-    // Chevrotain convention: alias `this` to `$` so rule DSL reads as `$.RULE(...)` / `$.CONSUME(...)`.
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const $ = this;
+// =========================================================================
+// EOF constant (tokens.ts doesn't export it directly; we synthesize one)
+// =========================================================================
 
-    // ----- Top-level structure (Task 6) -----
+const EOF_TOKEN: IToken = {
+  image: '',
+  tokenType: { name: 'EOF' } as IToken['tokenType'],
+  tokenTypeIdx: -1,
+  startOffset: 0,
+  endOffset: 0,
+  startLine: 1,
+  startColumn: 1,
+  endLine: 1,
+  endColumn: 1,
+};
 
-    $.RULE('document', () => {
-      $.OPTION(() => $.SUBRULE($.frontmatter));
-      $.MANY({
-        GATE: () => this.LA(1).tokenType !== EOF,
-        DEF: () => $.SUBRULE($.element),
-      });
-    });
+// =========================================================================
+// TokenStream — wraps the flat token list with lookahead/backtracking/error
+// =========================================================================
 
-    $.RULE('element', () => {
-      $.OR([
-        { ALT: () => $.SUBRULE($.blankLine) },
-        { ALT: () => $.SUBRULE($.comment) },
-        { ALT: () => $.SUBRULE($.heading) },
-        { ALT: () => $.SUBRULE($.block) },
-        { ALT: () => $.SUBRULE($.statement) },
-      ]);
-    });
+class TokenStream {
+  public tokens: IToken[];
+  public pos: number;
+  public errors: ParseError[];
 
-    $.RULE('statement', () => {
-      // Lookahead-based dispatch. Chevrotain doesn't support true backtracking
-      // across SUBRULE calls, so we look at the next tokens to decide which
-      // alternative to invoke. The BNF's note-4 disambiguation:
-      //   - ":-" after [factRef] → rule
-      //   - arrow after [factRef] → relation
-      //   - anything else → fact
-      // We do a fast scan: if we see [ then check what's at the 4th position
-      // (after [factHead]). For [factHead], factHead is HeadingMarker+Identifier
-      // or TitleText. So position 4 (after LBrack, factHead, RBrack) tells us
-      // what kind of statement this is.
-      //
-      // For simplicity, we look at the third token from the start. If it's
-      // RuleOp, it's a rule. If it's an arrow, it's a relation. Otherwise,
-      // it's a fact.
-      const la1 = this.LA(1);
-      const la2 = this.LA(2);
-      const la3 = this.LA(3);
-      const la4 = this.LA(4);
+  constructor(tokens: IToken[]) {
+    this.tokens = tokens;
+    this.pos = 0;
+    this.errors = [];
+  }
 
-      if (la1.tokenType === LBrack && la4.tokenType === RuleOp) {
-        // Rule: [factRef] :- factRefList .
-        $.SUBRULE($.ruleStatement);
-      } else if (
-        la1.tokenType === LBrack &&
-        (la4.tokenType === Support ||
-          la4.tokenType === Attack ||
-          la4.tokenType === Undercut ||
-          la4.tokenType === Undermine ||
-          la4.tokenType === Concession ||
-          la4.tokenType === Qualification ||
-          la4.tokenType === Equivalence)
-      ) {
-        // Relation: [factRef] arrow [factRef] {attrs}
-        $.SUBRULE($.relationStatement);
-      } else {
-        // Fact: [factRef] [claimText] [attributeBlock]
-        $.SUBRULE($.factStatement);
+  current(): IToken {
+    const t = this.tokens[this.pos];
+    return t ?? EOF_TOKEN;
+  }
+
+  peek(offset = 0): IToken {
+    const t = this.tokens[this.pos + offset];
+    return t ?? EOF_TOKEN;
+  }
+
+  check(...names: string[]): boolean {
+    return names.includes(this.current().tokenType.name);
+  }
+
+  // Consume the current token if it matches the given name. On mismatch,
+  // record an error and return undefined. On success, advance and return.
+  consume(name?: string): IToken | undefined {
+    const tok = this.current();
+    if (tok.tokenType.name === 'EOF') {
+      if (name) {
+        this.recordError(`expected ${name}`, tok, 'parse.mismatchedToken');
       }
-      // The above LA(1) and LA(2) and LA(3) and LA(4) are referenced to silence
-      // the unused-binding linter; remove if not needed.
-      void la2;
-      void la3;
+      return undefined;
+    }
+    if (name && tok.tokenType.name !== name) {
+      this.recordError(`expected ${name}`, tok, 'parse.mismatchedToken');
+      return undefined;
+    }
+    this.pos++;
+    return tok;
+  }
+
+  expect(name: string, hint?: string): IToken | undefined {
+    const tok = this.current();
+    if (tok.tokenType.name !== name) {
+      this.recordError(hint ?? `expected ${name}`, tok, 'parse.mismatchedToken');
+      return undefined;
+    }
+    this.pos++;
+    return tok;
+  }
+
+  save(): number {
+    return this.pos;
+  }
+
+  restore(p: number): void {
+    this.pos = p;
+  }
+
+  eof(): boolean {
+    return this.current().tokenType.name === 'EOF';
+  }
+
+  hasMore(): boolean {
+    return !this.eof();
+  }
+
+  skipUntil(...names: string[]): void {
+    while (!this.eof() && !names.includes(this.current().tokenType.name)) {
+      this.pos++;
+    }
+  }
+
+  recordError(message: string, tok?: IToken, code: ParseErrorCode = 'parse.mismatchedToken'): void {
+    const t = tok ?? this.current();
+    this.errors.push({
+      code,
+      message,
+      severity: 'error',
+      loc: {
+        line: t.startLine ?? 1,
+        column: t.startColumn ?? 1,
+        offset: t.startOffset ?? 0,
+      },
+      found: t.tokenType.name,
     });
-
-    // Placeholders (filled in by later tasks)
-    // NOTE: frontmatter, heading, and block are defined in their respective
-    // tasks (Task 16, 13, 15). Defining them here as placeholders would be
-    // a Chevrotain RULE conflict.
-    $.RULE('blankLine', () => {
-      $.CONSUME(EOF);
-    });
-
-    // ----- Terminal rules (Task 7) -----
-
-    $.RULE('identifier', () => {
-      $.CONSUME(Identifier);
-    });
-    $.RULE('string', () => {
-      $.CONSUME(StringTok);
-    });
-    $.RULE('number', () => {
-      $.CONSUME(Number);
-    });
-    $.RULE('titleText', () => {
-      $.CONSUME(TitleText);
-    });
-    $.RULE('claimText', () => {
-      $.CONSUME(ClaimText);
-    });
-    $.RULE('headingText', () => {
-      $.CONSUME(HeadingText);
-    });
-    $.RULE('plainScalar', () => {
-      $.CONSUME(PlainScalar);
-    });
-    $.RULE('flowScalar', () => {
-      $.CONSUME(FlowScalar);
-    });
-
-    // ----- Fact refs and heads (Task 8, simplified — no Hash token needed) -----
-
-    $.RULE('factRef', () => {
-      $.CONSUME(LBrack);
-      $.SUBRULE($.factHead);
-      $.CONSUME(RBrack);
-    });
-
-    $.RULE('factHead', () => {
-      $.OR([{ ALT: () => $.SUBRULE($.identifierHead) }, { ALT: () => $.SUBRULE($.titleHead) }]);
-    });
-
-    $.RULE('identifierHead', () => {
-      // The HeadingMarker token matches #{1,6} — for an identifier head we need
-      // exactly one "#". Use OR ordering: heading alternative fails for a single
-      // hash because it expects 1-6 (which is fine, but we need to enforce length
-      // here). The cleanest way: HeadingMarker matches up to 6 #s; we then verify
-      // length === 1. If not, this rule fails and the parser backtracks.
-      const headingToken = this.LA(1);
-      if (headingToken.tokenType !== HeadingMarker || headingToken.image.length !== 1) {
-        // No backtracking API in Chevrotain for arbitrary failure; the cleanest
-        // approach is to wrap in an action that throws, but that complicates
-        // recovery. For now, this rule consumes a single # via the OR ordering
-        // — the heading rule won't backtrack to here because HeadingMarker is
-        // only consumed in the heading rule (length 1-6). We accept any
-        // HeadingMarker token here and let the visitor extract the right
-        // substring. This is a known limitation documented in the plan.
-        $.CONSUME(HeadingMarker);
-      } else {
-        $.CONSUME(HeadingMarker);
-      }
-      $.CONSUME(Identifier);
-    });
-
-    $.RULE('titleHead', () => {
-      $.SUBRULE($.titleText);
-    });
-
-    // ----- Comments (Task 8) -----
-
-    $.RULE('comment', () => {
-      $.OR([{ ALT: () => $.SUBRULE($.lineComment) }, { ALT: () => $.SUBRULE($.blockComment) }]);
-    });
-
-    $.RULE('lineComment', () => {
-      $.CONSUME(LineCommentTok);
-    });
-
-    $.RULE('blockComment', () => {
-      $.CONSUME(BlockCommentTok);
-    });
-
-    // ----- Values (Task 9) -----
-
-    $.RULE('value', () => {
-      $.OR1([
-        { ALT: () => $.SUBRULE($.string) },
-        { ALT: () => $.SUBRULE($.number) },
-        { ALT: () => $.SUBRULE($.boolean) },
-        { ALT: () => $.SUBRULE($.nullValue) },
-        { ALT: () => $.SUBRULE($.flowSequence) },
-        { ALT: () => $.SUBRULE($.flowMapping) },
-        { ALT: () => $.SUBRULE($.flowScalar) },
-      ]);
-    });
-
-    $.RULE('boolean', () => {
-      $.OR2([{ ALT: () => $.CONSUME(True) }, { ALT: () => $.CONSUME(False) }]);
-    });
-
-    $.RULE('nullValue', () => {
-      $.CONSUME(Null);
-    });
-
-    $.RULE('flowSequence', () => {
-      $.CONSUME(LBrack);
-      $.MANY_SEP({
-        SEP: Comma,
-        DEF: () => $.SUBRULE($.value),
-      });
-      $.CONSUME(RBrack);
-    });
-
-    $.RULE('flowMapping', () => {
-      $.CONSUME(LBrace);
-      $.MANY_SEP({
-        SEP: Comma,
-        DEF: () => $.SUBRULE($.attributeEntry),
-      });
-      $.CONSUME(RBrace);
-    });
-
-    // ----- Attribute blocks (Task 9) -----
-
-    $.RULE('attributeBlock', () => {
-      $.CONSUME(LBrace);
-      $.MANY_SEP({
-        SEP: Comma,
-        DEF: () => $.SUBRULE($.attributeEntry),
-      });
-      $.CONSUME(RBrace);
-    });
-
-    $.RULE('attributeEntry', () => {
-      $.SUBRULE($.identifier);
-      $.CONSUME(Colon);
-      $.SUBRULE($.value);
-    });
-
-    // ----- Facts (Task 10) -----
-
-    $.RULE('fact', () => {
-      $.SUBRULE($.factRef);
-      $.OPTION1(() => $.CONSUME(ClaimText));
-      $.OPTION2(() => $.SUBRULE($.attributeBlock));
-    });
-
-    $.RULE('factStatement', () => {
-      $.SUBRULE($.fact);
-    });
-
-    // ----- Rules (Task 11) -----
-
-    $.RULE('rule', () => {
-      $.SUBRULE($.factRef);
-      $.CONSUME(RuleOp);
-      $.SUBRULE($.factRefList);
-      $.CONSUME(Period);
-    });
-
-    $.RULE('factRefList', () => {
-      $.SUBRULE($.factRef);
-      $.MANY({
-        DEF: () => {
-          $.CONSUME(Comma);
-          $.SUBRULE2($.factRef);
-        },
-      });
-    });
-
-    $.RULE('ruleStatement', () => {
-      $.SUBRULE($.rule);
-    });
-
-    // ----- Relations (Task 12) -----
-
-    $.RULE('relation', () => {
-      $.SUBRULE($.relationEndpoint);
-      $.SUBRULE($.arrow);
-      $.SUBRULE2($.relationEndpoint);
-      $.OPTION3(() => $.SUBRULE($.attributeBlock));
-    });
-
-    $.RULE('relationEndpoint', () => {
-      $.OR3([
-        { ALT: () => $.SUBRULE($.factRef) },
-        { ALT: () => $.SUBRULE($.ruleExpr) },
-      ]);
-    });
-
-    $.RULE('ruleExpr', () => {
-      $.CONSUME(LParen);
-      $.SUBRULE($.factRef);
-      $.CONSUME(RuleOp);
-      $.SUBRULE($.factRefList);
-      $.CONSUME(RParen);
-    });
-
-    $.RULE('arrow', () => {
-      $.OR4([
-        { ALT: () => $.CONSUME(Support,         { LABEL: 'arrow' }) },
-        { ALT: () => $.CONSUME(Attack,          { LABEL: 'arrow' }) },
-        { ALT: () => $.CONSUME(Undercut,        { LABEL: 'arrow' }) },
-        { ALT: () => $.CONSUME(Undermine,       { LABEL: 'arrow' }) },
-        { ALT: () => $.CONSUME(Concession,      { LABEL: 'arrow' }) },
-        { ALT: () => $.CONSUME(Qualification,   { LABEL: 'arrow' }) },
-        { ALT: () => $.CONSUME(Equivalence,     { LABEL: 'arrow' }) },
-      ]);
-    });
-
-    $.RULE('relationStatement', () => {
-      $.SUBRULE($.relation);
-    });
-
-    // ----- Heading (Task 13) -----
-
-    $.RULE('heading', () => {
-      $.CONSUME(HeadingMarker);
-      $.OPTION5(() => $.SUBRULE($.headingText));
-    });
-
-    // ----- List items and YAML (Task 14) -----
-
-    $.RULE('listItem', () => {
-      $.CONSUME(Minus);
-      $.SUBRULE($.fact);
-    });
-
-    $.RULE('yamlLine', () => {
-      $.SUBRULE($.identifier);
-      $.CONSUME(Colon);
-      $.OPTION6(() => $.SUBRULE($.yamlValue));
-    });
-
-    $.RULE('yamlValue', () => {
-      $.OR5([
-        { ALT: () => $.SUBRULE($.flowSequence) },
-        { ALT: () => $.SUBRULE($.string) },
-        { ALT: () => $.SUBRULE($.plainScalar) },
-      ]);
-    });
-
-    // ----- Blocks (Task 15) -----
-
-    $.RULE('block', () => {
-      $.SUBRULE($.blockOpen);
-      $.SUBRULE($.blockBody);
-      $.SUBRULE($.blockClose);
-    });
-
-    $.RULE('blockOpen', () => {
-      $.CONSUME(BlockMarker);
-      $.SUBRULE($.blockType);
-      $.OPTION7(() => $.SUBRULE($.blockTitle));
-    });
-
-    $.RULE('blockClose', () => {
-      $.CONSUME(BlockMarker);
-    });
-
-    $.RULE('blockType', () => {
-      $.OR6([
-        { ALT: () => $.CONSUME(Meta) },
-        { ALT: () => $.CONSUME(Evidence) },
-        { ALT: () => $.CONSUME(PositionKw) },
-        { ALT: () => $.CONSUME(Stakeholder) },
-        { ALT: () => $.CONSUME(Domain) },
-      ]);
-    });
-
-    $.RULE('blockTitle', () => {
-      $.CONSUME(LBrack);
-      $.SUBRULE($.titleText);
-      $.CONSUME(RBrack);
-    });
-
-    $.RULE('blockBody', () => {
-      $.MANY({
-        GATE: () => this.LA(1).tokenType !== BlockMarker && this.LA(1).tokenType !== EOF,
-        DEF: () => $.SUBRULE($.blockLine),
-      });
-    });
-
-    $.RULE('blockLine', () => {
-      $.OR7([
-        { ALT: () => $.SUBRULE($.yamlLine) },
-        { ALT: () => $.SUBRULE($.listItem) },
-        { ALT: () => $.SUBRULE($.element) },
-      ]);
-    });
-
-    // ----- Frontmatter (Task 16) -----
-
-    $.RULE('frontmatter', () => {
-      $.CONSUME(FrontmatterDelim);
-      $.MANY({
-        GATE: () => this.LA(1).tokenType !== FrontmatterDelim && this.LA(1).tokenType !== EOF,
-        DEF: () => $.SUBRULE($.yamlLine),
-      });
-      $.CONSUME2(FrontmatterDelim);
-    });
-
-    // Chevrotain requires self-analysis at the end of the constructor.
-    this.performSelfAnalysis();
   }
 }
+
+// =========================================================================
+// Helpers
+// =========================================================================
+
+function tokenNode(tok: IToken): CstNode {
+  return {
+    image: tok.image,
+    tokenType: { name: tok.tokenType.name },
+    startLine: tok.startLine,
+    startColumn: tok.startColumn,
+    startOffset: tok.startOffset,
+    endLine: tok.endLine,
+    endColumn: tok.endColumn,
+    endOffset: tok.endOffset,
+  };
+}
+
+// Single-token rule: match the named token, wrap it as a CST node.
+function tokenRule(s: TokenStream, tokenName: string): CstNode | undefined {
+  const tok = s.expect(tokenName);
+  if (!tok) return undefined;
+  return tokenNode(tok);
+}
+
+const ARROW_TOKEN_NAMES: ReadonlySet<string> = new Set([
+  'Support',
+  'Attack',
+  'Undercut',
+  'Undermine',
+  'Concession',
+  'Qualification',
+  'Equivalence',
+]);
+
+function isArrowToken(name: string): boolean {
+  return ARROW_TOKEN_NAMES.has(name);
+}
+
+// =========================================================================
+// Parsing rules
+// =========================================================================
+
+function parseIdentifier(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'Identifier');
+}
+
+function parseString(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'String');
+}
+
+function parseNumber(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'Number');
+}
+
+function parseTitleText(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'TitleText');
+}
+
+function parseClaimText(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'ClaimText');
+}
+
+function parseHeadingText(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'HeadingText');
+}
+
+function parsePlainScalar(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'PlainScalar');
+}
+
+function parseFlowScalar(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'FlowScalar');
+}
+
+// ----- Fact refs and heads -----
+
+function parseFactRef(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const lb = s.consume('LBrack');
+  if (!lb) return undefined;
+  cst['LBrack'] = [tokenNode(lb)];
+  const head = parseFactHead(s);
+  if (!head) return undefined;
+  cst['factHead'] = [head];
+  const rb = s.consume('RBrack');
+  if (!rb) return undefined;
+  cst['RBrack'] = [tokenNode(rb)];
+  return cst;
+}
+
+function parseFactHead(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  // Disambiguate: HeadingMarker → identifierHead, else TitleText → titleHead.
+  // TitleText can begin with '#' only if the lexer matched it as TitleText;
+  // since HeadingMarker takes precedence in the lexer, an identifier head
+  // (the "[#id]" form) always arrives as HeadingMarker+Identifier.
+  if (s.check('HeadingMarker')) {
+    const idh = parseIdentifierHead(s);
+    if (idh) {
+      cst['identifierHead'] = [idh];
+      return cst;
+    }
+    return undefined;
+  }
+  if (s.check('TitleText')) {
+    const th = parseTitleHead(s);
+    if (th) {
+      cst['titleHead'] = [th];
+      return cst;
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+function parseIdentifierHead(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const hm = s.consume('HeadingMarker');
+  if (!hm) return undefined;
+  cst['HeadingMarker'] = [tokenNode(hm)];
+  const id = parseIdentifier(s);
+  if (!id) return undefined;
+  cst['identifier'] = [id];
+  return cst;
+}
+
+function parseTitleHead(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const tt = parseTitleText(s);
+  if (!tt) return undefined;
+  cst['titleText'] = [tt];
+  return cst;
+}
+
+// ----- Comments -----
+
+function parseComment(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (s.check('LineComment')) {
+    const lc = parseLineComment(s);
+    if (lc) {
+      cst['lineComment'] = [lc];
+      return cst;
+    }
+  }
+  if (s.check('BlockComment')) {
+    const bc = parseBlockComment(s);
+    if (bc) {
+      cst['blockComment'] = [bc];
+      return cst;
+    }
+  }
+  return undefined;
+}
+
+function parseLineComment(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'LineComment');
+}
+
+function parseBlockComment(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'BlockComment');
+}
+
+// ----- Values -----
+
+function parseValue(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (s.check('String')) {
+    const n = parseString(s);
+    if (n) {
+      cst['string'] = [n];
+      return cst;
+    }
+  }
+  if (s.check('Number')) {
+    const n = parseNumber(s);
+    if (n) {
+      cst['number'] = [n];
+      return cst;
+    }
+  }
+  if (s.check('True', 'False')) {
+    const b = parseBoolean(s);
+    if (b) {
+      cst['boolean'] = [b];
+      return cst;
+    }
+  }
+  if (s.check('Null')) {
+    const n = parseNullValue(s);
+    if (n) {
+      cst['nullValue'] = [n];
+      return cst;
+    }
+  }
+  if (s.check('LBrack')) {
+    const fs = parseFlowSequence(s);
+    if (fs) {
+      cst['flowSequence'] = [fs];
+      return cst;
+    }
+  }
+  if (s.check('LBrace')) {
+    const fm = parseFlowMapping(s);
+    if (fm) {
+      cst['flowMapping'] = [fm];
+      return cst;
+    }
+  }
+  if (s.check('FlowScalar')) {
+    const fs = parseFlowScalar(s);
+    if (fs) {
+      cst['flowScalar'] = [fs];
+      return cst;
+    }
+  }
+  return undefined;
+}
+
+function parseBoolean(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, s.check('True') ? 'True' : 'False');
+}
+
+function parseNullValue(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'Null');
+}
+
+function parseFlowSequence(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const lb = s.consume('LBrack');
+  if (!lb) return undefined;
+  cst['LBrack'] = [tokenNode(lb)];
+  const items: CstNode[] = [];
+  // First item (optional)
+  if (!s.check('RBrack')) {
+    const first = parseValue(s);
+    if (first) items.push(first);
+  }
+  while (s.check('Comma')) {
+    s.consume('Comma');
+    const next = parseValue(s);
+    if (next) items.push(next);
+    else break;
+  }
+  cst['value'] = items;
+  const rb = s.consume('RBrack');
+  if (!rb) return undefined;
+  cst['RBrack'] = [tokenNode(rb)];
+  return cst;
+}
+
+function parseFlowMapping(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const lb = s.consume('LBrace');
+  if (!lb) return undefined;
+  cst['LBrace'] = [tokenNode(lb)];
+  const entries: CstNode[] = [];
+  if (!s.check('RBrace')) {
+    const first = parseAttributeEntry(s);
+    if (first) entries.push(first);
+  }
+  while (s.check('Comma')) {
+    s.consume('Comma');
+    const next = parseAttributeEntry(s);
+    if (next) entries.push(next);
+    else break;
+  }
+  cst['attributeEntry'] = entries;
+  const rb = s.consume('RBrace');
+  if (!rb) return undefined;
+  cst['RBrace'] = [tokenNode(rb)];
+  return cst;
+}
+
+// ----- Attribute blocks -----
+
+function parseAttributeBlock(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const lb = s.consume('LBrace');
+  if (!lb) return undefined;
+  cst['LBrace'] = [tokenNode(lb)];
+  const entries: CstNode[] = [];
+  if (!s.check('RBrace')) {
+    const first = parseAttributeEntry(s);
+    if (first) entries.push(first);
+  }
+  while (s.check('Comma')) {
+    s.consume('Comma');
+    const next = parseAttributeEntry(s);
+    if (next) entries.push(next);
+    else break;
+  }
+  cst['attributeEntry'] = entries;
+  const rb = s.consume('RBrace');
+  if (!rb) return undefined;
+  cst['RBrace'] = [tokenNode(rb)];
+  return cst;
+}
+
+function parseAttributeEntry(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const id = parseIdentifier(s);
+  if (!id) return undefined;
+  cst['identifier'] = [id];
+  if (!s.consume('Colon')) return undefined;
+  cst['Colon'] = [tokenNode(s.peek(-1))];
+  const v = parseValue(s);
+  if (!v) return undefined;
+  cst['value'] = [v];
+  return cst;
+}
+
+// ----- Facts -----
+
+function parseFact(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const ref = parseFactRef(s);
+  if (!ref) return undefined;
+  cst['factRef'] = [ref];
+
+  // Optional claim text — only if next is ClaimText
+  if (s.check('ClaimText')) {
+    const claim = parseClaimText(s);
+    if (claim) cst['claimText'] = [claim];
+  }
+
+  // Optional attribute block
+  if (s.check('LBrace')) {
+    const attr = parseAttributeBlock(s);
+    if (attr) cst['attributeBlock'] = [attr];
+  }
+
+  return cst;
+}
+
+// ----- Rules -----
+
+// Comma-separated fact-ref list, used both by rule and ruleExpr.
+function parseFactRefList(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const refs: CstNode[] = [];
+  const first = parseFactRef(s);
+  if (!first) return undefined;
+  refs.push(first);
+  while (s.check('Comma')) {
+    s.consume('Comma');
+    const next = parseFactRef(s);
+    if (!next) break;
+    refs.push(next);
+  }
+  cst['factRef'] = refs;
+  return cst;
+}
+
+function parseRule(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const ref = parseFactRef(s);
+  if (!ref) return undefined;
+  cst['factRef'] = [ref];
+  if (!s.consume('RuleOp')) return undefined;
+  cst['RuleOp'] = [tokenNode(s.peek(-1))];
+  const list = parseFactRefList(s);
+  if (!list) return undefined;
+  cst['factRefList'] = [list];
+  s.consume('Period'); // optional trailing period
+  return cst;
+}
+
+// ----- Relations -----
+
+function parseRelation(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const from = parseRelationEndpoint(s);
+  if (!from) return undefined;
+  const arrow = parseArrow(s);
+  if (!arrow) return undefined;
+  const to = parseRelationEndpoint(s);
+  if (!to) return undefined;
+  cst['relationEndpoint'] = [from, to];
+  cst['arrow'] = [arrow];
+  // Optional attribute block
+  if (s.check('LBrace')) {
+    const attr = parseAttributeBlock(s);
+    if (attr) cst['attributeBlock'] = [attr];
+  }
+  return cst;
+}
+
+function parseRelationEndpoint(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (s.check('LParen')) {
+    const re = parseRuleExpr(s);
+    if (re) {
+      cst['ruleExpr'] = [re];
+      return cst;
+    }
+  }
+  if (s.check('LBrack')) {
+    const fr = parseFactRef(s);
+    if (fr) {
+      cst['factRef'] = [fr];
+      return cst;
+    }
+  }
+  return undefined;
+}
+
+function parseRuleExpr(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const lp = s.consume('LParen');
+  if (!lp) return undefined;
+  cst['LParen'] = [tokenNode(lp)];
+  const ref = parseFactRef(s);
+  if (!ref) return undefined;
+  cst['factRef'] = [ref];
+  if (!s.consume('RuleOp')) return undefined;
+  cst['RuleOp'] = [tokenNode(s.peek(-1))];
+  const list = parseFactRefList(s);
+  if (!list) return undefined;
+  cst['factRefList'] = [list];
+  const rp = s.consume('RParen');
+  if (!rp) return undefined;
+  cst['RParen'] = [tokenNode(rp)];
+  return cst;
+}
+
+function parseArrow(s: TokenStream): CstNode | undefined {
+  if (!isArrowToken(s.current().tokenType.name)) return undefined;
+  const tok = s.current();
+  s.pos++;
+  return tokenNode(tok);
+}
+
+// ----- Headings -----
+
+function parseHeading(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const hm = s.consume('HeadingMarker');
+  if (!hm) return undefined;
+  cst['HeadingMarker'] = [tokenNode(hm)];
+  if (s.check('HeadingText')) {
+    const ht = parseHeadingText(s);
+    if (ht) cst['headingText'] = [ht];
+  }
+  return cst;
+}
+
+// ----- List items and YAML -----
+
+function parseListItem(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (!s.consume('Minus')) return undefined;
+  cst['Minus'] = [tokenNode(s.peek(-1))];
+  const f = parseFact(s);
+  if (!f) return undefined;
+  cst['fact'] = [f];
+  return cst;
+}
+
+function parseYamlLine(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const id = parseIdentifier(s);
+  if (!id) return undefined;
+  cst['identifier'] = [id];
+  if (!s.consume('Colon')) return undefined;
+  cst['Colon'] = [tokenNode(s.peek(-1))];
+  // Optional yaml value
+  if (s.check('String') || s.check('LBrack') || s.check('PlainScalar')) {
+    const v = parseYamlValue(s);
+    if (v) cst['yamlValue'] = [v];
+  }
+  return cst;
+}
+
+function parseYamlValue(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (s.check('LBrack')) {
+    const fs = parseFlowSequence(s);
+    if (fs) {
+      cst['flowSequence'] = [fs];
+      return cst;
+    }
+  }
+  if (s.check('String')) {
+    const n = parseString(s);
+    if (n) {
+      cst['string'] = [n];
+      return cst;
+    }
+  }
+  if (s.check('PlainScalar')) {
+    const n = parsePlainScalar(s);
+    if (n) {
+      cst['plainScalar'] = [n];
+      return cst;
+    }
+  }
+  return undefined;
+}
+
+// ----- Blocks -----
+
+function parseBlock(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const open = parseBlockOpen(s);
+  if (!open) return undefined;
+  cst['blockOpen'] = [open];
+  const body = parseBlockBody(s);
+  cst['blockBody'] = [body];
+  const close = parseBlockClose(s);
+  if (!close) return undefined;
+  cst['blockClose'] = [close];
+  return cst;
+}
+
+function parseBlockOpen(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (!s.consume('BlockMarker')) return undefined;
+  cst['BlockMarker'] = [tokenNode(s.peek(-1))];
+  const bt = parseBlockType(s);
+  if (!bt) return undefined;
+  cst['blockType'] = [bt];
+  // Optional title — only if next is LBrack
+  if (s.check('LBrack')) {
+    const title = parseBlockTitle(s);
+    if (title) cst['blockTitle'] = [title];
+  }
+  return cst;
+}
+
+function parseBlockClose(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (!s.consume('BlockMarker')) return undefined;
+  cst['BlockMarker'] = [tokenNode(s.peek(-1))];
+  return cst;
+}
+
+function parseBlockType(s: TokenStream): CstNode | undefined {
+  if (s.check('Meta')) return tokenRule(s, 'Meta');
+  if (s.check('Evidence')) return tokenRule(s, 'Evidence');
+  if (s.check('Position')) return tokenRule(s, 'Position');
+  if (s.check('Stakeholder')) return tokenRule(s, 'Stakeholder');
+  if (s.check('Domain')) return tokenRule(s, 'Domain');
+  return undefined;
+}
+
+function parseBlockTitle(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (!s.consume('LBrack')) return undefined;
+  cst['LBrack'] = [tokenNode(s.peek(-1))];
+  const tt = parseTitleText(s);
+  if (!tt) return undefined;
+  cst['titleText'] = [tt];
+  if (!s.consume('RBrack')) return undefined;
+  cst['RBrack'] = [tokenNode(s.peek(-1))];
+  return cst;
+}
+
+// blockBody returns the children directly (not wrapped in a CST node) so
+// the visitor can iterate blockLine[] without an extra layer of nesting.
+function parseBlockBody(s: TokenStream): CstChildren {
+  const cst: CstChildren = {};
+  const lines: CstNode[] = [];
+  while (!s.eof() && !s.check('BlockMarker')) {
+    const line = parseBlockLine(s);
+    if (line) {
+      lines.push(line);
+    } else {
+      // Skip an unparseable token to make progress.
+      if (!s.eof()) s.pos++;
+    }
+  }
+  cst['blockLine'] = lines;
+  return cst;
+}
+
+function parseBlockLine(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  // yamlLine: identifier : ...
+  if (s.check('Identifier')) {
+    const yl = parseYamlLine(s);
+    if (yl) {
+      cst['yamlLine'] = [yl];
+      return cst;
+    }
+  }
+  // listItem: - fact
+  if (s.check('Minus')) {
+    const li = parseListItem(s);
+    if (li) {
+      cst['listItem'] = [li];
+      return cst;
+    }
+  }
+  // element (heading, comment, nested block, statement)
+  const el = parseElement(s);
+  if (el) {
+    cst['element'] = [el];
+    return cst;
+  }
+  return undefined;
+}
+
+// ----- Statements (fact | rule | relation, disambiguated by lookahead) -----
+
+function parseStatement(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (s.check('LBrack')) {
+    // The BNF's note-4 disambiguation: look past [factHead] ] to the next
+    // token. - 'RuleOp' → rule - arrow → relation - else → fact
+    // factHead is either HeadingMarker+Identifier (2 tokens) or TitleText
+    // (1 token). We need to scan ahead to the token AFTER the closing ].
+    const la3 = s.peek(3).tokenType.name;
+    if (la3 === 'RuleOp') {
+      const rs = parseRuleStatement(s);
+      if (rs) {
+        cst['ruleStatement'] = [rs];
+        return cst;
+      }
+      return undefined;
+    }
+    if (isArrowToken(la3)) {
+      const rs = parseRelationStatement(s);
+      if (rs) {
+        cst['relationStatement'] = [rs];
+        return cst;
+      }
+      return undefined;
+    }
+    const fs = parseFactStatement(s);
+    if (fs) {
+      cst['factStatement'] = [fs];
+      return cst;
+    }
+    return undefined;
+  }
+  if (s.check('LParen')) {
+    // Rule used as a relation endpoint (parenthesized rule statement on its own)
+    const rs = parseRelationStatement(s);
+    if (rs) {
+      cst['relationStatement'] = [rs];
+      return cst;
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+function parseFactStatement(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const f = parseFact(s);
+  if (!f) return undefined;
+  cst['fact'] = [f];
+  return cst;
+}
+
+function parseRuleStatement(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const r = parseRule(s);
+  if (!r) return undefined;
+  cst['rule'] = [r];
+  return cst;
+}
+
+function parseRelationStatement(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const r = parseRelation(s);
+  if (!r) return undefined;
+  cst['relation'] = [r];
+  return cst;
+}
+
+// ----- Frontmatter -----
+
+function parseFrontmatter(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (!s.check('FrontmatterDelim')) return undefined;
+  const open = s.consume('FrontmatterDelim');
+  if (!open) return undefined;
+  cst['FrontmatterDelim'] = [tokenNode(open)];
+
+  const lines: CstNode[] = [];
+  while (!s.eof() && !s.check('FrontmatterDelim')) {
+    // Blank lines / comments are tolerated between yaml lines.
+    if (s.check('LineComment') || s.check('BlockComment')) {
+      const c = parseComment(s);
+      if (c) lines.push(c);
+      continue;
+    }
+    if (s.check('Identifier')) {
+      const yl = parseYamlLine(s);
+      if (yl) {
+        lines.push(yl);
+        continue;
+      }
+    }
+    // Unknown line — skip one token to make progress.
+    if (!s.eof()) s.pos++;
+  }
+
+  const close = s.consume('FrontmatterDelim');
+  if (!close) {
+    s.recordError('unclosed frontmatter', s.current(), 'parse.unclosedFrontmatter');
+    return undefined;
+  }
+  cst['FrontmatterDelim'] = (cst['FrontmatterDelim'] as CstNode[]).concat([tokenNode(close)]);
+  cst['yamlLine'] = lines.filter(
+    (n) => (n as CstChildren)['identifier'] !== undefined && (n as CstChildren)['Colon'] !== undefined,
+  );
+  return cst;
+}
+
+// ----- Element (top-level dispatch) -----
+
+function parseElement(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (s.check('LineComment') || s.check('BlockComment')) {
+    const c = parseComment(s);
+    if (c) {
+      cst['comment'] = [c];
+      return cst;
+    }
+  }
+  if (s.check('HeadingMarker')) {
+    const h = parseHeading(s);
+    if (h) {
+      cst['heading'] = [h];
+      return cst;
+    }
+  }
+  if (s.check('BlockMarker')) {
+    const b = parseBlock(s);
+    if (b) {
+      cst['block'] = [b];
+      return cst;
+    }
+  }
+  if (s.check('LBrack', 'LParen')) {
+    const st = parseStatement(s);
+    if (st) {
+      cst['statement'] = [st];
+      return cst;
+    }
+  }
+  return undefined;
+}
+
+// ----- Document -----
+
+function parseDocument(s: TokenStream): CstNode {
+  const cst: CstChildren = {};
+  const frontmatter = parseFrontmatter(s);
+  if (frontmatter) cst['frontmatter'] = [frontmatter];
+
+  const elements: CstNode[] = [];
+  while (!s.eof()) {
+    const before = s.save();
+    const el = parseElement(s);
+    if (el) {
+      elements.push(el);
+      continue;
+    }
+    s.restore(before);
+    if (!s.eof()) {
+      s.recordError('unexpected token', s.current(), 'parse.unexpectedToken');
+      s.pos++;
+    }
+  }
+  cst['element'] = elements;
+  return cst;
+}
+
+// =========================================================================
+// Lex-error normalization
+// =========================================================================
+
+function lexErrorToParseError(lexErr: { message?: string | undefined; line?: number | undefined; column?: number | undefined; offset?: number | undefined }): ParseError {
+  let code: ParseErrorCode = 'parse.invalidStringEscape';
+  if (lexErr.message?.includes('UNTERMINATED')) {
+    code = lexErr.message.includes('string') ? 'parse.unterminatedString' : 'parse.unterminatedBlockComment';
+  }
+  return {
+    code,
+    message: lexErr.message ?? 'lex error',
+    severity: 'error',
+    loc: {
+      line: lexErr.line ?? 1,
+      column: lexErr.column ?? 1,
+      offset: lexErr.offset ?? 0,
+    },
+  };
+}
+
+// =========================================================================
+// Public API: parse() + formatError()
+// =========================================================================
 
 export function formatError(err: ParseError, filename = '<anonymous>'): string {
   return `${filename}:${err.loc.line}:${err.loc.column}: ${err.message}`;
 }
 
-function mapChevrotainError(err: {
-  message?: string;
-  token?: {
-    tokenType?: { name: string };
-    startOffset?: number;
-    endOffset?: number;
-    startLine?: number;
-    startColumn?: number;
-    endLine?: number;
-    endColumn?: number;
-  };
-  context?: { expectedTokens?: { name: string }[] };
-}): ParseError {
-  const tok = err.token;
-  const loc = {
-    line: tok?.startLine ?? 1,
-    column: tok?.startColumn ?? 1,
-    offset: tok?.startOffset ?? 0,
-  };
-  const ctorName = (err as { constructor?: { name?: string } }).constructor?.name ?? '';
-  let code: ParseErrorCode = 'parse.mismatchedToken';
-  if (ctorName === 'MismatchedTokenException')      code = 'parse.mismatchedToken';
-  else if (ctorName === 'NoViableAlternativeError') code = 'parse.noViableAlternative';
-  else if (ctorName === 'NotAllInputParsedException') code = 'parse.notAllInputParsed';
-  else if (ctorName === 'EarlyExitException')      code = 'parse.earlyExit';
-  const expected = err.context?.expectedTokens?.map((t) => t.name);
-  const found = tok?.tokenType?.name;
-  return {
-    code,
-    message: err.message ?? 'parse error',
-    severity: 'error',
-    loc,
-    ...(expected ? { expected } : {}),
-    ...(found ? { found } : {}),
-  };
-}
-
 export function parse(source: string, options: ParseOptions = {}): ParseResult {
-  const filename = options.filename ?? '<anonymous>';
   const maxErrors = options.maxErrors ?? 100;
 
-  // ----- Lexical errors (from the lexer itself) -----
-  const lexResult = ArgdownLexer.tokenize(source);
-  const errors: ParseError[] = [];
+  // 1. Lex
+  const lexResult: ILexingResult = ArgdownLexer.tokenize(source);
 
+  // 2. Normalize lex errors
+  const errors: ParseError[] = [];
   for (const lexErr of lexResult.errors) {
     if (errors.length >= maxErrors) break;
-    let code: ParseErrorCode = 'parse.invalidStringEscape';
-    if (lexErr.message?.includes('UNTERMINATED')) {
-      code = lexErr.message.includes('string') ? 'parse.unterminatedString' : 'parse.unterminatedBlockComment';
-    }
-    errors.push({
-      code,
-      message: lexErr.message ?? 'lex error',
-      severity: 'error',
-      loc: {
-        line: lexErr.line ?? 1,
-        column: lexErr.column ?? 1,
-        offset: lexErr.offset ?? 0,
-      },
-    });
+    errors.push(lexErrorToParseError(lexErr));
   }
 
-  // ----- Parse (always run, even with lex errors, to get partial CST) -----
-  const parser = new ArgdownParser();
-  parser.input = lexResult.tokens;
-  const cst = parser.document();
+  // 3. Parse (always, even with lex errors, to get partial CST)
+  const stream = new TokenStream(lexResult.tokens);
+  const cst = parseDocument(stream);
 
-  // NOTE: The `statement` rule uses OR backtracking to disambiguate fact/rule/relation.
-  // Chevrotain records errors for each failed OR attempt, even when the final
-  // alternative succeeds. We collect these for diagnostic purposes but don't
-  // count them as fatal if the AST is well-formed below.
-  for (const chevErr of parser.errors) {
+  // 4. Collect parse errors from the stream
+  for (const err of stream.errors) {
     if (errors.length >= maxErrors) break;
-    errors.push(mapChevrotainError(chevErr as never));
+    errors.push(err);
   }
 
-  // ----- Build AST -----
-  // Even with lexical errors, attempt to construct the AST from whatever the parser
-  // produced and surface it as `partial` so callers can show diagnostics alongside
-  // the partial tree.
+  // 5. Build AST (best-effort)
   let ast: Document | undefined;
   try {
     ast = buildAst(cst as unknown as Parameters<typeof buildAst>[0]);
@@ -634,28 +1012,16 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
     ast = undefined;
   }
 
-  // Decide: lexical errors are always fatal. Parser errors that survived the
-  // backtracking OR are also fatal. But for the well-known OR pattern in
-  // `statement`, errors from the failed fact/rule/relation attempts are
-  // recorded but the AST is still well-formed. Distinguish: if the AST has
-  // content (or there are no parser errors at all), call it ok.
+  // 6. Decide ok / partial
   const hasLexErrors = lexResult.errors.length > 0;
-  const parserErrorCount = parser.errors.length;
-
   if (hasLexErrors) {
     return ast ? { ok: false, errors, partial: ast } : { ok: false, errors };
   }
-
   if (ast && ast.elements.length > 0) {
-    // Parser recovered via backtracking; the AST is well-formed.
     return { ok: true, ast, errors };
   }
-
-  if (parserErrorCount > 0) {
+  if (stream.errors.length > 0) {
     return ast ? { ok: false, errors, partial: ast } : { ok: false, errors };
   }
-
-  return ast
-    ? { ok: true, ast, errors }
-    : { ok: false, errors };
+  return ast ? { ok: true, ast, errors } : { ok: false, errors };
 }
