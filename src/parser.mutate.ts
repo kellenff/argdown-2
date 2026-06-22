@@ -120,3 +120,32 @@ export function replaceLine(source: string, rng: () => number): string {
   out[idx] = randomLine(rng);
   return joinLines(out);
 }
+
+// ----- Weighted entry point -----
+
+type Op = (source: string, rng: () => number) => string;
+
+// [weight, op] pairs. Weights sum to 100.
+const OPS: ReadonlyArray<readonly [number, Op]> = [
+  [30, insertLine],
+  [15, deleteLine],
+  [10, swapLines],
+  [10, duplicateRange],
+  [15, spliceGarbage],
+  [20, replaceLine],
+];
+
+/**
+ * Apply one weighted-random mutation to `source`. The op is picked via
+ * cumulative-weight sampling so the OPS table is the single source of truth
+ * for op probabilities.
+ */
+export function mutate(source: string, rng: () => number): string {
+  const total = OPS.reduce((s, [w]) => s + w, 0);
+  let pick = rng() * total;
+  for (const [w, op] of OPS) {
+    pick -= w;
+    if (pick <= 0) return op(source, rng);
+  }
+  return OPS[OPS.length - 1][1](source, rng);
+}
