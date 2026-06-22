@@ -23,13 +23,16 @@
     "dist"
   ],
   "scripts": {
+    "bench": "node --experimental-strip-types src/parser.bench.ts",
+    "bench:baseline": "yarn bench --baseline",
+    "bench:check": "yarn bench --check",
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "format": "oxfmt src",
+    "format:check": "oxfmt --check src",
+    "lint": "oxlint src",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
-    "lint": "oxlint src",
-    "format": "oxfmt src",
-    "format:check": "oxfmt --check src"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "chevrotain": "^11.0.3"
@@ -38,6 +41,7 @@
     "@types/node": "^20.12.0",
     "oxfmt": "^0.6.0",
     "oxlint": "^0.6.0",
+    "tinybench": "^2.6.0",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
   }
