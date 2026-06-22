@@ -6,12 +6,14 @@
 !.yarn/sdks
 !.yarn/versions
 
-# Yarn Plug'n'Play
-.pnp.cjs
-.pnp.loader.mjs
+# Yarn Plug'n'Play: loaders are committed on every yarn install (see commit history).
+# Do NOT add to .gitignore — they must stay tracked.
 
 # Build output
 dist/
+
+# Dependencies
+node_modules/
 
 # Agent tooling state (not part of project source)
 .serena/
