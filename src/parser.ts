@@ -32,6 +32,21 @@ import {
   True,
   False,
   Null,
+  HeadingMarker,
+  Support,
+  Attack,
+  Undercut,
+  Undermine,
+  Concession,
+  Qualification,
+  Equivalence,
+  FrontmatterDelim,
+  BlockMarker,
+  Meta,
+  Evidence,
+  PositionKw,
+  Stakeholder,
+  Domain,
 } from './tokens.js';
 
 // ----- Result types -----
@@ -109,6 +124,27 @@ export class ArgdownParser extends CstParser {
   declare fact: ParserMethod<[], CstNode>;
   declare rule: ParserMethod<[], CstNode>;
   declare factRefList: ParserMethod<[], CstNode>;
+  // Relations (Task 12)
+  declare relation:              ParserMethod<[], CstNode>;
+  declare relationEndpoint:      ParserMethod<[], CstNode>;
+  declare ruleExpr:              ParserMethod<[], CstNode>;
+  declare arrow:                 ParserMethod<[], CstNode>;
+  // Headings (Task 13)
+  // (heading already declared in Task 6)
+  // List items and YAML (Task 14)
+  declare listItem:              ParserMethod<[], CstNode>;
+  declare yamlLine:              ParserMethod<[], CstNode>;
+  declare yamlValue:             ParserMethod<[], CstNode>;
+  // Blocks (Task 15)
+  // (block already declared in Task 6)
+  declare blockOpen:             ParserMethod<[], CstNode>;
+  declare blockClose:            ParserMethod<[], CstNode>;
+  declare blockType:             ParserMethod<[], CstNode>;
+  declare blockTitle:            ParserMethod<[], CstNode>;
+  declare blockBody:             ParserMethod<[], CstNode>;
+  declare blockLine:             ParserMethod<[], CstNode>;
+  // Frontmatter (Task 16)
+  // (frontmatter already declared in Task 6)
 
   constructor() {
     super(allTokens, {
@@ -311,6 +347,134 @@ export class ArgdownParser extends CstParser {
 
     $.RULE('ruleStatement', () => {
       $.SUBRULE($.rule);
+    });
+
+    // ----- Relations (Task 12) -----
+
+    $.RULE('relation', () => {
+      $.SUBRULE($.relationEndpoint);
+      $.SUBRULE($.arrow);
+      $.SUBRULE($.relationEndpoint);
+      $.OPTION3(() => $.SUBRULE($.attributeBlock));
+    });
+
+    $.RULE('relationEndpoint', () => {
+      $.OR3([
+        { ALT: () => $.SUBRULE($.factRef) },
+        { ALT: () => $.SUBRULE($.ruleExpr) },
+      ]);
+    });
+
+    $.RULE('ruleExpr', () => {
+      $.CONSUME(LParen);
+      $.SUBRULE($.factRef);
+      $.CONSUME(RuleOp);
+      $.SUBRULE($.factRefList);
+      $.CONSUME(RParen);
+    });
+
+    $.RULE('arrow', () => {
+      $.OR4([
+        { ALT: () => $.CONSUME(Support,         { LABEL: 'arrow' }) },
+        { ALT: () => $.CONSUME(Attack,          { LABEL: 'arrow' }) },
+        { ALT: () => $.CONSUME(Undercut,        { LABEL: 'arrow' }) },
+        { ALT: () => $.CONSUME(Undermine,       { LABEL: 'arrow' }) },
+        { ALT: () => $.CONSUME(Concession,      { LABEL: 'arrow' }) },
+        { ALT: () => $.CONSUME(Qualification,   { LABEL: 'arrow' }) },
+        { ALT: () => $.CONSUME(Equivalence,     { LABEL: 'arrow' }) },
+      ]);
+    });
+
+    $.RULE('relationStatement', () => {
+      $.SUBRULE($.relation);
+    });
+
+    // ----- Heading (Task 13) -----
+
+    $.RULE('heading', () => {
+      $.CONSUME(HeadingMarker);
+      $.OPTION5(() => $.SUBRULE($.headingText));
+    });
+
+    // ----- List items and YAML (Task 14) -----
+
+    $.RULE('listItem', () => {
+      $.CONSUME(Minus);
+      $.SUBRULE($.fact);
+    });
+
+    $.RULE('yamlLine', () => {
+      $.SUBRULE($.identifier);
+      $.CONSUME(Colon);
+      $.OPTION6(() => $.SUBRULE($.yamlValue));
+    });
+
+    $.RULE('yamlValue', () => {
+      $.OR5([
+        { ALT: () => $.SUBRULE($.flowSequence) },
+        { ALT: () => $.SUBRULE($.string) },
+        { ALT: () => $.SUBRULE($.plainScalar) },
+      ]);
+    });
+
+    // ----- Blocks (Task 15) -----
+
+    $.RULE('block', () => {
+      $.SUBRULE($.blockOpen);
+      $.SUBRULE($.blockBody);
+      $.SUBRULE($.blockClose);
+    });
+
+    $.RULE('blockOpen', () => {
+      $.CONSUME(BlockMarker);
+      $.SUBRULE($.blockType);
+      $.OPTION7(() => $.SUBRULE($.blockTitle));
+    });
+
+    $.RULE('blockClose', () => {
+      $.CONSUME(BlockMarker);
+    });
+
+    $.RULE('blockType', () => {
+      $.OR6([
+        { ALT: () => $.CONSUME(Meta) },
+        { ALT: () => $.CONSUME(Evidence) },
+        { ALT: () => $.CONSUME(PositionKw) },
+        { ALT: () => $.CONSUME(Stakeholder) },
+        { ALT: () => $.CONSUME(Domain) },
+      ]);
+    });
+
+    $.RULE('blockTitle', () => {
+      $.CONSUME(LBrack);
+      $.SUBRULE($.titleText);
+      $.CONSUME(RBrack);
+    });
+
+    $.RULE('blockBody', () => {
+      $.MANY({
+        GATE: () => this.LA(1).tokenType !== BlockMarker && this.LA(1).tokenType !== EOF,
+        DEF: () => $.SUBRULE($.blockLine),
+      });
+    });
+
+    $.RULE('blockLine', () => {
+      $.OR7([
+        { ALT: () => $.SUBRULE($.yamlLine) },
+        { ALT: () => $.SUBRULE($.listItem) },
+        { ALT: () => $.SUBRULE($.element) },
+      ]);
+    });
+
+    // ----- Frontmatter (Task 16) -----
+
+    $.RULE('frontmatter', () => {
+      $.CONSUME(FrontmatterDelim);
+      $.MANY({
+        GATE: () => this.LA(1).tokenType !== FrontmatterDelim && this.LA(1).tokenType !== EOF,
+        DEF: () => $.SUBRULE($.yamlLine),
+      });
+      $.CONSUME(FrontmatterDelim);
     });
   }
 }
