@@ -122,13 +122,26 @@ function walkAst(doc: Document, visit: (node: { kind: string; loc?: unknown; lev
 
 function walkElement(node: unknown, visit: (n: { kind: string; loc?: unknown; level?: number; type?: string }) => void): void {
   if (!node || typeof node !== 'object') return;
-  const n = node as { kind?: string; loc?: unknown; level?: number; type?: string; body?: unknown[]; fact?: unknown; head?: unknown; title?: unknown; entries?: unknown };
+  const n = node as {
+    kind?: string; loc?: unknown; level?: number; type?: string;
+    body?: unknown[]; fact?: unknown; head?: unknown; title?: unknown;
+    ref?: unknown; attributes?: unknown; rule?: unknown; relation?: unknown;
+    premises?: unknown[]; from?: unknown; to?: unknown; items?: unknown[];
+    entries?: unknown;
+  };
   visit(n);
-  // Recurse into the union members that contain nested nodes.
-  if (Array.isArray(n.body)) for (const child of n.body) walkElement(child, visit);
-  if (n.fact) walkElement(n.fact, visit);
-  if (n.head) walkElement(n.head, visit);
-  if (n.title) walkElement(n.title, visit);
+  if (Array.isArray(n.body))     for (const c of n.body)     walkElement(c, visit);
+  if (Array.isArray(n.premises)) for (const c of n.premises) walkElement(c, visit);
+  if (Array.isArray(n.items))   for (const c of n.items)   walkElement(c, visit);
+  if (n.fact)       walkElement(n.fact, visit);
+  if (n.head)       walkElement(n.head, visit);
+  if (n.title)      walkElement(n.title, visit);
+  if (n.ref)        walkElement(n.ref, visit);
+  if (n.attributes) walkElement(n.attributes, visit);
+  if (n.rule)       walkElement(n.rule, visit);
+  if (n.relation)   walkElement(n.relation, visit);
+  if (n.from)       walkElement(n.from, visit);
+  if (n.to)         walkElement(n.to, visit);
   if (n.entries && typeof n.entries === 'object') {
     for (const v of Object.values(n.entries as Record<string, unknown>)) walkElement(v, visit);
   }

@@ -258,7 +258,7 @@ if (result.ast) {
 
 `VALID_KINDS` is a frozen `Set<string>` derived from `ast.ts`'s discriminated union — populated at module load from a hand-written list, since reading the AST types at runtime isn't possible. The list lives in the fuzz file with a comment pointing at `ast.ts` so it stays in sync.
 
-`isValidLoc` checks `loc.start.offset >= 0`, `loc.end.offset >= loc.start.offset`, and both offsets lie within `source.length`.
+`isValidLoc` checks `loc.start.offset >= 0` (integer) and `loc.end.offset >= loc.start.offset` (integer). The spec deliberately does not bound offsets by `source.length` — loc may have offsets past source length in error-recovery cases, and `isValidLoc` has no access to the source string.
 
 **Invariant 4 — Idempotence (sub-parse):**
 
