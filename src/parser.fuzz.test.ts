@@ -72,6 +72,7 @@ function checkInvariants(source: string, ctx: FuzzCtx): ParseResult {
   checkNoThrow(result, ctx);
   checkResultShape(result, ctx);
   checkAstShape(result, ctx);
+  checkIdempotence(result, source, ctx);
   return result;
 }
 
@@ -80,20 +81,20 @@ function checkInvariants(source: string, ctx: FuzzCtx): ParseResult {
 //   ok=false ⇒ at least one of: errors present, ast undefined
 function checkResultShape(result: ParseResult, ctx: FuzzCtx): void {
   const hasErrors = result.errors.length > 0;
-  const hasAst = result.ast !== undefined;
+  const hasAst = result.ok ? result.ast !== undefined : result.partial !== undefined;
 
   if (result.ok && (hasErrors || !hasAst)) {
     throw new FuzzFailure(
       `ok=true but ${hasErrors ? 'has errors' : 'no ast'}`,
       ctx,
-      { result },
+      { ok: result.ok, hasErrors, hasAst },
     );
   }
   if (!result.ok && !hasErrors && hasAst) {
     throw new FuzzFailure(
       'ok=false but no errors and ast present',
       ctx,
-      { result },
+      { ok: result.ok, hasErrors, hasAst },
     );
   }
 }
@@ -115,12 +116,12 @@ function isValidLoc(loc: { start: { offset: number }; end: { offset: number } } 
   return Number.isInteger(start.offset) && Number.isInteger(end.offset) && start.offset >= 0 && end.offset >= start.offset;
 }
 
-function walkAst(doc: Document, visit: (node: { kind: string; loc?: unknown; level?: number; type?: string }) => void): void {
+function walkAst(doc: Document, visit: (node: { kind?: string; loc?: unknown; level?: number; type?: string }) => void): void {
   visit(doc as unknown as { kind: string });
   for (const el of doc.elements) walkElement(el, visit);
 }
 
-function walkElement(node: unknown, visit: (n: { kind: string; loc?: unknown; level?: number; type?: string }) => void): void {
+function walkElement(node: unknown, visit: (n: { kind?: string; loc?: unknown; level?: number; type?: string }) => void): void {
   if (!node || typeof node !== 'object') return;
   const n = node as {
     kind?: string; loc?: unknown; level?: number; type?: string;
@@ -150,8 +151,9 @@ function walkElement(node: unknown, visit: (n: { kind: string; loc?: unknown; le
 // Invariant 3: every AST node has a valid kind and loc; type-specific fields
 // (Heading.level, Block.type) are within their declared ranges/unions.
 function checkAstShape(result: ParseResult, ctx: FuzzCtx): void {
-  if (!result.ast) return;
-  walkAst(result.ast, (node) => {
+  if (!result.ok) return;
+  const ast = result.ast;
+  walkAst(ast, (node) => {
     if (!node.kind || !VALID_KINDS.has(node.kind)) {
       throw new FuzzFailure(`unknown kind ${String(node.kind)}`, ctx, { node });
     }
@@ -170,6 +172,42 @@ function checkAstShape(result: ParseResult, ctx: FuzzCtx): void {
       }
     }
   });
+}
+
+// Invariant 4: for each AST element, re-parse the substring
+// source.slice(start.offset, end.offset). The sub-parse must not throw, and
+// a sub-parse that succeeds while the parent flagged this element's start
+// as erroneous is a bug — the parent's grammar disagrees with its own
+// element scope.
+function checkIdempotence(result: ParseResult, source: string, ctx: FuzzCtx): void {
+  if (!result.ok) return;
+  const ast = result.ast;
+  for (const el of ast.elements) {
+    const startOff = el.loc.start.offset;
+    const endOff = el.loc.end.offset;
+    const sub = source.slice(startOff, endOff);
+    if (sub.length === 0) continue;
+
+    let subResult: ParseResult;
+    try {
+      subResult = parse(sub);
+    } catch (e) {
+      throw new FuzzFailure(
+        `sub-parse of ${el.kind} threw`,
+        ctx,
+        { element: el.kind, sub, error: String(e) },
+      );
+    }
+
+    const parentFlaggedOffset = result.errors.some(e => e.loc && e.loc.offset === startOff);
+    if (!parentFlaggedOffset && !subResult.ok && subResult.errors.length > 0) {
+      throw new FuzzFailure(
+        `parent accepts but sub-parse rejects ${el.kind}`,
+        ctx,
+        { element: el.kind, sub, parentErrors: result.errors, subErrors: subResult.errors },
+      );
+    }
+  }
 }
 
 describe('parse() fuzz', () => {

@@ -45,10 +45,10 @@ const RANDOM_LINES = [
 ];
 const ID_POOL = ['A', 'B', 'C', 'Some Claim', 'My Fact', 'Reason', 'Counter'];
 function randomLine(rng: () => number): string {
-  const tpl = RANDOM_LINES[Math.floor(rng() * RANDOM_LINES.length)];
+  const tpl = RANDOM_LINES[Math.floor(rng() * RANDOM_LINES.length)]!;
   return tpl
-    .replace(/<X>/g, () => ID_POOL[Math.floor(rng() * ID_POOL.length)])
-    .replace(/\[X\]/g, () => ID_POOL[Math.floor(rng() * ID_POOL.length)]);
+    .replace(/<X>/g, () => ID_POOL[Math.floor(rng() * ID_POOL.length)]!)
+    .replace(/\[X\]/g, () => ID_POOL[Math.floor(rng() * ID_POOL.length)]!);
 }
 
 function splitLines(s: string): string[] {
@@ -84,7 +84,7 @@ export function swapLines(source: string, rng: () => number): string {
   if (lines.length < 2) return source;
   const idx = Math.floor(rng() * (lines.length - 1));
   const out = [...lines];
-  [out[idx], out[idx + 1]] = [out[idx + 1], out[idx]];
+  [out[idx], out[idx + 1]] = [out[idx + 1]!, out[idx]!];
   return joinLines(out);
 }
 
@@ -103,7 +103,7 @@ export function spliceGarbage(source: string, rng: () => number): string {
   const lines = splitLines(source);
   if (lines.length === 0) return randomBytes(rng, 8);
   const lineIdx = Math.floor(rng() * lines.length);
-  const line = lines[lineIdx];
+  const line = lines[lineIdx]!;
   const col = Math.floor(rng() * (line.length + 1));
   const n = 1 + Math.floor(rng() * 16);
   lines[lineIdx] = line.slice(0, col) + randomBytes(rng, n) + line.slice(col);
@@ -147,5 +147,5 @@ export function mutate(source: string, rng: () => number): string {
     pick -= w;
     if (pick <= 0) return op(source, rng);
   }
-  return OPS[OPS.length - 1][1](source, rng);
+  return OPS[OPS.length - 1]![1](source, rng);
 }
