@@ -37,9 +37,11 @@
 | Metrics | ops/sec, p99 ms, peak heap delta per fixture |
 | Baseline storage | `perf-baseline.json` at repo root, schema-versioned |
 | Bench file | `src/parser.bench.ts` with `--baseline` and `--check` modes |
-| Runner | `node --experimental-strip-types` (Node 22+) — no `tsx` dep |
+| Runner | `tsx src/parser.bench.ts` — see note below |
 | CI this cycle | None — `yarn bench:check` is a manual dev tool |
 | Structural test | `src/parser.bench.test.ts` — sanity checks only |
+
+**Runner note (deviation from plan):** The plan originally specified `node --experimental-strip-types`. Yarn 4 PnP's resolver does not auto-resolve `.js` imports to `.ts` source files, so the bench script could not find `./parser.js` when invoked that way. The user approved adding `tsx` (one small devDep, mature) as a more focused tool. `tsx` handles `.js` → `.ts` mapping and PnP transparently. Engine stays `>=18` for the parser; only the bench runner needs `tsx` installed.
 
 ---
 
@@ -166,7 +168,7 @@ if (mode === '--baseline') {
 ```
 
 **Three modes:**
-- **(no flag)** — print Tinybench's default table. For ad-hoc local runs.
+- **(no flag)** — print a per-fixture summary (ops/sec, margin, p99) plus peak heap deltas. For ad-hoc local runs. The summary is a hand-rolled table (not Tinybench's `bench.table()`) so it can include the peak heap column, which `bench.table()` does not surface.
 - **`--baseline`** — run all tasks, write `perf-baseline.json`. Invoked once per environment.
 - **`--check`** — run all tasks, diff against `perf-baseline.json`, print a human-readable diff. **Clean run exits 0 this cycle**; error cases (missing baseline, schema mismatch, errored parse task) throw and produce a non-zero exit.
 
@@ -319,11 +321,16 @@ This is the explicit scope decision — chasing perf noise in CI before we have 
 
 ## 10. Risks and known limitations
 
-- **Node 22+ for the bench runner.** Parser's `engines.node` stays at 18; bench scripts are a separate concern. Documented in `parser.bench.ts` header.
+- **Bench runner requires `tsx`.** Parser's `engines.node` stays at 18; the bench script needs `tsx` installed (one devDep). The plan originally specified `node --experimental-strip-types`, but Yarn 4 PnP's resolver does not auto-resolve `.js` imports to `.ts` source files, so that approach was not viable. `tsx` handles the mapping and PnP transparently.
 - **Absolute perf numbers are machine-dependent.** Recorded as-is; the next cycle normalizes across environments if needed.
 - **Tinybench is itself a moving target.** The `^2.6.0` range admits minor changes; if a future Tinybench version renames fields, the baseline schema or bench code may need a bump.
 - **`--check` is functional but does not enforce this cycle.** A user could run it and assume the diff is authoritative. Documented in §5.3 and §9.2.
 - **Memory measurement is `heapUsed` delta, not `heapTotal`.** This undercounts allocations that get freed mid-task. Acceptable for "peak during parse" — the same parse path runs the same allocation pattern.
+- **3 parser limitations discovered during fixture verification (out of scope for this cycle, all real parser bugs):**
+  1. **Inline `{...}` attribute blocks on rule statements are not supported.** `parseRule` in `parser.ts:629` requires `Period` after `factRefList`; it does not consume a following attribute block. Only relations accept inline attribute blocks.
+  2. **Multi-word YAML values in frontmatter and block bodies trigger a double-skip recovery bug.** `parseYamlValue` consumes a single scalar token, then the recovery path in `parseFrontmatter` / `parseBlock` advances pos by one after a failed `parseYamlLine`, skipping an extra token. For a multi-word value like `Block Stress`, the closing `===` is missed and the frontmatter is reported as unclosed.
+  3. **Block titles (`:::evidence[Title]`) cannot contain spaces.** The bracket content is lexed as a single `Identifier` token, which doesn't allow internal whitespace.
+  Workarounds applied to the fixtures: `small-rule.argdown` rules end with `.` only (no attribute blocks); `deep-nesting.argdown` uses single-word values throughout. These should be revisited in a parser-fix cycle.
 
 ---
 
