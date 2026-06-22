@@ -279,7 +279,7 @@ if (result.ast) {
     // Conversely, a sub-parse that succeeds but the parent flagged this element's
     // span as erroneous IS a bug — fail.
     const parentHasErrorAtOffset = result.errors.some(e =>
-      e.location && e.location.start.offset === el.loc.start.offset
+      e.loc && e.loc.offset === el.loc.start.offset
     );
     if (!parentHasErrorAtOffset && !subResult.ok && subResult.errors.length > 0) {
       throw new FuzzFailure(`parent accepts but sub-parse rejects ${el.kind}`, ...);
@@ -287,6 +287,8 @@ if (result.ast) {
   }
 }
 ```
+
+Note: `ParseError.loc` is a `Position` (single offset), not a `SourceLocation`. The check is `e.loc.offset === el.loc.start.offset`.
 
 This is the deepest invariant — it catches grammar bugs where a rule's behavior depends on surrounding context in a way that disagrees with the rule's own scope.
 
