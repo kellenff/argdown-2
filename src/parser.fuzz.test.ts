@@ -71,6 +71,7 @@ function checkInvariants(source: string, ctx: FuzzCtx): ParseResult {
   }
   checkNoThrow(result, ctx);
   checkResultShape(result, ctx);
+  checkAstShape(result, ctx);
   return result;
 }
 
@@ -95,6 +96,67 @@ function checkResultShape(result: ParseResult, ctx: FuzzCtx): void {
       { result },
     );
   }
+}
+
+// All `kind` discriminants declared in src/ast.ts. Keep in sync.
+const VALID_KINDS: ReadonlySet<string> = new Set([
+  'AttributeBlock', 'Block', 'BlockComment', 'BlockTitle',
+  'BooleanValue', 'Document', 'Fact', 'FactRef', 'FactStatement',
+  'FlowMapping', 'FlowScalar', 'FlowSequence', 'Frontmatter',
+  'Heading', 'IdentifierHead', 'LineComment', 'ListItem',
+  'NullValue', 'NumberValue', 'PlainScalar', 'Relation',
+  'RelationStatement', 'Rule', 'RuleExpr', 'RuleStatement',
+  'StringValue', 'TitleHead', 'YamlLine',
+]);
+
+function isValidLoc(loc: { start: { offset: number }; end: { offset: number } } | undefined): boolean {
+  if (!loc) return false;
+  const { start, end } = loc;
+  return Number.isInteger(start.offset) && Number.isInteger(end.offset) && start.offset >= 0 && end.offset >= start.offset;
+}
+
+function walkAst(doc: Document, visit: (node: { kind: string; loc?: unknown; level?: number; type?: string }) => void): void {
+  visit(doc as unknown as { kind: string });
+  for (const el of doc.elements) walkElement(el, visit);
+}
+
+function walkElement(node: unknown, visit: (n: { kind: string; loc?: unknown; level?: number; type?: string }) => void): void {
+  if (!node || typeof node !== 'object') return;
+  const n = node as { kind?: string; loc?: unknown; level?: number; type?: string; body?: unknown[]; fact?: unknown; head?: unknown; title?: unknown; entries?: unknown };
+  visit(n);
+  // Recurse into the union members that contain nested nodes.
+  if (Array.isArray(n.body)) for (const child of n.body) walkElement(child, visit);
+  if (n.fact) walkElement(n.fact, visit);
+  if (n.head) walkElement(n.head, visit);
+  if (n.title) walkElement(n.title, visit);
+  if (n.entries && typeof n.entries === 'object') {
+    for (const v of Object.values(n.entries as Record<string, unknown>)) walkElement(v, visit);
+  }
+}
+
+// Invariant 3: every AST node has a valid kind and loc; type-specific fields
+// (Heading.level, Block.type) are within their declared ranges/unions.
+function checkAstShape(result: ParseResult, ctx: FuzzCtx): void {
+  if (!result.ast) return;
+  walkAst(result.ast, (node) => {
+    if (!node.kind || !VALID_KINDS.has(node.kind)) {
+      throw new FuzzFailure(`unknown kind ${String(node.kind)}`, ctx, { node });
+    }
+    if (!isValidLoc(node.loc as { start: { offset: number }; end: { offset: number } })) {
+      throw new FuzzFailure(`invalid loc on ${node.kind}`, ctx, { node });
+    }
+    if (node.kind === 'Heading') {
+      if (typeof node.level !== 'number' || node.level < 1 || node.level > 6) {
+        throw new FuzzFailure(`invalid Heading.level ${String(node.level)}`, ctx, { node });
+      }
+    }
+    if (node.kind === 'Block') {
+      const validBlockTypes = new Set(['meta', 'evidence', 'position', 'stakeholder', 'domain']);
+      if (typeof node.type !== 'string' || !validBlockTypes.has(node.type)) {
+        throw new FuzzFailure(`invalid Block.type ${String(node.type)}`, ctx, { node });
+      }
+    }
+  });
 }
 
 describe('parse() fuzz', () => {
