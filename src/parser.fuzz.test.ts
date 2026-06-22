@@ -70,7 +70,31 @@ function checkInvariants(source: string, ctx: FuzzCtx): ParseResult {
     throw new FuzzFailure('parse() threw', ctx, { error: String(e) });
   }
   checkNoThrow(result, ctx);
+  checkResultShape(result, ctx);
   return result;
+}
+
+// Invariant 2: codifies parse()'s decision tree (parser.ts:1240-1255).
+//   ok=true  ⇒ no errors AND ast defined
+//   ok=false ⇒ at least one of: errors present, ast undefined
+function checkResultShape(result: ParseResult, ctx: FuzzCtx): void {
+  const hasErrors = result.errors.length > 0;
+  const hasAst = result.ast !== undefined;
+
+  if (result.ok && (hasErrors || !hasAst)) {
+    throw new FuzzFailure(
+      `ok=true but ${hasErrors ? 'has errors' : 'no ast'}`,
+      ctx,
+      { result },
+    );
+  }
+  if (!result.ok && !hasErrors && hasAst) {
+    throw new FuzzFailure(
+      'ok=false but no errors and ast present',
+      ctx,
+      { result },
+    );
+  }
 }
 
 describe('parse() fuzz', () => {
