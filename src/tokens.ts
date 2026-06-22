@@ -90,7 +90,7 @@ export const ClaimText: TokenType = createToken({
 
 export const HeadingText: TokenType = createToken({
   name: 'HeadingText',
-  pattern: /[^\n\r]*/,
+  pattern: /[^\n\r][^\n\r]*/,
   start_chars_hint: Array.from('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'`'),
 });
 
@@ -117,7 +117,6 @@ export const RParen: TokenType = createToken({ name: 'RParen', pattern: /\)/ });
 export const Colon: TokenType = createToken({ name: 'Colon', pattern: /:/ });
 export const Comma: TokenType = createToken({ name: 'Comma', pattern: /,/ });
 export const Period: TokenType = createToken({ name: 'Period', pattern: /\./ });
-export const Dash: TokenType = createToken({ name: 'Dash', pattern: /-/ });
 export const Minus: TokenType = createToken({ name: 'Minus', pattern: /-/ });
 export const Plus: TokenType = createToken({ name: 'Plus', pattern: /\+/ });
 
@@ -163,20 +162,14 @@ export const allTokens: TokenType[] = [
   Stakeholder,
   Domain,
   StringTok,
-  // Punctuation that could prefix numbers
+  // Numbers must come before Minus so `-3.14` lexes as Number, not Minus.
+  Number,
+  // Punctuation that could prefix numbers (only matches when not part of a Number)
   Minus,
   Plus,
-  // Numbers
-  Number,
   // Identifiers
   Identifier,
-  // Text runs (catch-all-ish for long runs)
-  TitleText,
-  ClaimText,
-  HeadingText,
-  PlainScalar,
-  FlowScalar,
-  // Single-char punctuation
+  // Single-char punctuation must come before text runs so they aren't shadowed.
   LBrack,
   RBrack,
   LBrace,
@@ -186,7 +179,12 @@ export const allTokens: TokenType[] = [
   Colon,
   Comma,
   Period,
-  Dash,
+  // Text runs (catch-all-ish for long runs) come after single-char punctuation.
+  TitleText,
+  ClaimText,
+  HeadingText,
+  PlainScalar,
+  FlowScalar,
   // Whitespace (always last, always skipped)
   Whitespace,
   Newline,
