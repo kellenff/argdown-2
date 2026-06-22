@@ -10,13 +10,13 @@ import { mutate, makeRng } from './parser.mutate.js';
 import type { Document, Element } from './ast.js';
 
 const FIXTURES: ReadonlyArray<readonly [string, string]> = [
-  ['small-claim',     'src/parser.fixtures/small-claim.argdown'],
-  ['small-rule',      'src/parser.fixtures/small-rule.argdown'],
-  ['small-relation',  'src/parser.fixtures/small-relation.argdown'],
-  ['medium-climate',  'src/parser.fixtures/medium-climate.argdown'],
+  ['small-claim', 'src/parser.fixtures/small-claim.argdown'],
+  ['small-rule', 'src/parser.fixtures/small-rule.argdown'],
+  ['small-relation', 'src/parser.fixtures/small-relation.argdown'],
+  ['medium-climate', 'src/parser.fixtures/medium-climate.argdown'],
   ['heavy-relations', 'src/parser.fixtures/heavy-relations.argdown'],
-  ['deep-nesting',    'src/parser.fixtures/deep-nesting.argdown'],
-  ['large-stress',    'src/parser.fixtures/large-stress.argdown'],
+  ['deep-nesting', 'src/parser.fixtures/deep-nesting.argdown'],
+  ['large-stress', 'src/parser.fixtures/large-stress.argdown'],
 ];
 
 const ITERATIONS = Number(process.env.FUZZ_ITER ?? 200);
@@ -39,7 +39,11 @@ interface FuzzCtx {
 }
 
 class FuzzFailure extends Error {
-  constructor(msg: string, public ctx: FuzzCtx, public extra?: Record<string, unknown>) {
+  constructor(
+    msg: string,
+    public ctx: FuzzCtx,
+    public extra?: Record<string, unknown>,
+  ) {
     super(formatFuzzFailure(msg, ctx, extra));
   }
 }
@@ -79,65 +83,111 @@ function checkResultShape(result: ParseResult, ctx: FuzzCtx): void {
   const hasAst = result.ok ? result.ast !== undefined : result.partial !== undefined;
 
   if (result.ok && (hasErrors || !hasAst)) {
-    throw new FuzzFailure(
-      `ok=true but ${hasErrors ? 'has errors' : 'no ast'}`,
-      ctx,
-      { ok: result.ok, hasErrors, hasAst },
-    );
+    throw new FuzzFailure(`ok=true but ${hasErrors ? 'has errors' : 'no ast'}`, ctx, {
+      ok: result.ok,
+      hasErrors,
+      hasAst,
+    });
   }
   if (!result.ok && !hasErrors && hasAst) {
-    throw new FuzzFailure(
-      'ok=false but no errors and ast present',
-      ctx,
-      { ok: result.ok, hasErrors, hasAst },
-    );
+    throw new FuzzFailure('ok=false but no errors and ast present', ctx, {
+      ok: result.ok,
+      hasErrors,
+      hasAst,
+    });
   }
 }
 
 // All `kind` discriminants declared in src/ast.ts. Keep in sync.
 const VALID_KINDS: ReadonlySet<string> = new Set([
-  'AttributeBlock', 'Block', 'BlockComment', 'BlockTitle',
-  'BooleanValue', 'Document', 'Fact', 'FactRef', 'FactStatement',
-  'FlowMapping', 'FlowScalar', 'FlowSequence', 'Frontmatter',
-  'Heading', 'IdentifierHead', 'LineComment', 'ListItem',
-  'NullValue', 'NumberValue', 'PlainScalar', 'Relation',
-  'RelationStatement', 'Rule', 'RuleExpr', 'RuleStatement',
-  'StringValue', 'TitleHead', 'YamlLine',
+  'AttributeBlock',
+  'Block',
+  'BlockComment',
+  'BlockTitle',
+  'BooleanValue',
+  'Document',
+  'Fact',
+  'FactRef',
+  'FactStatement',
+  'FlowMapping',
+  'FlowScalar',
+  'FlowSequence',
+  'Frontmatter',
+  'Heading',
+  'IdentifierHead',
+  'LineComment',
+  'ListItem',
+  'NullValue',
+  'NumberValue',
+  'PlainScalar',
+  'Relation',
+  'RelationStatement',
+  'Rule',
+  'RuleExpr',
+  'RuleStatement',
+  'StringValue',
+  'TitleHead',
+  'YamlLine',
 ]);
 
-function isValidLoc(loc: { start: { offset: number }; end: { offset: number } } | undefined): boolean {
+function isValidLoc(
+  loc: { start: { offset: number }; end: { offset: number } } | undefined,
+): boolean {
   if (!loc) return false;
   const { start, end } = loc;
-  return Number.isInteger(start.offset) && Number.isInteger(end.offset) && start.offset >= 0 && end.offset >= start.offset;
+  return (
+    Number.isInteger(start.offset) &&
+    Number.isInteger(end.offset) &&
+    start.offset >= 0 &&
+    end.offset >= start.offset
+  );
 }
 
-function walkAst(doc: Document, visit: (node: { kind?: string; loc?: unknown; level?: number; type?: string }) => void): void {
+function walkAst(
+  doc: Document,
+  visit: (node: { kind?: string; loc?: unknown; level?: number; type?: string }) => void,
+): void {
   visit(doc as unknown as { kind: string });
   for (const el of doc.elements) walkElement(el, visit);
 }
 
-function walkElement(node: unknown, visit: (n: { kind?: string; loc?: unknown; level?: number; type?: string }) => void): void {
+function walkElement(
+  node: unknown,
+  visit: (n: { kind?: string; loc?: unknown; level?: number; type?: string }) => void,
+): void {
   if (!node || typeof node !== 'object') return;
   const n = node as {
-    kind?: string; loc?: unknown; level?: number; type?: string;
-    body?: unknown[]; fact?: unknown; head?: unknown; title?: unknown;
-    ref?: unknown; attributes?: unknown; rule?: unknown; relation?: unknown;
-    premises?: unknown[]; from?: unknown; to?: unknown; items?: unknown[];
+    kind?: string;
+    loc?: unknown;
+    level?: number;
+    type?: string;
+    body?: unknown[];
+    fact?: unknown;
+    head?: unknown;
+    title?: unknown;
+    ref?: unknown;
+    attributes?: unknown;
+    rule?: unknown;
+    relation?: unknown;
+    premises?: unknown[];
+    from?: unknown;
+    to?: unknown;
+    items?: unknown[];
     entries?: unknown;
   };
   visit(n);
-  if (Array.isArray(n.body))     for (const c of n.body)     walkElement(c, visit);
+  if (Array.isArray(n.body)) for (const c of n.body) walkElement(c, visit);
   if (Array.isArray(n.premises)) for (const c of n.premises) walkElement(c, visit);
-  if (Array.isArray(n.items))   for (const c of n.items)   walkElement(c, visit);
-  if (n.fact)       walkElement(n.fact, visit);
-  if (n.head)       walkElement(n.head, visit);
-  if (n.title)      walkElement(n.title, visit);
-  if (n.ref)        walkElement(n.ref, visit);
+  if (Array.isArray(n.items)) for (const c of n.items) walkElement(c, visit);
+  if (n.fact) walkElement(n.fact, visit);
+  if (n.head) walkElement(n.head, visit);
+  if (n.title) walkElement(n.title, visit);
+  if (n.ref) walkElement(n.ref, visit);
   if (n.attributes) walkElement(n.attributes, visit);
-  if (n.rule)       walkElement(n.rule, visit);
-  if (n.relation)   walkElement(n.relation, visit);
-  if (n.from)       walkElement(n.from, visit);
-  if (n.to)         walkElement(n.to, visit);
+  if (n.rule) walkElement(n.rule, visit);
+  if (n.relation) walkElement(n.relation, visit);
+  if (n.from) walkElement(n.from, visit);
+  if (n.to) walkElement(n.to, visit);
   if (n.entries && typeof n.entries === 'object') {
     for (const v of Object.values(n.entries as Record<string, unknown>)) walkElement(v, visit);
   }
@@ -187,20 +237,21 @@ function checkIdempotence(result: ParseResult, source: string, ctx: FuzzCtx): vo
     try {
       subResult = parse(sub);
     } catch (e) {
-      throw new FuzzFailure(
-        `sub-parse of ${el.kind} threw`,
-        ctx,
-        { element: el.kind, sub, error: String(e) },
-      );
+      throw new FuzzFailure(`sub-parse of ${el.kind} threw`, ctx, {
+        element: el.kind,
+        sub,
+        error: String(e),
+      });
     }
 
-    const parentFlaggedOffset = result.errors.some(e => e.loc && e.loc.offset === startOff);
+    const parentFlaggedOffset = result.errors.some((e) => e.loc && e.loc.offset === startOff);
     if (!parentFlaggedOffset && !subResult.ok && subResult.errors.length > 0) {
-      throw new FuzzFailure(
-        `parent accepts but sub-parse rejects ${el.kind}`,
-        ctx,
-        { element: el.kind, sub, parentErrors: result.errors, subErrors: subResult.errors },
-      );
+      throw new FuzzFailure(`parent accepts but sub-parse rejects ${el.kind}`, ctx, {
+        element: el.kind,
+        sub,
+        parentErrors: result.errors,
+        subErrors: subResult.errors,
+      });
     }
   }
 }
@@ -213,7 +264,12 @@ describe('parse() fuzz', () => {
       let current = source;
       for (let i = 0; i < ITERATIONS; i++) {
         current = mutate(current, rng);
-        checkInvariants(current, { fixture: name, seed: seedFromName(name), iter: i, source: current });
+        checkInvariants(current, {
+          fixture: name,
+          seed: seedFromName(name),
+          iter: i,
+          source: current,
+        });
       }
     });
   }

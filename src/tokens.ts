@@ -1,7 +1,7 @@
 // src/tokens.ts
 // Chevrotain token vocabulary for Argdown Extended.
 
-import { createToken, Lexer, type TokenType, type ILexingResult } from 'chevrotain';
+import { createToken, Lexer, type TokenType } from 'chevrotain';
 
 // ----- Multi-character operators (longest match wins) -----
 
@@ -132,7 +132,6 @@ export const Colon: TokenType = createToken({ name: 'Colon', pattern: /:/ });
 export const Comma: TokenType = createToken({ name: 'Comma', pattern: /,/ });
 export const Period: TokenType = createToken({ name: 'Period', pattern: /\./ });
 export const Minus: TokenType = createToken({ name: 'Minus', pattern: /-/ });
-export const Plus: TokenType = createToken({ name: 'Plus', pattern: /\+/ });
 
 // ----- Whitespace (skipped) -----
 
@@ -151,7 +150,7 @@ export const Newline: TokenType = createToken({
 // ----- Order matters: longest match first within a start char -----
 // Chevrotain uses longest match by default, but explicit ordering is clearer.
 
-export const allTokens: TokenType[] = [
+const allTokens: TokenType[] = [
   // Multi-char operators
   RuleOp,
   Support,
@@ -180,7 +179,6 @@ export const allTokens: TokenType[] = [
   Number,
   // Punctuation that could prefix numbers (only matches when not part of a Number)
   Minus,
-  Plus,
   // Single-char punctuation must come before text runs so they aren't shadowed.
   LBrack,
   RBrack,
@@ -213,7 +211,3 @@ export const ArgdownLexer: Lexer = new Lexer(allTokens, {
   // so the token order in `allTokens` is the disambiguation order.
   ensureOptimizations: false,
 });
-
-export function tokenize(source: string): ILexingResult {
-  return ArgdownLexer.tokenize(source);
-}

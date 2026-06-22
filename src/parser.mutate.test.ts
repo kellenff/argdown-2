@@ -134,7 +134,9 @@ describe('mutate', () => {
     const shapes = new Set<string>();
     for (let i = 0; i < 1000; i++) {
       const out = mutate(SRC, rng);
-      shapes.add(`${out.length === SRC.length ? 'same' : out.length > SRC.length ? 'longer' : 'shorter'}`);
+      shapes.add(
+        `${out.length === SRC.length ? 'same' : out.length > SRC.length ? 'longer' : 'shorter'}`,
+      );
     }
     expect(shapes.size).toBeGreaterThanOrEqual(2);
   });

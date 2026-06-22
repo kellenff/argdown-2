@@ -56,7 +56,7 @@ export type ParseResult =
 // CST shape
 // =========================================================================
 
-export type CstNode = {
+type CstNode = {
   image?: string | undefined;
   tokenType?: { name: string } | undefined;
   startLine?: number | undefined;
@@ -67,7 +67,7 @@ export type CstNode = {
   endOffset?: number | undefined;
 } & Record<string, unknown>;
 
-export type CstChildren = Record<string, CstNode[] | unknown[] | undefined>;
+type CstChildren = Record<string, CstNode[] | unknown[] | undefined>;
 
 // =========================================================================
 // EOF constant (tokens.ts doesn't export it directly; we synthesize one)
@@ -132,16 +132,6 @@ class TokenStream {
     return tok;
   }
 
-  expect(name: string, hint?: string): IToken | undefined {
-    const tok = this.current();
-    if (tok.tokenType.name !== name) {
-      this.recordError(hint ?? `expected ${name}`, tok, 'parse.mismatchedToken');
-      return undefined;
-    }
-    this.pos++;
-    return tok;
-  }
-
   save(): number {
     return this.pos;
   }
@@ -152,16 +142,6 @@ class TokenStream {
 
   eof(): boolean {
     return this.current().tokenType.name === 'EOF';
-  }
-
-  hasMore(): boolean {
-    return !this.eof();
-  }
-
-  skipUntil(...names: string[]): void {
-    while (!this.eof() && !names.includes(this.current().tokenType.name)) {
-      this.pos++;
-    }
   }
 
   // Skip whitespace-only text tokens (HeadingText/TitleText/etc. that the
@@ -218,7 +198,7 @@ function tokenNode(tok: IToken): CstNode {
 
 // Single-token rule: match the named token, wrap it as a CST node.
 // Failure is silent — caller's `??` chain absorbs it. Errors are reported
-// only by callers using `s.consume()` / `s.expect()` directly.
+// only by callers using `s.consume()` directly.
 function tokenRule(s: TokenStream, tokenName: string): CstNode | undefined {
   const tok = s.peek();
   if (tok.tokenType.name !== tokenName) return undefined;
