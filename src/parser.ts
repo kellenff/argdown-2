@@ -1,7 +1,8 @@
 // src/parser.ts
 // ArgdownParser: Chevrotain-based parser for Argdown Extended.
 
-import { CstParser } from 'chevrotain';
+import { CstParser, EOF } from 'chevrotain';
+import type { ParserMethod, CstNode } from 'chevrotain';
 
 import type { Document } from './ast.js';
 import { allTokens } from './tokens.js';
@@ -41,6 +42,19 @@ export type ParseResult =
 // ----- Parser class -----
 
 export class ArgdownParser extends CstParser {
+  // Rule field declarations — populated by $.RULE at runtime
+  declare document: ParserMethod<[], CstNode>;
+  declare element: ParserMethod<[], CstNode>;
+  declare statement: ParserMethod<[], CstNode>;
+  declare frontmatter: ParserMethod<[], CstNode>;
+  declare blankLine: ParserMethod<[], CstNode>;
+  declare comment: ParserMethod<[], CstNode>;
+  declare heading: ParserMethod<[], CstNode>;
+  declare block: ParserMethod<[], CstNode>;
+  declare factStatement: ParserMethod<[], CstNode>;
+  declare ruleStatement: ParserMethod<[], CstNode>;
+  declare relationStatement: ParserMethod<[], CstNode>;
+
   constructor() {
     super(allTokens, {
       recoveryEnabled: true,
@@ -51,10 +65,44 @@ export class ArgdownParser extends CstParser {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const $ = this;
 
-    // RULES WILL BE ADDED IN SUBSEQUENT TASKS
+    // ----- Top-level structure -----
+
     $.RULE('document', () => {
-      // placeholder
+      $.OPTION(() => $.SUBRULE($.frontmatter));
+      $.MANY({
+        GATE: () => this.LA(1).tokenType !== EOF,
+        DEF: () => $.SUBRULE($.element),
+      });
     });
+
+    $.RULE('element', () => {
+      $.OR([
+        { ALT: () => $.SUBRULE($.blankLine) },
+        { ALT: () => $.SUBRULE($.comment) },
+        { ALT: () => $.SUBRULE($.heading) },
+        { ALT: () => $.SUBRULE($.block) },
+        { ALT: () => $.SUBRULE($.statement) },
+      ]);
+    });
+
+    // The `statement` rule disambiguates fact / rule / relation.
+    $.RULE('statement', () => {
+      $.OR([
+        { ALT: () => $.SUBRULE($.ruleStatement) },
+        { ALT: () => $.SUBRULE($.relationStatement) },
+        { ALT: () => $.SUBRULE($.factStatement) },
+      ]);
+    });
+
+    // Placeholder rules — defined in later tasks
+    $.RULE('frontmatter', () => {});
+    $.RULE('blankLine', () => { $.CONSUME(EOF); });
+    $.RULE('comment', () => {});
+    $.RULE('heading', () => {});
+    $.RULE('block', () => {});
+    $.RULE('factStatement', () => {});
+    $.RULE('ruleStatement', () => {});
+    $.RULE('relationStatement', () => {});
   }
 }
 
