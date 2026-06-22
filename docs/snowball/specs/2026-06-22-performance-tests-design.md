@@ -157,7 +157,9 @@ if (mode === '--baseline') {
   await writeBaselineJson(results, peakHeapMB);
 } else if (mode === '--check') {
   await checkAgainstBaseline(results, peakHeapMB);
-  process.exit(0); // this cycle: always exit 0
+  // this cycle: no threshold enforcement, so a clean diff run exits 0.
+  // Errors inside checkAgainstBaseline (missing baseline, schema mismatch,
+  // errored parse task) throw and propagate to a non-zero exit.
 } else {
   bench.table(); // Tinybench's built-in pretty-printer
 }
@@ -166,9 +168,9 @@ if (mode === '--baseline') {
 **Three modes:**
 - **(no flag)** — print Tinybench's default table. For ad-hoc local runs.
 - **`--baseline`** — run all tasks, write `perf-baseline.json`. Invoked once per environment.
-- **`--check`** — run all tasks, diff against `perf-baseline.json`, print a human-readable diff. Always exits 0 this cycle.
+- **`--check`** — run all tasks, diff against `perf-baseline.json`, print a human-readable diff. **Clean run exits 0 this cycle**; error cases (missing baseline, schema mismatch, errored parse task) throw and produce a non-zero exit.
 
-**Why `--check` exits 0 unconditionally this cycle:** The comparator is functional (it loads the baseline, runs the bench, prints the diff) but the regression-catching decision belongs to the next cycle. Wiring `--check` into CI and turning it into a real exit code is a one-line change for that cycle.
+**Why `--check` does not enforce a threshold this cycle:** The comparator is functional (it loads the baseline, runs the bench, prints the diff) but the regression-catching decision belongs to the next cycle. Wiring `--check` into CI and turning it into a real exit code on threshold violation is a one-line change for that cycle.
 
 ---
 
