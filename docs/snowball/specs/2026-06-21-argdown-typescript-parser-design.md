@@ -51,7 +51,6 @@
 ```
 src/
   ast.ts              # discriminated-union node types (leaf, no internal imports)
-  ast.test.ts         # (none — types only, no runtime)
   tokens.ts           # Chevrotain TokenType vocabulary
   tokens.test.ts      # one assertion per token
   parser.ts           # Chevrotain Parser subclass + parse() wrapper + result types
@@ -62,6 +61,8 @@ tsconfig.json
 .oxlintrc.json
 .oxfmtrc.json
 ```
+
+`ast.ts` has no runtime, so no test file accompanies it.
 
 **Dependency direction (one-way, no cycles):**
 ```
@@ -110,8 +111,8 @@ HeadingMarker = /#{1,6}/   // captures 1-6 hashes; value = the literal string
 - `FlowScalar` — chars excluding `,[]{}`, LF, CR
 
 **Single-character punctuation** (after operators):
-- `LBrack` `RBrack` `LBrace` `RBrace` `LParen` `RParen` `Colon` `Comma` `Period` `Dash` `Plus` `Minus`
-- `Colon` matches when `:-` or `:::` don't; `Dash` matches when a `Number` doesn't start; `Period` matches when no digits follow
+- `LBrack` `RBrack` `LBrace` `RBrace` `LParen` `RParen` `Colon` `Comma` `Period` `Dash` `Minus`
+- `Colon` matches when `:-` or `:::` don't; `Dash` matches when a `Number` doesn't start; `Period` matches when no digits follow; `Plus` is not a standalone token (only appears inside `Number` as the exponent sign)
 
 **Skipped at lex time:**
 - Horizontal whitespace (spaces, tabs) — irrelevant per BNF lexical conventions
@@ -192,29 +193,43 @@ interface BaseNode { loc: SourceLocation; }
 
 ```
 Document
-├─ Frontmatter                  ── Record<string, Value> + loc
-├─ Heading                      ── level 1-6 + text + loc
-├─ Block                        ── type + title? + body + loc
-│  └─ BlockBody                  ── BlockLine[]
-│     └─ BlockLine               ── YamlLine | ListItem | Element (recursive)
-│        ├─ YamlLine            ── key + value + loc
-│        ├─ ListItem            ── fact + loc
-│        └─ (recurse into Element)
-├─ FactStatement                ── Fact
-│  └─ Fact                       ── ref + claimText? + attributes? + loc
-│     └─ FactRef                 ── FactHead + loc
-│        └─ FactHead             ── IdentifierHead | TitleHead
-├─ RuleStatement                ── Rule
-│  └─ Rule                       ── ref + premises[] + loc
-├─ RelationStatement            ── Relation
-│  └─ Relation                   ── endpoint + arrow + endpoint + attrs? + loc
-│     ├─ RelationEndpoint        ── FactRef | RuleExpr
-│     └─ RuleExpr                ── rule + loc
-├─ LineComment                  ── text + loc
-└─ BlockComment                 ── text + loc
+├─ Frontmatter                  ── entries: Record<string, Value> + loc
+├─ Heading                      ── level: 1..6 + text: string + loc
+├─ Block                        ── type: BlockType + title?: BlockTitle + body: BlockLine[] + loc
+│  └─ BlockTitle                 ── text: string + loc
+│  └─ BlockLine                  ── YamlLine | ListItem | Element (recursive)
+│     ├─ YamlLine               ── key: string + value: YamlValue + loc
+│     ├─ ListItem               ── fact: Fact + loc
+│     └─ (recurse into Element)
+├─ FactStatement                ── fact: Fact + loc
+│  └─ Fact                       ── ref: FactRef + claimText?: string + attributes?: AttributeBlock + loc
+│     ├─ AttributeBlock          ── entries: Record<string, Value> + loc
+│     │  └─ (key/value pairs; key is identifier-string, value is a Value node with loc on the key)
+│     │     [key is not a separate node — it's the string property of the Value's loc]
+│     └─ FactRef                 ── head: FactHead + loc
+│        └─ FactHead             ── { kind: 'IdentifierHead', identifier: string } | { kind: 'TitleHead', title: string }
+├─ RuleStatement                ── rule: Rule + loc
+│  └─ Rule                       ── ref: FactRef + premises: FactRef[] + loc
+├─ RelationStatement            ── relation: Relation + loc
+│  └─ Relation                   ── endpoint + arrow: Arrow + endpoint + attributes?: AttributeBlock + loc
+│     └─ RelationEndpoint        ── FactRef | RuleExpr
+│        └─ RuleExpr             ── rule: Rule + loc
+├─ LineComment                  ── text: string + loc
+└─ BlockComment                 ── text: string + loc
 
-Value                           ── StringValue | NumberValue | BooleanValue |
-                                  NullValue | FlowSequence | FlowMapping | FlowScalar
+Element = Heading | Block | FactStatement | RuleStatement | RelationStatement
+        | LineComment | BlockComment
+        // (the top-level union a Document.elements can hold; blank lines stripped)
+
+Value  = StringValue | NumberValue | BooleanValue | NullValue
+       | FlowSequence | FlowMapping | FlowScalar
+       // FlowSequence ── items: Value[] + loc
+       // FlowMapping  ── entries: Record<string, Value> + loc
+       // FlowScalar   ── text: string + loc
+       // StringValue  ── value: string + loc
+       // NumberValue  ── value: number + loc
+       // BooleanValue ── value: boolean + loc
+       // NullValue    ── loc (no payload)
 ```
 
 ---
@@ -279,16 +294,16 @@ export type {
   SourceLocation, Position,
 } from './parser';
 export type {
-  Document, Frontmatter, Heading, Block, BlockLine, ListItem,
+  Document, Frontmatter, Heading, Block, BlockLine, BlockTitle, ListItem,
   FactStatement, RuleStatement, RelationStatement,
-  Fact, FactRef, FactHead,
+  Fact, FactRef, FactHead, IdentifierHead, TitleHead,
   Rule, Relation, RelationEndpoint, RuleExpr, Arrow,
-  AttributeBlock, AttributeEntry, Key,
+  AttributeBlock,
   Value, StringValue, NumberValue, BooleanValue, NullValue,
   FlowSequence, FlowMapping, FlowScalar,
-  YamlContent, YamlLine, YamlValue, PlainScalar,
+  YamlLine, YamlValue, PlainScalar,
   LineComment, BlockComment,
-  BlockType, BlockTitle, Element,
+  BlockType, Element,
 } from './ast';
 ```
 
