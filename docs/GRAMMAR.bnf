@@ -1,0 +1,538 @@
+(* ================================================================= *)
+(*  Argdown Extended — Datalog-lite                                  *)
+(*  Complete grammar in Backus-Naur Form (BNF)                       *)
+(*                                                                   *)
+(*  Source of truth : docs/DESIGN.md                                 *)
+(*                                                                   *)
+(*  This file formalises and COMPLETES the partial EBNF in section 5 *)
+(*  of DESIGN.md. It covers every construct described in the         *)
+(*  specification and shown in the worked examples, and it defines   *)
+(*  every symbol the section-5 sketch left dangling (Text, Value,    *)
+(*  Heading, Comment, Newline, YAML content, terminals, ...).        *)
+(*                                                                   *)
+(*  Where the section-5 EBNF disagrees with the examples, or is      *)
+(*  ambiguous, this grammar follows the examples and resolves the    *)
+(*  ambiguity; every such decision is recorded in the NOTES section  *)
+(*  at the foot of the file.                                         *)
+(* ================================================================= *)
+
+
+(* ----------------------------------------------------------------- *)
+(*  NOTATION                                                         *)
+(* ----------------------------------------------------------------- *)
+(*    <name>          a non-terminal symbol                          *)
+(*    ::=             "is defined as"                                *)
+(*    |               alternation (a choice between alternatives)    *)
+(*    "..."           a literal terminal (verbatim characters)       *)
+(*    juxtaposition   concatenation (an ordered sequence)            *)
+(*    (* ... *)       a comment (not part of the language)           *)
+(*                                                                   *)
+(*  This is pure BNF: it uses NO EBNF repetition/option operators    *)
+(*  (no *, +, ?). Repetition is expressed with right recursion;      *)
+(*  optional parts use an explicit `<empty>` alternative. Character  *)
+(*  sets too large to enumerate are described in prose on the        *)
+(*  right-hand side, a common and accepted BNF convention.           *)
+
+
+(* ----------------------------------------------------------------- *)
+(*  LEXICAL CONVENTIONS                                              *)
+(* ----------------------------------------------------------------- *)
+(*  - Horizontal whitespace (spaces and tabs, <hws>) BETWEEN tokens  *)
+(*    is insignificant and is omitted from the syntactic productions *)
+(*    below, EXCEPT where a production references <hws> or <newline> *)
+(*    explicitly, and except inside string literals, text runs and   *)
+(*    plain scalars (where every character is significant).          *)
+(*                                                                   *)
+(*  - <newline> IS significant: it terminates the line-oriented      *)
+(*    statements (facts, rules, relations, headings, YAML lines,     *)
+(*    list items and block delimiters).                              *)
+(*                                                                   *)
+(*  - Inside an attribute block  "{" ... "}"  and inside a flow      *)
+(*    sequence  "[" ... "]" , newlines are treated as ordinary       *)
+(*    whitespace, so those constructs may span several physical      *)
+(*    lines (as the multi-line attribute blocks in DESIGN.md do).    *)
+(*                                                                   *)
+(*  - The three line-initial statement forms (fact / rule /          *)
+(*    relation) share a leading <fact-ref>; they are disambiguated   *)
+(*    by the token that follows it: ":-" begins a rule, an <arrow>   *)
+(*    begins a relation, and anything else (claim text, "{", or the  *)
+(*    line end) makes it a fact. See NOTE 4.                         *)
+
+
+(* ================================================================= *)
+(*  1. DOCUMENT STRUCTURE                                            *)
+(* ================================================================= *)
+
+<document>            ::= <opt-frontmatter> <element-list>
+
+<opt-frontmatter>     ::= <frontmatter>
+                        | <empty>
+
+(* Frontmatter, if present, is the first thing in the document. *)
+<frontmatter>         ::= "===" <newline> <yaml-content> "===" <line-end>
+
+<element-list>        ::= <empty>
+                        | <element> <element-list>
+
+<element>             ::= <blank-line>
+                        | <comment>
+                        | <heading>
+                        | <block>
+                        | <fact-statement>
+                        | <rule-statement>
+                        | <relation-statement>
+
+<fact-statement>      ::= <fact>     <line-end>
+<rule-statement>      ::= <rule>     <line-end>
+<relation-statement>  ::= <relation> <line-end>
+
+
+(* ================================================================= *)
+(*  2. HEADINGS                                                      *)
+(* ================================================================= *)
+(*  Markdown-style headings, e.g.  "# Position: Aggressive Mitigation"*)
+(*  The marker is the maximal leading run of "#" (one to six).        *)
+
+<heading>             ::= <heading-marker> <heading-text> <line-end>
+
+<heading-marker>      ::= "#"
+                        | "##"
+                        | "###"
+                        | "####"
+                        | "#####"
+                        | "######"
+
+
+(* ================================================================= *)
+(*  3. COMMENTS                                                      *)
+(* ================================================================= *)
+(*  DESIGN.md lists Comment as an element but does not give its       *)
+(*  lexical form; canonical Argdown conventions are adopted (NOTE 1). *)
+
+<comment>             ::= <line-comment>
+                        | <block-comment>
+
+<line-comment>        ::= "//" <rest-of-line> <line-end>
+
+<block-comment>       ::= "/*" <comment-body> "*/"
+
+
+(* ================================================================= *)
+(*  4. FACTS  (Arguments and Claims)                                *)
+(* ================================================================= *)
+(*  Forms shown in DESIGN.md:                                        *)
+(*    [#id] claim text { attrs }     id in brackets, text after      *)
+(*    [#id] claim text               id in brackets, text after      *)
+(*    [#id] { attrs }                id in brackets, attrs only      *)
+(*    [#id]                          bare reference / declaration     *)
+(*    [claim text] { attrs }         text in brackets                *)
+(*    [claim text]                   text in brackets                *)
+
+<fact>                ::= <fact-ref> <opt-claim-text> <opt-attribute-block>
+
+<opt-claim-text>      ::= <claim-text>
+                        | <empty>
+
+(* A fact-ref is the bracketed head only: an "#identifier" OR an      *)
+(* inline title text. It carries NO trailing claim text or attribute  *)
+(* block, which keeps rule terms and relation endpoints unambiguous   *)
+(* (NOTE 2).                                                          *)
+<fact-ref>            ::= "[" <fact-head> "]"
+
+<fact-head>           ::= "#" <identifier>
+                        | <title-text>
+
+
+(* ================================================================= *)
+(*  5. ATTRIBUTE BLOCKS  (unified {} metadata / modality / modifiers)*)
+(* ================================================================= *)
+(*  e.g.  { author: "Dr. Jane Smith", confidence: 0.95,              *)
+(*          tags: ["climate", "policy"] }                            *)
+
+<opt-attribute-block> ::= <attribute-block>
+                        | <empty>
+
+<attribute-block>     ::= "{" <attribute-entries> "}"
+
+<attribute-entries>   ::= <empty>
+                        | <attribute-entry> <attribute-entries-rest>
+
+<attribute-entries-rest> ::= <empty>
+                        | "," <attribute-entry> <attribute-entries-rest>
+
+(* DESIGN.md writes entries as (YAML_Line | KeyValue); they are       *)
+(* unified here as one "key : value" form (NOTE 5).                   *)
+<attribute-entry>     ::= <key> ":" <value>
+
+<key>                 ::= <identifier>
+
+
+(* ----- Values ---------------------------------------------------- *)
+(*  Typed alternatives are preferred; <flow-scalar> is the fallback   *)
+(*  for an unquoted (plain) scalar (NOTE 5).                          *)
+
+<value>               ::= <string>
+                        | <number>
+                        | <boolean>
+                        | <null>
+                        | <flow-sequence>
+                        | <flow-mapping>
+                        | <flow-scalar>
+
+<flow-sequence>       ::= "[" <flow-elements> "]"
+
+<flow-elements>       ::= <empty>
+                        | <value> <flow-elements-rest>
+
+<flow-elements-rest>  ::= <empty>
+                        | "," <value> <flow-elements-rest>
+
+<flow-mapping>        ::= "{" <attribute-entries> "}"
+
+
+(* ================================================================= *)
+(*  6. RULES  (Logic and Derivations:  ":-" = if,  "," = and)       *)
+(* ================================================================= *)
+(*  [#mitigation] :- [#co2], [#impacts], [#coord].                   *)
+
+<rule>                ::= <fact-ref> ":-" <fact-ref-list> "."
+
+<fact-ref-list>       ::= <fact-ref>
+                        | <fact-ref> "," <fact-ref-list>
+
+
+(* ================================================================= *)
+(*  7. RELATIONS  (Graph edges)                                     *)
+(* ================================================================= *)
+(*  [#A] --> [#B] { strength: "strong" }                            *)
+(*  [#Evidence-flaw] --x ([#mitigation] :- [#gradual]) { reason: ...}*)
+
+<relation>            ::= <relation-endpoint> <arrow> <relation-endpoint> <opt-attribute-block>
+
+<relation-endpoint>   ::= <fact-ref>
+                        | <rule-expr>
+
+(* A rule used as a relation endpoint (e.g. for an undercut). *)
+<rule-expr>           ::= "(" <fact-ref> ":-" <fact-ref-list> ")"
+
+(* The complete relationship taxonomy from DESIGN.md section 3. *)
+<arrow>               ::= "-->"      (* Support       *)
+                        | "--x"      (* Attack        *)
+                        | "-.->"     (* Undercut      *)
+                        | "-.-"      (* Undermine     *)
+                        | "~>"       (* Concession    *)
+                        | "?>"       (* Qualification *)
+                        | "<->"      (* Equivalence   *)
+
+
+(* ================================================================= *)
+(*  8. STRUCTURED BLOCKS  ( ::: type [title] ... ::: )              *)
+(* ================================================================= *)
+(*  :::evidence[Satellite Data]                                     *)
+(*  type: empirical                                                 *)
+(*  method: satellite_measurement                                   *)
+(*  :::                                                             *)
+
+<block>               ::= <block-open> <newline> <block-body> <block-close>
+
+<block-open>          ::= ":::" <block-type> <opt-title>
+
+(* A closing fence is ":::" alone on its line; ":::" followed by a    *)
+(* <block-type> instead opens a (possibly nested) block.             *)
+<block-close>         ::= ":::" <line-end>
+
+<block-type>          ::= "meta"
+                        | "evidence"
+                        | "position"
+                        | "stakeholder"
+                        | "domain"
+
+<opt-title>           ::= <title>
+                        | <empty>
+
+<title>               ::= "[" <title-text> "]"
+
+<block-body>          ::= <block-line-list>
+
+<block-line-list>     ::= <empty>
+                        | <block-line> <block-line-list>
+
+<block-line>          ::= <yaml-line>
+                        | <list-item>
+                        | <element>
+
+<list-item>           ::= "-" <hws> <fact> <line-end>
+
+
+(* ================================================================= *)
+(*  9. YAML CONTENT  (frontmatter body and block bodies)            *)
+(* ================================================================= *)
+(*  A minimal YAML subset: one "key: value" per line. Plain scalar   *)
+(*  values run to the end of the line (NOTE 6).                       *)
+
+<yaml-content>        ::= <yaml-line-list>
+
+<yaml-line-list>      ::= <empty>
+                        | <yaml-body-line> <yaml-line-list>
+
+<yaml-body-line>      ::= <yaml-line>
+                        | <blank-line>
+                        | <comment>
+
+<yaml-line>           ::= <key> ":" <yaml-value> <line-end>
+
+(* If the first non-space character of the value is '"' or '[', the   *)
+(* string / flow-sequence form is taken; otherwise the value is a     *)
+(* plain scalar spanning the rest of the line.                        *)
+<yaml-value>          ::= <flow-sequence>
+                        | <string>
+                        | <plain-scalar>
+                        | <empty>
+
+
+(* ================================================================= *)
+(*  10. TERMINALS  (lexical grammar)                                *)
+(* ================================================================= *)
+
+(* ----- Identifiers ----------------------------------------------- *)
+(*  Identifier ::= [a-zA-Z0-9_-]+   (per DESIGN.md section 5)         *)
+
+<identifier>          ::= <id-char>
+                        | <id-char> <identifier>
+
+<id-char>             ::= <letter>
+                        | <digit>
+                        | "_"
+                        | "-"
+
+<letter>              ::= "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H"
+                        | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P"
+                        | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X"
+                        | "Y" | "Z"
+                        | "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h"
+                        | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p"
+                        | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x"
+                        | "y" | "z"
+
+<digit>               ::= "0" | "1" | "2" | "3" | "4"
+                        | "5" | "6" | "7" | "8" | "9"
+
+<nonzero-digit>       ::= "1" | "2" | "3" | "4"
+                        | "5" | "6" | "7" | "8" | "9"
+
+
+(* ----- Strings (JSON-style; superset of DESIGN.md literals) ------ *)
+
+<string>              ::= '"' <string-body> '"'
+
+<string-body>         ::= <empty>
+                        | <string-char> <string-body>
+
+<string-char>         ::= <string-plain>
+                        | <escape-seq>
+
+<string-plain>        ::= any Unicode character except '"', "\", LINE FEED or CARRIAGE RETURN
+
+<escape-seq>          ::= "\" '"'
+                        | "\" "\"
+                        | "\" "/"
+                        | "\" "b"
+                        | "\" "f"
+                        | "\" "n"
+                        | "\" "r"
+                        | "\" "t"
+                        | "\" "u" <hex> <hex> <hex> <hex>
+
+<hex>                 ::= <digit>
+                        | "a" | "b" | "c" | "d" | "e" | "f"
+                        | "A" | "B" | "C" | "D" | "E" | "F"
+
+
+(* ----- Numbers (JSON-style; superset of DESIGN.md literals) ------ *)
+
+<number>              ::= <opt-minus> <int-part> <opt-frac> <opt-exp>
+
+<opt-minus>           ::= "-"
+                        | <empty>
+
+<int-part>            ::= "0"
+                        | <nonzero-digit> <digits>
+
+<digits>              ::= <empty>
+                        | <digit> <digits>
+
+<opt-frac>            ::= "." <digit> <digits>
+                        | <empty>
+
+<opt-exp>             ::= <exp-marker> <opt-sign> <digit> <digits>
+                        | <empty>
+
+<exp-marker>          ::= "e"
+                        | "E"
+
+<opt-sign>            ::= "+"
+                        | "-"
+                        | <empty>
+
+
+(* ----- Boolean and null ------------------------------------------ *)
+
+<boolean>             ::= "true"
+                        | "false"
+
+<null>                ::= "null"
+
+
+(* ----- Bracketed title text -------------------------------------- *)
+(*  Used for [claim text] facts and ::: block [titles].              *)
+(*  The first character is not "#" (a leading "#" selects the         *)
+(*  "#" <identifier> alternative of <fact-head>).                     *)
+
+<title-text>          ::= <title-start> <title-rest>
+
+<title-start>         ::= any Unicode character except "#", "[", "]", LINE FEED or CARRIAGE RETURN
+
+<title-rest>          ::= <empty>
+                        | <title-cont> <title-rest>
+
+<title-cont>          ::= any Unicode character except "[", "]", LINE FEED or CARRIAGE RETURN
+
+
+(* ----- Claim text (after the closing "]" of a fact) -------------- *)
+(*  The first character may not be whitespace nor an operator-leading *)
+(*  character, so a fact line cannot be confused with a rule or a     *)
+(*  relation (NOTE 4). Surrounding whitespace is trimmed.             *)
+
+<claim-text>          ::= <claim-start> <claim-rest>
+
+<claim-start>         ::= any Unicode character except SPACE, TAB, LINE FEED, CARRIAGE RETURN,
+                          "{", "}", "[", "]", "(", ")", "#", ":", "-", "~", "?", "<", ","
+
+<claim-rest>          ::= <empty>
+                        | <claim-cont> <claim-rest>
+
+<claim-cont>          ::= any Unicode character except "{", "}", LINE FEED or CARRIAGE RETURN
+
+
+(* ----- Heading text (rest of the heading line) ------------------- *)
+
+<heading-text>        ::= <empty>
+                        | <line-char> <heading-text>
+
+
+(* ----- Plain scalar (unquoted YAML value: rest of the line) ------ *)
+
+<plain-scalar>        ::= <line-char> <plain-scalar-rest>
+
+<plain-scalar-rest>   ::= <empty>
+                        | <line-char> <plain-scalar-rest>
+
+
+(* ----- Flow scalar (unquoted value inside "{}" or "[]") ---------- *)
+
+<flow-scalar>         ::= <flow-scalar-char> <flow-scalar-rest>
+
+<flow-scalar-rest>    ::= <empty>
+                        | <flow-scalar-char> <flow-scalar-rest>
+
+<flow-scalar-char>    ::= any Unicode character except ",", "[", "]", "{", "}", LINE FEED or CARRIAGE RETURN
+
+
+(* ----- Comment payloads ------------------------------------------ *)
+
+<rest-of-line>        ::= <empty>
+                        | <line-char> <rest-of-line>
+
+<comment-body>        ::= any sequence of characters that does not contain the substring "*/"
+
+<line-char>           ::= any Unicode character except LINE FEED or CARRIAGE RETURN
+
+
+(* ----- Whitespace, line ends, the empty string ------------------- *)
+
+<hws>                 ::= <hws-char>
+                        | <hws-char> <hws>
+
+<opt-hws>             ::= <hws>
+                        | <empty>
+
+<hws-char>            ::= SPACE
+                        | HORIZONTAL TAB
+
+<newline>             ::= LINE FEED                       (* \n   *)
+                        | CARRIAGE RETURN LINE FEED       (* \r\n *)
+                        | CARRIAGE RETURN                 (* \r   *)
+
+<blank-line>          ::= <opt-hws> <newline>
+
+<line-end>            ::= <newline>
+                        | <eof>
+
+<eof>                 ::= the end of the input stream
+
+<empty>               ::=                      (* matches the empty string *)
+
+
+(* ================================================================= *)
+(*  NOTES  (assumptions and deviations from docs/DESIGN.md)         *)
+(* ================================================================= *)
+(*                                                                   *)
+(*  1. COMMENTS. DESIGN.md lists `Comment` as a top-level element    *)
+(*     but never specifies its lexical form. This grammar adopts the *)
+(*     canonical Argdown conventions: "//" line comments and         *)
+(*     "/* ... */" block comments. Note that "#"-prefixed             *)
+(*     lines are HEADINGS here (the explanatory "# ..." lines in the *)
+(*     DESIGN.md code samples are such headings).                    *)
+(*                                                                   *)
+(*  2. FACT-REF AMBIGUITY (resolved). DESIGN.md gives                *)
+(*       FactRef ::= "[" "#" Identifier "]" | Fact                   *)
+(*     Since "[#id]" also matches `Fact`, and `Fact` ends in an      *)
+(*     optional AttributeBlock, "[#B] { ... }" inside a relation is  *)
+(*     ambiguous (is "{...}" the attributes of B, or of the          *)
+(*     relation?). To honour design principle #1 (unambiguous        *)
+(*     parsing), <fact-ref> is restricted to the bracketed head      *)
+(*     "[" <fact-head> "]" with no trailing text/attributes. Every   *)
+(*     example uses exactly this reference form. A claim WITH text    *)
+(*     or attributes is written as a standalone <fact> statement.    *)
+(*                                                                   *)
+(*  3. CLAIM-TEXT PLACEMENT. DESIGN.md's section-5 sketch puts `Text`*)
+(*     INSIDE the brackets ( "[" ("#" Identifier)? Text? "]" ), yet  *)
+(*     its examples put the claim text AFTER the closing bracket     *)
+(*     ( "[#id] claim text { ... }" ) while bracket-only claims keep *)
+(*     the text inside ( "[claim text]" ). This grammar supports     *)
+(*     both: the bracket holds either an "#identifier" or inline     *)
+(*     <title-text>, and an optional <claim-text> may follow "]"     *)
+(*     before any attribute block.                                   *)
+(*                                                                   *)
+(*  4. OPERATOR-LEADING DISAMBIGUATION. So that fact, rule and       *)
+(*     relation statements are distinguishable with one token of     *)
+(*     lookahead after the leading <fact-ref>, <claim-text> may not  *)
+(*     begin with whitespace nor with an operator-leading character  *)
+(*     ( ":" "-" "~" "?" "<" "{" ... ). Quote or bracket a claim     *)
+(*     that must start with such a character.                        *)
+(*                                                                   *)
+(*  5. ATTRIBUTE VALUES. DESIGN.md writes attribute entries as       *)
+(*     (YAML_Line | KeyValue); both are "key: value", so they are    *)
+(*     unified here as <attribute-entry>. A <value> may be a quoted  *)
+(*     string, number, boolean, null, flow sequence, nested flow     *)
+(*     mapping, or an unquoted <flow-scalar>; typed forms are        *)
+(*     preferred and the scalar is the fallback. (Nested flow        *)
+(*     mappings are a natural completion, not shown in DESIGN.md.)   *)
+(*                                                                   *)
+(*  6. YAML SUBSET. Frontmatter and block bodies use a minimal YAML  *)
+(*     model (one "key: value" per line; plain scalars span to the   *)
+(*     end of the line; plus quoted strings and flow sequences). It  *)
+(*     is deliberately NOT the full YAML 1.2 grammar.                *)
+(*                                                                   *)
+(*  7. STRINGS / NUMBERS follow JSON conventions (escape sequences,  *)
+(*     optional fraction and exponent) -- a superset of the literals *)
+(*     shown in DESIGN.md.                                           *)
+(*                                                                   *)
+(*  8. CITATION KEYS such as "@NASA-2024" appear only inside string  *)
+(*     values in the spec and carry no special lexical status here   *)
+(*     beyond being ordinary string content.                         *)
+(*                                                                   *)
+(*  9. FRONTMATTER is delimited by "===" (per DESIGN.md), not the    *)
+(*     "---" used by some Markdown dialects, and, when present, is   *)
+(*     the first content in the document.                            *)
+(* ================================================================= *)
