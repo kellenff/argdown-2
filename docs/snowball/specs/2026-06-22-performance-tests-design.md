@@ -343,11 +343,10 @@ This is the explicit scope decision — chasing perf noise in CI before we have 
 - **Tinybench is itself a moving target.** The `^2.6.0` range admits minor changes; if a future Tinybench version renames fields, the baseline schema or bench code may need a bump.
 - **`--check` is functional but does not enforce this cycle.** A user could run it and assume the diff is authoritative. Documented in §5.3 and §9.2.
 - **Memory measurement is `heapUsed` delta, not `heapTotal`.** This undercounts allocations that get freed mid-task. Acceptable for "peak during parse" — the same parse path runs the same allocation pattern.
-- **3 parser limitations discovered during fixture verification (out of scope for this cycle, all real parser bugs):**
-  1. **Inline `{...}` attribute blocks on rule statements are not supported.** `parseRule` in `parser.ts:629` requires `Period` after `factRefList`; it does not consume a following attribute block. Only relations accept inline attribute blocks.
-  2. **Multi-word YAML values in frontmatter and block bodies trigger a double-skip recovery bug.** `parseYamlValue` consumes a single scalar token, then the recovery path in `parseFrontmatter` / `parseBlock` advances pos by one after a failed `parseYamlLine`, skipping an extra token. For a multi-word value like `Block Stress`, the closing `===` is missed and the frontmatter is reported as unclosed.
-  3. **Block titles (`:::evidence[Title]`) cannot contain spaces.** The bracket content is lexed as a single `Identifier` token, which doesn't allow internal whitespace.
-  Workarounds applied to the fixtures: `small-rule.argdown` rules end with `.` only (no attribute blocks); `deep-nesting.argdown` uses single-word values throughout. These should be revisited in a parser-fix cycle.
+- **Rule attribute blocks are not supported (deliberate, per BNF).** The BNF in `docs/DESIGN.md` defines `Rule ::= FactRef ":-" FactRef ("," FactRef)* "."` with no attribute block. Rules end with `.` only. If we want rules with attributes later, that's a grammar change, not a bug fix.
+- **2 parser bugs fixed in commit `a5442e4` (immediately after this baseline was captured):**
+  1. Block titles with digits (e.g. `:::evidence[Source 1]`) — `parseTitleText` now accepts `Number` tokens. Affects `deep-nesting.argdown` only.
+  2. Multi-word YAML values (e.g. `title: Climate Policy Analysis`) — `parseYamlValue` now consumes a run of consecutive scalar tokens, stopping at `Identifier Colon` (the next yaml line's start). The recovery paths in `parseFrontmatter` / `parseBlockBody` use save/restore so a partial-parse advances pos by exactly one token, not two. The Climate Policy snapshot was updated to show the correctly-joined multi-word values. The perf baseline was re-recorded against the fixed parser.
 
 ---
 
