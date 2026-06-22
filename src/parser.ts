@@ -169,7 +169,8 @@ class TokenStream {
   skipEmptyTextTokens(): void {
     while (!this.eof()) {
       const tok = this.current();
-      const isTextRun = tok.tokenType.name === 'HeadingText' ||
+      const isTextRun =
+        tok.tokenType.name === 'HeadingText' ||
         tok.tokenType.name === 'TitleText' ||
         tok.tokenType.name === 'ClaimText' ||
         tok.tokenType.name === 'PlainScalar' ||
@@ -336,9 +337,7 @@ function parseFactHead(s: TokenStream): CstNode | undefined {
     return undefined;
   }
   // TitleHead: any text-run token type, or Identifier (lexer ambiguity).
-  if (
-    s.check('TitleText', 'ClaimText', 'HeadingText', 'Identifier')
-  ) {
+  if (s.check('TitleText', 'ClaimText', 'HeadingText', 'Identifier')) {
     const th = parseTitleHead(s);
     if (th) {
       cst['titleHead'] = [th];
@@ -766,9 +765,12 @@ function parseYamlLine(s: TokenStream): CstNode | undefined {
   // lexer often produces HeadingText/TitleText/Identifier where PlainScalar
   // was expected).
   if (
-    s.check('String') || s.check('LBrack') ||
-    s.check('PlainScalar') || s.check('HeadingText') ||
-    s.check('TitleText') || s.check('ClaimText') ||
+    s.check('String') ||
+    s.check('LBrack') ||
+    s.check('PlainScalar') ||
+    s.check('HeadingText') ||
+    s.check('TitleText') ||
+    s.check('ClaimText') ||
     s.check('Identifier')
   ) {
     const v = parseYamlValue(s);
@@ -931,12 +933,14 @@ function peekPastFactRef(s: TokenStream): string {
   if (headName === 'HeadingMarker') {
     i += 2; // HeadingMarker + Identifier
   } else if (
-    headName === 'TitleText' || headName === 'Identifier' ||
-    headName === 'ClaimText' || headName === 'HeadingText'
+    headName === 'TitleText' ||
+    headName === 'Identifier' ||
+    headName === 'ClaimText' ||
+    headName === 'HeadingText'
   ) {
     i += 1; // single text token (the lexer may split into multiple, but
-            // for the lookahead a single token is enough — we only need
-            // to find the position past the closing `]`).
+    // for the lookahead a single token is enough — we only need
+    // to find the position past the closing `]`).
   } else {
     return '';
   }
@@ -1044,7 +1048,8 @@ function parseFrontmatter(s: TokenStream): CstNode | undefined {
   }
   cst['FrontmatterDelim'] = (cst['FrontmatterDelim'] as CstNode[]).concat([tokenNode(close)]);
   cst['yamlLine'] = lines.filter(
-    (n) => (n as CstChildren)['identifier'] !== undefined && (n as CstChildren)['Colon'] !== undefined,
+    (n) =>
+      (n as CstChildren)['identifier'] !== undefined && (n as CstChildren)['Colon'] !== undefined,
   );
   return cst;
 }
@@ -1116,10 +1121,17 @@ function parseDocument(s: TokenStream): CstNode {
 // Lex-error normalization
 // =========================================================================
 
-function lexErrorToParseError(lexErr: { message?: string | undefined; line?: number | undefined; column?: number | undefined; offset?: number | undefined }): ParseError {
+function lexErrorToParseError(lexErr: {
+  message?: string | undefined;
+  line?: number | undefined;
+  column?: number | undefined;
+  offset?: number | undefined;
+}): ParseError {
   let code: ParseErrorCode = 'parse.invalidStringEscape';
   if (lexErr.message?.includes('UNTERMINATED')) {
-    code = lexErr.message.includes('string') ? 'parse.unterminatedString' : 'parse.unterminatedBlockComment';
+    code = lexErr.message.includes('string')
+      ? 'parse.unterminatedString'
+      : 'parse.unterminatedBlockComment';
   }
   return {
     code,

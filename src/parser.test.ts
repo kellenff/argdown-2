@@ -50,8 +50,14 @@ describe('production: facts', () => {
   it('parses a fact with attributes', () => {
     const ast = parseOk('[#x] text { author: "alice", confidence: 0.95 }');
     const fact = (ast.elements[0] as { fact: Fact }).fact;
-    expect(fact.attributes?.entries['author']).toMatchObject({ kind: 'StringValue', value: 'alice' });
-    expect(fact.attributes?.entries['confidence']).toMatchObject({ kind: 'NumberValue', value: 0.95 });
+    expect(fact.attributes?.entries['author']).toMatchObject({
+      kind: 'StringValue',
+      value: 'alice',
+    });
+    expect(fact.attributes?.entries['confidence']).toMatchObject({
+      kind: 'NumberValue',
+      value: 0.95,
+    });
   });
 
   it('parses a fact with only attributes (no claim text)', () => {
@@ -98,20 +104,20 @@ describe('production: relations', () => {
   it('parses a relation with attributes', () => {
     const ast = parseOk('[#A] --> [#B] { strength: "strong" }');
     const rel = (ast.elements[0] as { relation: Relation }).relation;
-    expect(rel.attributes?.entries['strength']).toMatchObject({ kind: 'StringValue', value: 'strong' });
+    expect(rel.attributes?.entries['strength']).toMatchObject({
+      kind: 'StringValue',
+      value: 'strong',
+    });
   });
 });
 
 describe('production: headings', () => {
-  it.each(['#', '##', '###', '####', '#####', '######'])(
-    'parses heading level %s',
-    (marker) => {
-      const ast = parseOk(`${marker} Title`);
-      const h = ast.elements[0] as Heading;
-      expect(h.level).toBe(marker.length);
-      expect(h.text).toBe('Title');
-    },
-  );
+  it.each(['#', '##', '###', '####', '#####', '######'])('parses heading level %s', (marker) => {
+    const ast = parseOk(`${marker} Title`);
+    const h = ast.elements[0] as Heading;
+    expect(h.level).toBe(marker.length);
+    expect(h.text).toBe('Title');
+  });
 });
 
 describe('production: comments', () => {
@@ -144,37 +150,37 @@ describe('production: blocks', () => {
 describe('production: values', () => {
   it('parses string value', () => {
     const ast = parseOk('[#x] { a: "hello" }');
-    const v = (((ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a']) as Value);
+    const v = (ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a'] as Value;
     expect(v).toMatchObject({ kind: 'StringValue', value: 'hello' });
   });
 
   it('parses number value', () => {
     const ast = parseOk('[#x] { a: 42 }');
-    const v = ((ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a']) as Value;
+    const v = (ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a'] as Value;
     expect(v).toMatchObject({ kind: 'NumberValue', value: 42 });
   });
 
   it('parses boolean value', () => {
     const ast = parseOk('[#x] { a: true }');
-    const v = ((ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a']) as Value;
+    const v = (ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a'] as Value;
     expect(v).toMatchObject({ kind: 'BooleanValue', value: true });
   });
 
   it('parses null value', () => {
     const ast = parseOk('[#x] { a: null }');
-    const v = ((ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a']) as Value;
+    const v = (ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a'] as Value;
     expect(v).toMatchObject({ kind: 'NullValue' });
   });
 
   it('parses flow sequence', () => {
     const ast = parseOk('[#x] { a: [1, 2, 3] }');
-    const v = ((ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a']) as Value;
+    const v = (ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a'] as Value;
     expect(v).toMatchObject({ kind: 'FlowSequence' });
   });
 
   it('parses flow mapping (nested)', () => {
     const ast = parseOk('[#x] { a: { b: 1 } }');
-    const v = ((ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a']) as Value;
+    const v = (ast.elements[0] as { fact: Fact }).fact.attributes?.entries['a'] as Value;
     expect(v).toMatchObject({ kind: 'FlowMapping' });
   });
 });
@@ -192,7 +198,11 @@ describe('error cases', () => {
 
   it('reports mismatched token on unterminated string', () => {
     const r = parse('[#x] { a: "unterminated }');
-    expect(r.errors.some((e) => e.code === 'parse.unterminatedString' || e.code === 'parse.mismatchedToken')).toBe(true);
+    expect(
+      r.errors.some(
+        (e) => e.code === 'parse.unterminatedString' || e.code === 'parse.mismatchedToken',
+      ),
+    ).toBe(true);
   });
 
   it('reports error on missing period after rule', () => {
@@ -206,7 +216,7 @@ describe('recovery', () => {
   it('recovers from a missing period in a rule and parses a following fact', () => {
     const r = parse('[#a] :- [#b]\n[#c] claim');
     expect(r.errors.length).toBeGreaterThan(0);
-    const elements = r.ok ? r.ast.elements : r.partial?.elements ?? [];
+    const elements = r.ok ? r.ast.elements : (r.partial?.elements ?? []);
     expect(elements.length).toBeGreaterThan(0);
   });
 
@@ -250,7 +260,7 @@ describe('source positions', () => {
   });
 
   it('includes error loc pointing at the offending token', () => {
-    const r = parse('[#x');  // missing ]
+    const r = parse('[#x'); // missing ]
     expect(r.ok).toBe(false);
     const err = r.errors[0];
     expect(err).toBeDefined();

@@ -2,14 +2,41 @@
 // Walks the Chevrotain CST and produces the typed AST.
 
 import type {
-  Document, Frontmatter, Heading, Block, BlockTitle, ListItem,
-  FactStatement, RuleStatement, RelationStatement,
-  Fact, FactRef, FactHead, IdentifierHead, TitleHead,
-  Rule, Relation, RelationEndpoint, RuleExpr, Arrow,
-  AttributeBlock, Value, StringValue, NumberValue, BooleanValue, NullValue,
-  FlowSequence, FlowMapping, FlowScalar,
-  YamlLine, YamlValue, PlainScalar,
-  LineComment, BlockComment, BlockType, Element,
+  Document,
+  Frontmatter,
+  Heading,
+  Block,
+  BlockTitle,
+  ListItem,
+  FactStatement,
+  RuleStatement,
+  RelationStatement,
+  Fact,
+  FactRef,
+  FactHead,
+  IdentifierHead,
+  TitleHead,
+  Rule,
+  Relation,
+  RelationEndpoint,
+  RuleExpr,
+  Arrow,
+  AttributeBlock,
+  Value,
+  StringValue,
+  NumberValue,
+  BooleanValue,
+  NullValue,
+  FlowSequence,
+  FlowMapping,
+  FlowScalar,
+  YamlLine,
+  YamlValue,
+  PlainScalar,
+  LineComment,
+  BlockComment,
+  BlockType,
+  Element,
   SourceLocation,
 } from './ast.js';
 
@@ -41,8 +68,16 @@ function locFromTokens(tokens: TokenLike[]): SourceLocation {
     return { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 1, offset: 0 } };
   }
   return {
-    start: { line: first.startLine ?? 1, column: first.startColumn ?? 1, offset: first.startOffset ?? 0 },
-    end:   { line: last.endLine ?? 1,     column: (last.endColumn ?? 1) + 1, offset: (last.endOffset ?? 0) + 1 },
+    start: {
+      line: first.startLine ?? 1,
+      column: first.startColumn ?? 1,
+      offset: first.startOffset ?? 0,
+    },
+    end: {
+      line: last.endLine ?? 1,
+      column: (last.endColumn ?? 1) + 1,
+      offset: (last.endOffset ?? 0) + 1,
+    },
   };
 }
 
@@ -66,25 +101,39 @@ function collectAllTokens(cst: CstChildren): TokenLike[] {
 
 function arrowName(tokName: string): Arrow {
   switch (tokName) {
-    case 'Support':       return 'support';
-    case 'Attack':        return 'attack';
-    case 'Undercut':      return 'undercut';
-    case 'Undermine':     return 'undermine';
-    case 'Concession':    return 'concession';
-    case 'Qualification': return 'qualification';
-    case 'Equivalence':   return 'equivalence';
-    default: throw new Error(`unknown arrow token: ${tokName}`);
+    case 'Support':
+      return 'support';
+    case 'Attack':
+      return 'attack';
+    case 'Undercut':
+      return 'undercut';
+    case 'Undermine':
+      return 'undermine';
+    case 'Concession':
+      return 'concession';
+    case 'Qualification':
+      return 'qualification';
+    case 'Equivalence':
+      return 'equivalence';
+    default:
+      throw new Error(`unknown arrow token: ${tokName}`);
   }
 }
 
 function blockTypeName(tokName: string): BlockType {
   switch (tokName) {
-    case 'Meta':        return 'meta';
-    case 'Evidence':    return 'evidence';
-    case 'Position':    return 'position';
-    case 'Stakeholder': return 'stakeholder';
-    case 'Domain':      return 'domain';
-    default: throw new Error(`unknown block type token: ${tokName}`);
+    case 'Meta':
+      return 'meta';
+    case 'Evidence':
+      return 'evidence';
+    case 'Position':
+      return 'position';
+    case 'Stakeholder':
+      return 'stakeholder';
+    case 'Domain':
+      return 'domain';
+    default:
+      throw new Error(`unknown block type token: ${tokName}`);
   }
 }
 
@@ -112,17 +161,29 @@ function makeValueNode(cst: CstChildren): Value {
   const stringChild = pickFirst(cst['string'] as CstNode[]);
   if (stringChild) {
     const tok = stringChild.image ?? '';
-    return { kind: 'StringValue', value: decodeString(tok), loc: locFromTokens([stringChild as TokenLike]) };
+    return {
+      kind: 'StringValue',
+      value: decodeString(tok),
+      loc: locFromTokens([stringChild as TokenLike]),
+    };
   }
   const numberChild = pickFirst(cst['number'] as CstNode[]);
   if (numberChild) {
     const tok = numberChild.image ?? '';
-    return { kind: 'NumberValue', value: decodeNumber(tok), loc: locFromTokens([numberChild as TokenLike]) };
+    return {
+      kind: 'NumberValue',
+      value: decodeNumber(tok),
+      loc: locFromTokens([numberChild as TokenLike]),
+    };
   }
   const boolChild = pickFirst(cst['boolean'] as CstNode[]);
   if (boolChild) {
     const tok = boolChild.image ?? '';
-    return { kind: 'BooleanValue', value: tok === 'true', loc: locFromTokens([boolChild as TokenLike]) };
+    return {
+      kind: 'BooleanValue',
+      value: tok === 'true',
+      loc: locFromTokens([boolChild as TokenLike]),
+    };
   }
   const nullChild = pickFirst(cst['nullValue'] as CstNode[]);
   if (nullChild) {
@@ -182,26 +243,34 @@ function visitFrontmatter(cst: CstChildren): Frontmatter {
     const valSub = pickFirst(child['yamlValue'] as CstNode[]);
     if (!idSub) continue;
     const key = idSub.image ?? '';
-    if (!valSub) continue;  // empty yaml value: skip the entry
+    if (!valSub) continue; // empty yaml value: skip the entry
     const yv = valSub as CstChildren;
     const stringChild = pickFirst(yv['string'] as CstNode[]);
     const seqChild = pickFirst(yv['flowSequence'] as CstNode[]);
     const scalarChild = pickFirst(yv['plainScalar'] as CstNode[]);
     if (stringChild) {
       const tok = stringChild.image ?? '';
-      entries[key] = { kind: 'StringValue', value: decodeString(tok), loc: locFromTokens([stringChild as TokenLike]) };
+      entries[key] = {
+        kind: 'StringValue',
+        value: decodeString(tok),
+        loc: locFromTokens([stringChild as TokenLike]),
+      };
     } else if (seqChild) {
       entries[key] = visitFlowSequence(seqChild as CstChildren);
     } else if (scalarChild) {
       const tok = scalarChild.image ?? '';
-      entries[key] = { kind: 'PlainScalar', text: tok.trim(), loc: locFromTokens([scalarChild as TokenLike]) };
+      entries[key] = {
+        kind: 'PlainScalar',
+        text: tok.trim(),
+        loc: locFromTokens([scalarChild as TokenLike]),
+      };
     }
   }
   return { kind: 'Frontmatter', entries, loc: locFromTokens(collectAllTokens(cst)) };
 }
 
 function visitElement(cst: CstChildren): Element | undefined {
-  if (pickFirst(cst['blankLine'] as CstNode[])) return undefined;  // stripped
+  if (pickFirst(cst['blankLine'] as CstNode[])) return undefined; // stripped
   const comment = pickFirst(cst['comment'] as CstNode[]);
   if (comment) return visitComment(comment as CstChildren);
   const heading = pickFirst(cst['heading'] as CstNode[]);
@@ -227,13 +296,19 @@ function visitComment(cst: CstChildren): LineComment | BlockComment {
   const line = pickFirst(cst['lineComment'] as CstNode[]);
   if (line) {
     const tokens = collectAllTokens(cst);
-    const text = tokens.map((t) => t.image).join('').replace(/^\/\//, '');
+    const text = tokens
+      .map((t) => t.image)
+      .join('')
+      .replace(/^\/\//, '');
     return { kind: 'LineComment', text, loc: locFromTokens(tokens) };
   }
   const block = pickFirst(cst['blockComment'] as CstNode[]);
   if (block) {
     const tokens = collectAllTokens(cst);
-    const text = tokens.map((t) => t.image).join('').replace(/^\/\*|\*\/$/g, '');
+    const text = tokens
+      .map((t) => t.image)
+      .join('')
+      .replace(/^\/\*|\*\/$/g, '');
     return { kind: 'BlockComment', text, loc: locFromTokens(tokens) };
   }
   throw new Error('comment rule matched no alternative');
@@ -286,7 +361,11 @@ function visitBlock(cst: CstChildren): Block {
     }
     text = text.trim();
     if (text.length > 0) {
-      title = { kind: 'BlockTitle', text, loc: locFromTokens(collectAllTokens(titleChild as CstChildren)) };
+      title = {
+        kind: 'BlockTitle',
+        text,
+        loc: locFromTokens(collectAllTokens(titleChild as CstChildren)),
+      };
     }
   }
 
@@ -324,7 +403,11 @@ function visitBlock(cst: CstChildren): Block {
 function visitListItem(cst: CstChildren): ListItem | undefined {
   const factSub = pickFirst(cst['fact'] as CstNode[]);
   if (!factSub) return undefined;
-  return { kind: 'ListItem', fact: visitFact(factSub as CstChildren), loc: locFromTokens(collectAllTokens(cst)) };
+  return {
+    kind: 'ListItem',
+    fact: visitFact(factSub as CstChildren),
+    loc: locFromTokens(collectAllTokens(cst)),
+  };
 }
 
 function visitYamlLine(cst: CstChildren): YamlLine {
@@ -338,7 +421,11 @@ function visitYamlLine(cst: CstChildren): YamlLine {
     const scalarChild = pickFirst(yv['plainScalar'] as CstNode[]);
     if (stringChild) {
       const tok = stringChild.image ?? '';
-      value = { kind: 'StringValue', value: decodeString(tok), loc: locFromTokens([stringChild as TokenLike]) };
+      value = {
+        kind: 'StringValue',
+        value: decodeString(tok),
+        loc: locFromTokens([stringChild as TokenLike]),
+      };
     } else if (seqChild) {
       value = visitFlowSequence(seqChild as CstChildren);
     } else if (scalarChild) {
@@ -346,7 +433,12 @@ function visitYamlLine(cst: CstChildren): YamlLine {
       value = { kind: 'PlainScalar', text: tok, loc: locFromTokens([scalarChild as TokenLike]) };
     }
   }
-  return { kind: 'YamlLine', key: idSub?.image ?? '', value, loc: locFromTokens(collectAllTokens(cst)) };
+  return {
+    kind: 'YamlLine',
+    key: idSub?.image ?? '',
+    value,
+    loc: locFromTokens(collectAllTokens(cst)),
+  };
 }
 
 function visitFactStatement(cst: CstChildren): FactStatement {
@@ -398,7 +490,11 @@ function visitFactHead(cst: CstChildren): FactHead {
   const idSub = pickFirst(cst['identifierHead'] as CstNode[]);
   if (idSub) {
     const id = pickFirst((idSub as CstChildren)['identifier'] as CstNode[]);
-    return { kind: 'IdentifierHead', identifier: id?.image ?? '', loc: locFromTokens(collectAllTokens(idSub as CstChildren)) };
+    return {
+      kind: 'IdentifierHead',
+      identifier: id?.image ?? '',
+      loc: locFromTokens(collectAllTokens(idSub as CstChildren)),
+    };
   }
   const titleSub = pickFirst(cst['titleHead'] as CstNode[]);
   if (titleSub) {
@@ -413,7 +509,11 @@ function visitFactHead(cst: CstChildren): FactHead {
       }
       title += img;
     }
-    return { kind: 'TitleHead', title: title.trim(), loc: locFromTokens(collectAllTokens(titleSub as CstChildren)) };
+    return {
+      kind: 'TitleHead',
+      title: title.trim(),
+      loc: locFromTokens(collectAllTokens(titleSub as CstChildren)),
+    };
   }
   throw new Error('factHead matched no alternative');
 }
