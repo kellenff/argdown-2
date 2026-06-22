@@ -153,19 +153,36 @@ for (const [name, source] of loaded) {
 
 ```ts
 const mode = process.argv[2];
-const results = await bench.run();
+const { results, peakHeapMB } = await runBench();
 
 if (mode === '--baseline') {
-  await writeBaselineJson(results, peakHeapMB);
-} else if (mode === '--check') {
-  await checkAgainstBaseline(results, peakHeapMB);
-  // this cycle: no threshold enforcement, so a clean diff run exits 0.
-  // Errors inside checkAgainstBaseline (missing baseline, schema mismatch,
-  // errored parse task) throw and propagate to a non-zero exit.
-} else {
-  bench.table(); // Tinybench's built-in pretty-printer
+  await writeBaselineJson(results, peakHeapMB, BASELINE_DEFAULT_PATH);
+  console.log(`Baseline written to ${BASELINE_DEFAULT_PATH}`);
+  return;
+}
+
+if (mode === '--check') {
+  // this cycle: no threshold enforcement — a clean diff run exits 0.
+  // Errors inside loadBaseline / checkAgainstBaseline throw and propagate
+  // to a non-zero exit.
+  const baseline = await loadBaseline(BASELINE_DEFAULT_PATH);
+  await checkAgainstBaseline(results, peakHeapMB, baseline);
+  return;
+}
+
+// Default: per-fixture summary including peak heap delta.
+const heapSummary = [...peakHeapMB.entries()]
+  .map(([name, mb]) => `${name}=${mb.toFixed(2)}MB`)
+  .join(' ');
+console.log(`parse() perf summary (peak heap: ${heapSummary})`);
+for (const r of results) {
+  console.log(
+    `  ${r.name.padEnd(20)} ${r.hz.toFixed(1).padStart(10)} ops/sec ±${r.rme.toFixed(2)}%  p99=${r.p99.toFixed(3)}ms`,
+  );
 }
 ```
+
+Implementation note: `runBench()` (defined in §5.2) returns both the per-fixture Tinybench results and the per-fixture peak-heap-delta map. The mode dispatch uses that single result set — no separate bench run for the default summary. This avoids a double-bench that the earlier draft had.
 
 **Three modes:**
 - **(no flag)** — print a per-fixture summary (ops/sec, margin, p99) plus peak heap deltas. For ad-hoc local runs. The summary is a hand-rolled table (not Tinybench's `bench.table()`) so it can include the peak heap column, which `bench.table()` does not surface.
