@@ -148,18 +148,16 @@ export async function writeBaselineJson(
 
 const PERCENT_FORMAT = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
-  signDisplay: 'exceptZero',
 });
 
 function formatPercent(value: number): string {
-  return `${PERCENT_FORMAT.format(value)}%`;
+  return `${value >= 0 ? '+' : ''}${PERCENT_FORMAT.format(value)}%`;
 }
 
 function diffLine(name: string, label: string, baseline: number, current: number): string {
   const delta = current - baseline;
   const pct = baseline === 0 ? 0 : (delta / baseline) * 100;
-  const sign = delta >= 0 ? '+' : '';
-  return `  ${name}  ${label}: ${current.toFixed(2)} (baseline ${baseline.toFixed(2)}, ${sign}${formatPercent(pct)})`;
+  return `  ${name}  ${label}: ${current.toFixed(2)} (baseline ${baseline.toFixed(2)}, ${formatPercent(pct)})`;
 }
 
 export async function loadBaseline(baselinePath: string): Promise<BaselineFile> {
