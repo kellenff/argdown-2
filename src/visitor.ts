@@ -175,7 +175,7 @@ function visitDocument(cst: CstChildren): Document {
 }
 
 function visitFrontmatter(cst: CstChildren): Frontmatter {
-  const entries: Record<string, Value> = {};
+  const entries: Record<string, Value | PlainScalar> = {};
   for (const yl of (cst['yamlLine'] as CstNode[]) ?? []) {
     const child = yl as CstChildren;
     const idSub = pickFirst(child['identifier'] as CstNode[]);
@@ -194,7 +194,7 @@ function visitFrontmatter(cst: CstChildren): Frontmatter {
       entries[key] = visitFlowSequence(seqChild as CstChildren);
     } else if (scalarChild) {
       const tok = scalarChild.image ?? '';
-      entries[key] = { kind: 'FlowScalar', text: tok, loc: locFromTokens([scalarChild as TokenLike]) };
+      entries[key] = { kind: 'PlainScalar', text: tok.trim(), loc: locFromTokens([scalarChild as TokenLike]) };
     }
   }
   return { kind: 'Frontmatter', entries, loc: locFromTokens(collectAllTokens(cst)) };
@@ -241,11 +241,25 @@ function visitComment(cst: CstChildren): LineComment | BlockComment {
 
 function visitHeading(cst: CstChildren): Heading {
   const marker = pickFirst(cst['HeadingMarker'] as CstNode[]);
-  const textNode = pickFirst(cst['headingText'] as CstNode[]);
+  const textNodes = (cst['headingText'] as CstNode[]) ?? [];
+  // Join multiple tokens with single spaces (skip Colon — it visually
+  // belongs in the heading text like `# Position: ...`).
+  let text = '';
+  for (const n of textNodes) {
+    if (n.tokenType?.name === 'Colon') {
+      text += ':';
+      continue;
+    }
+    const img = n.image ?? '';
+    if (text.length > 0 && !/\s$/.test(text) && !/^\s/.test(img) && !text.endsWith(':')) {
+      text += ' ';
+    }
+    text += img;
+  }
   return {
     kind: 'Heading',
     level: (marker?.image?.length ?? 1) as 1 | 2 | 3 | 4 | 5 | 6,
-    text: textNode?.image ?? '',
+    text: text.trim(),
     loc: locFromTokens(collectAllTokens(cst)),
   };
 }
@@ -261,9 +275,18 @@ function visitBlock(cst: CstChildren): Block {
   const titleChild = pickFirst(open['blockTitle'] as CstNode[]);
   let title: BlockTitle | undefined;
   if (titleChild) {
-    const t = pickFirst((titleChild as CstChildren)['titleText'] as CstNode[]);
-    if (t?.image !== undefined) {
-      title = { kind: 'BlockTitle', text: t.image, loc: locFromTokens([t as TokenLike]) };
+    const parts = ((titleChild as CstChildren)['titleText'] as CstNode[]) ?? [];
+    let text = '';
+    for (const n of parts) {
+      const img = n.image ?? '';
+      if (text.length > 0 && !/\s$/.test(text) && !/^\s/.test(img)) {
+        text += ' ';
+      }
+      text += img;
+    }
+    text = text.trim();
+    if (text.length > 0) {
+      title = { kind: 'BlockTitle', text, loc: locFromTokens(collectAllTokens(titleChild as CstChildren)) };
     }
   }
 
@@ -336,12 +359,28 @@ function visitFactStatement(cst: CstChildren): FactStatement {
 
 function visitFact(cst: CstChildren): Fact {
   const refSub = pickFirst(cst['factRef'] as CstNode[]);
-  const claimSub = pickFirst(cst['claimText'] as CstNode[]);
+  const claimSubs = (cst['claimText'] as CstNode[]) ?? [];
   const attrSub = pickFirst(cst['attributeBlock'] as CstNode[]);
+  let claimText: string | undefined;
+  if (claimSubs.length > 0) {
+    // Join consecutive claim-text tokens (the lexer may split a single
+    // claim into multiple tokens, e.g. separate identifiers for each word).
+    // Insert a space between consecutive tokens unless the previous one
+    // ended in whitespace. Trim leading whitespace.
+    let buf = '';
+    for (const n of claimSubs) {
+      const img = n.image ?? '';
+      if (buf.length > 0 && !/\s$/.test(buf) && !/^\s/.test(img)) {
+        buf += ' ';
+      }
+      buf += img;
+    }
+    claimText = buf.trimStart();
+  }
   return {
     kind: 'Fact',
     ref: visitFactRef(refSub as CstChildren),
-    ...(claimSub?.image !== undefined ? { claimText: claimSub.image } : {}),
+    ...(claimText !== undefined ? { claimText } : {}),
     ...(attrSub ? { attributes: visitAttributeBlock(attrSub as CstChildren) } : {}),
     loc: locFromTokens(collectAllTokens(cst)),
   };
@@ -363,8 +402,18 @@ function visitFactHead(cst: CstChildren): FactHead {
   }
   const titleSub = pickFirst(cst['titleHead'] as CstNode[]);
   if (titleSub) {
-    const t = pickFirst((titleSub as CstChildren)['titleText'] as CstNode[]);
-    return { kind: 'TitleHead', title: t?.image ?? '', loc: locFromTokens(collectAllTokens(titleSub as CstChildren)) };
+    // titleText may be an array of tokens (lexer may split a title into
+    // separate identifiers/heading-text tokens). Join with spaces.
+    const parts = ((titleSub as CstChildren)['titleText'] as CstNode[]) ?? [];
+    let title = '';
+    for (const n of parts) {
+      const img = n.image ?? '';
+      if (title.length > 0 && !/\s$/.test(title) && !/^\s/.test(img)) {
+        title += ' ';
+      }
+      title += img;
+    }
+    return { kind: 'TitleHead', title: title.trim(), loc: locFromTokens(collectAllTokens(titleSub as CstChildren)) };
   }
   throw new Error('factHead matched no alternative');
 }
@@ -449,7 +498,11 @@ function visitAttributeBlock(cst: CstChildren): AttributeBlock {
     const idSub = pickFirst(child['identifier'] as CstNode[]);
     const valSub = pickFirst(child['value'] as CstNode[]);
     if (!idSub || !valSub) continue;
-    entries[idSub.image ?? ''] = makeValueNode(valSub as CstChildren);
+    // Identifier may be a text-run token (when the lexer produced
+    // HeadingText/TitleText/etc.); trim whitespace in that case.
+    let key = idSub.image ?? '';
+    if (!/^[A-Za-z0-9_-]+$/.test(key)) key = key.trim();
+    entries[key] = makeValueNode(valSub as CstChildren);
   }
   return { kind: 'AttributeBlock', entries, loc: locFromTokens(collectAllTokens(cst)) };
 }

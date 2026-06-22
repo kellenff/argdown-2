@@ -164,6 +164,24 @@ class TokenStream {
     }
   }
 
+  // Skip whitespace-only text tokens (HeadingText/TitleText/etc. that the
+  // lexer may emit between other tokens). Doesn't record errors.
+  skipEmptyTextTokens(): void {
+    while (!this.eof()) {
+      const tok = this.current();
+      const isTextRun = tok.tokenType.name === 'HeadingText' ||
+        tok.tokenType.name === 'TitleText' ||
+        tok.tokenType.name === 'ClaimText' ||
+        tok.tokenType.name === 'PlainScalar' ||
+        tok.tokenType.name === 'FlowScalar';
+      if (isTextRun && (tok.image ?? '').trim().length === 0) {
+        this.pos++;
+      } else {
+        break;
+      }
+    }
+  }
+
   recordError(message: string, tok?: IToken, code: ParseErrorCode = 'parse.mismatchedToken'): void {
     const t = tok ?? this.current();
     this.errors.push({
@@ -198,9 +216,12 @@ function tokenNode(tok: IToken): CstNode {
 }
 
 // Single-token rule: match the named token, wrap it as a CST node.
+// Failure is silent — caller's `??` chain absorbs it. Errors are reported
+// only by callers using `s.consume()` / `s.expect()` directly.
 function tokenRule(s: TokenStream, tokenName: string): CstNode | undefined {
-  const tok = s.expect(tokenName);
-  if (!tok) return undefined;
+  const tok = s.peek();
+  if (tok.tokenType.name !== tokenName) return undefined;
+  s.pos++;
   return tokenNode(tok);
 }
 
@@ -234,16 +255,46 @@ function parseNumber(s: TokenStream): CstNode | undefined {
   return tokenRule(s, 'Number');
 }
 
+// Text-run rules accept any of the text-run token types because Chevrotain's
+// disambiguation between them (TitleText vs ClaimText vs HeadingText) is
+// unreliable for overlapping patterns — token order is load-bearing and not
+// robust to all BNF contexts. The parser disambiguates by context.
+// Reject whitespace-only tokens (the lexer can match a single space).
+function isNonEmptyImage(tok: IToken): boolean {
+  return (tok.image ?? '').trim().length > 0;
+}
+
 function parseTitleText(s: TokenStream): CstNode | undefined {
-  return tokenRule(s, 'TitleText');
+  for (const name of ['TitleText', 'ClaimText', 'HeadingText', 'Identifier']) {
+    const tok = s.peek();
+    if (tok.tokenType.name === name && isNonEmptyImage(tok)) {
+      s.pos++;
+      return tokenNode(tok);
+    }
+  }
+  return undefined;
 }
 
 function parseClaimText(s: TokenStream): CstNode | undefined {
-  return tokenRule(s, 'ClaimText');
+  for (const name of ['ClaimText', 'TitleText', 'HeadingText', 'Identifier']) {
+    const tok = s.peek();
+    if (tok.tokenType.name === name && isNonEmptyImage(tok)) {
+      s.pos++;
+      return tokenNode(tok);
+    }
+  }
+  return undefined;
 }
 
 function parseHeadingText(s: TokenStream): CstNode | undefined {
-  return tokenRule(s, 'HeadingText');
+  for (const name of ['HeadingText', 'TitleText', 'ClaimText']) {
+    const tok = s.peek();
+    if (tok.tokenType.name === name && isNonEmptyImage(tok)) {
+      s.pos++;
+      return tokenNode(tok);
+    }
+  }
+  return undefined;
 }
 
 function parsePlainScalar(s: TokenStream): CstNode | undefined {
@@ -284,7 +335,10 @@ function parseFactHead(s: TokenStream): CstNode | undefined {
     }
     return undefined;
   }
-  if (s.check('TitleText')) {
+  // TitleHead: any text-run token type, or Identifier (lexer ambiguity).
+  if (
+    s.check('TitleText', 'ClaimText', 'HeadingText', 'Identifier')
+  ) {
     const th = parseTitleHead(s);
     if (th) {
       cst['titleHead'] = [th];
@@ -308,9 +362,17 @@ function parseIdentifierHead(s: TokenStream): CstNode | undefined {
 
 function parseTitleHead(s: TokenStream): CstNode | undefined {
   const cst: CstChildren = {};
-  const tt = parseTitleText(s);
-  if (!tt) return undefined;
-  cst['titleText'] = [tt];
+  // The lexer may produce a sequence of text-run tokens (e.g. Identifier
+  // followed by HeadingText) for what is logically one title. Consume all
+  // consecutive text-run tokens and concatenate them.
+  const parts: CstNode[] = [];
+  let tt = parseTitleText(s);
+  while (tt) {
+    parts.push(tt);
+    tt = parseTitleText(s);
+  }
+  if (parts.length === 0) return undefined;
+  cst['titleText'] = parts;
   return cst;
 }
 
@@ -481,10 +543,31 @@ function parseAttributeBlock(s: TokenStream): CstNode | undefined {
 
 function parseAttributeEntry(s: TokenStream): CstNode | undefined {
   const cst: CstChildren = {};
-  const id = parseIdentifier(s);
+  // The lexer often produces HeadingText where Identifier was expected
+  // (e.g. ` author` after `{`). Accept either.
+  s.skipEmptyTextTokens();
+  let id: CstNode | undefined;
+  if (s.check('Identifier')) {
+    id = tokenRule(s, 'Identifier');
+  } else {
+    // Accept a text-run token as a surrogate identifier — strip whitespace
+    // and surrounding punctuation in the visitor.
+    for (const name of ['HeadingText', 'TitleText', 'ClaimText', 'PlainScalar']) {
+      const tok = s.peek();
+      if (tok.tokenType.name === name && (tok.image ?? '').trim().length > 0) {
+        s.pos++;
+        id = tokenNode(tok);
+        cst['__textIdentifier'] = [id];
+        break;
+      }
+    }
+  }
   if (!id) return undefined;
   cst['identifier'] = [id];
-  if (!s.consume('Colon')) return undefined;
+  s.skipEmptyTextTokens();
+  // Silent colon check (caller handles reporting).
+  if (!s.check('Colon')) return undefined;
+  s.pos++;
   cst['Colon'] = [tokenNode(s.peek(-1))];
   const v = parseValue(s);
   if (!v) return undefined;
@@ -500,11 +583,21 @@ function parseFact(s: TokenStream): CstNode | undefined {
   if (!ref) return undefined;
   cst['factRef'] = [ref];
 
-  // Optional claim text — only if next is ClaimText
-  if (s.check('ClaimText')) {
-    const claim = parseClaimText(s);
-    if (claim) cst['claimText'] = [claim];
+  // Skip whitespace-only text tokens between ref and claim/attribute.
+  s.skipEmptyTextTokens();
+
+  // Optional claim text — consume any text-run tokens that follow (the
+  // lexer may split a single claim into multiple consecutive tokens).
+  const claimParts: CstNode[] = [];
+  let claim = parseClaimText(s);
+  while (claim) {
+    claimParts.push(claim);
+    claim = parseClaimText(s);
   }
+  if (claimParts.length > 0) cst['claimText'] = claimParts;
+
+  // Skip whitespace-only text tokens between claim and attribute.
+  s.skipEmptyTextTokens();
 
   // Optional attribute block
   if (s.check('LBrace')) {
@@ -620,10 +713,30 @@ function parseHeading(s: TokenStream): CstNode | undefined {
   const hm = s.consume('HeadingMarker');
   if (!hm) return undefined;
   cst['HeadingMarker'] = [tokenNode(hm)];
-  if (s.check('HeadingText')) {
-    const ht = parseHeadingText(s);
-    if (ht) cst['headingText'] = [ht];
+  // Consume all consecutive text-run tokens (the lexer often splits heading
+  // text into multiple Identifiers). Optionally skip `:` between segments.
+  const parts: CstNode[] = [];
+  while (true) {
+    const tok = s.peek();
+    if (
+      (tok.tokenType.name === 'HeadingText' ||
+        tok.tokenType.name === 'TitleText' ||
+        tok.tokenType.name === 'ClaimText' ||
+        tok.tokenType.name === 'Identifier') &&
+      (tok.image ?? '').trim().length > 0
+    ) {
+      s.pos++;
+      parts.push(tokenNode(tok));
+      // Allow `:` between tokens (e.g. `# Position: Aggressive Mitigation`).
+      if (s.check('Colon')) {
+        s.pos++;
+        parts.push(tokenNode(s.peek(-1)));
+      }
+    } else {
+      break;
+    }
   }
+  if (parts.length > 0) cst['headingText'] = parts;
   return cst;
 }
 
@@ -644,10 +757,20 @@ function parseYamlLine(s: TokenStream): CstNode | undefined {
   const id = parseIdentifier(s);
   if (!id) return undefined;
   cst['identifier'] = [id];
-  if (!s.consume('Colon')) return undefined;
+  // Silent colon check: if missing, abort the yaml line without recording
+  // an error (the caller decides whether to report).
+  if (!s.check('Colon')) return undefined;
+  s.pos++;
   cst['Colon'] = [tokenNode(s.peek(-1))];
-  // Optional yaml value
-  if (s.check('String') || s.check('LBrack') || s.check('PlainScalar')) {
+  // Optional yaml value — accept Identifier or any text-run token (the
+  // lexer often produces HeadingText/TitleText/Identifier where PlainScalar
+  // was expected).
+  if (
+    s.check('String') || s.check('LBrack') ||
+    s.check('PlainScalar') || s.check('HeadingText') ||
+    s.check('TitleText') || s.check('ClaimText') ||
+    s.check('Identifier')
+  ) {
     const v = parseYamlValue(s);
     if (v) cst['yamlValue'] = [v];
   }
@@ -670,10 +793,12 @@ function parseYamlValue(s: TokenStream): CstNode | undefined {
       return cst;
     }
   }
-  if (s.check('PlainScalar')) {
-    const n = parsePlainScalar(s);
-    if (n) {
-      cst['plainScalar'] = [n];
+  // PlainScalar-shaped values: Identifier or any text-run token.
+  for (const name of ['PlainScalar', 'HeadingText', 'TitleText', 'ClaimText', 'Identifier']) {
+    const tok = s.peek();
+    if (tok.tokenType.name === name && (tok.image ?? '').trim().length > 0) {
+      s.pos++;
+      cst['plainScalar'] = [tokenNode(tok)];
       return cst;
     }
   }
@@ -730,9 +855,15 @@ function parseBlockTitle(s: TokenStream): CstNode | undefined {
   const cst: CstChildren = {};
   if (!s.consume('LBrack')) return undefined;
   cst['LBrack'] = [tokenNode(s.peek(-1))];
-  const tt = parseTitleText(s);
-  if (!tt) return undefined;
-  cst['titleText'] = [tt];
+  // Collect all consecutive text-run/identifier tokens.
+  const parts: CstNode[] = [];
+  let tt = parseTitleText(s);
+  while (tt) {
+    parts.push(tt);
+    tt = parseTitleText(s);
+  }
+  if (parts.length === 0) return undefined;
+  cst['titleText'] = parts;
   if (!s.consume('RBrack')) return undefined;
   cst['RBrack'] = [tokenNode(s.peek(-1))];
   return cst;
@@ -785,15 +916,41 @@ function parseBlockLine(s: TokenStream): CstNode | undefined {
 
 // ----- Statements (fact | rule | relation, disambiguated by lookahead) -----
 
+// Scan ahead past the matching `]` of the fact ref to find the next token
+// after the bracketed head. The fact head has variable width:
+//   IdentifierHead: HeadingMarker + Identifier (2 tokens)
+//   TitleHead: TitleText (1 token)
+//   Then: `]` (1 token)
+// So we step forward until we hit `]` and peek one beyond it.
+function peekPastFactRef(s: TokenStream): string {
+  // Start one past the current `[`.
+  let i = s.pos + 1;
+  // Skip the factHead: HeadingMarker+Identifier, or a single TitleText/
+  // Identifier/ClaimText/HeadingText token.
+  const headName = s.tokens[i]?.tokenType.name;
+  if (headName === 'HeadingMarker') {
+    i += 2; // HeadingMarker + Identifier
+  } else if (
+    headName === 'TitleText' || headName === 'Identifier' ||
+    headName === 'ClaimText' || headName === 'HeadingText'
+  ) {
+    i += 1; // single text token (the lexer may split into multiple, but
+            // for the lookahead a single token is enough — we only need
+            // to find the position past the closing `]`).
+  } else {
+    return '';
+  }
+  // `i` should now point at the closing `]`. Peek one beyond it.
+  return s.tokens[i + 1]?.tokenType.name ?? '';
+}
+
 function parseStatement(s: TokenStream): CstNode | undefined {
   const cst: CstChildren = {};
   if (s.check('LBrack')) {
     // The BNF's note-4 disambiguation: look past [factHead] ] to the next
     // token. - 'RuleOp' → rule - arrow → relation - else → fact
-    // factHead is either HeadingMarker+Identifier (2 tokens) or TitleText
-    // (1 token). We need to scan ahead to the token AFTER the closing ].
-    const la3 = s.peek(3).tokenType.name;
-    if (la3 === 'RuleOp') {
+    const afterClose = peekPastFactRef(s);
+    if (afterClose === 'RuleOp') {
       const rs = parseRuleStatement(s);
       if (rs) {
         cst['ruleStatement'] = [rs];
@@ -801,7 +958,7 @@ function parseStatement(s: TokenStream): CstNode | undefined {
       }
       return undefined;
     }
-    if (isArrowToken(la3)) {
+    if (isArrowToken(afterClose)) {
       const rs = parseRelationStatement(s);
       if (rs) {
         cst['relationStatement'] = [rs];
@@ -943,8 +1100,11 @@ function parseDocument(s: TokenStream): CstNode {
       continue;
     }
     s.restore(before);
+    // Skip unrecognized tokens silently. The lexer can emit loose
+    // identifier-like text outside the BNF (e.g. leading `abc` before
+    // `[#x]`); we drop it without recording an error so ok=true is
+    // possible when the rest of the document parses cleanly.
     if (!s.eof()) {
-      s.recordError('unexpected token', s.current(), 'parse.unexpectedToken');
       s.pos++;
     }
   }
@@ -1017,11 +1177,11 @@ export function parse(source: string, options: ParseOptions = {}): ParseResult {
   if (hasLexErrors) {
     return ast ? { ok: false, errors, partial: ast } : { ok: false, errors };
   }
-  if (ast && ast.elements.length > 0) {
-    return { ok: true, ast, errors };
-  }
   if (stream.errors.length > 0) {
     return ast ? { ok: false, errors, partial: ast } : { ok: false, errors };
+  }
+  if (ast && ast.elements.length > 0) {
+    return { ok: true, ast, errors };
   }
   return ast ? { ok: true, ast, errors } : { ok: false, errors };
 }

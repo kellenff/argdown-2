@@ -41,7 +41,7 @@ export type Element =
 
 export type Frontmatter = {
   kind: 'Frontmatter';
-  entries: Record<string, Value>;
+  entries: Record<string, Value | PlainScalar>;
   loc: SourceLocation;
 };
 

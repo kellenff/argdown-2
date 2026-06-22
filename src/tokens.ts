@@ -94,9 +94,13 @@ export const ClaimText: TokenType = createToken({
 
 export const HeadingText: TokenType = createToken({
   name: 'HeadingText',
-  pattern: /[^\n\r][^\n\r]*/,
+  // Excludes chars that delimit BNF tokens so HeadingText doesn't swallow
+  // surrounding syntax: newlines, `]` (closing fact refs), `{`/`}` (attribute
+  // blocks), `:` (YAML keys), `"`/`'` (strings), `.` (numbers), and the
+  // arrow operators (`-`, `~`, `?`, `<`).
+  pattern: /[^\s\n\r\][{}:"'.()\-~?<][^\s\n\r\][{}:"',=()\-~?<]*/,
   start_chars_hint: Array.from(
-    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'` ',
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_ \'"`',
   ),
 });
 
@@ -177,8 +181,6 @@ export const allTokens: TokenType[] = [
   // Punctuation that could prefix numbers (only matches when not part of a Number)
   Minus,
   Plus,
-  // Identifiers
-  Identifier,
   // Single-char punctuation must come before text runs so they aren't shadowed.
   LBrack,
   RBrack,
@@ -189,6 +191,8 @@ export const allTokens: TokenType[] = [
   Colon,
   Comma,
   Period,
+  // Identifiers
+  Identifier,
   // Text runs (catch-all-ish for long runs) come after single-char punctuation.
   TitleText,
   ClaimText,
@@ -203,7 +207,11 @@ export const allTokens: TokenType[] = [
 export const ArgdownLexer: Lexer = new Lexer(allTokens, {
   // Track line/column for source positions
   positionTracking: 'full',
-  ensureOptimizations: true,
+  // With ensureOptimizations: true, Chevrotain uses longest-match semantics,
+  // which means the catch-all HeadingText eats surrounding operators like
+  // `-->` because it starts earlier in the input. We disable optimizations
+  // so the token order in `allTokens` is the disambiguation order.
+  ensureOptimizations: false,
 });
 
 export function tokenize(source: string): ILexingResult {
