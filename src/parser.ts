@@ -7,6 +7,7 @@ import type { ParserMethod, CstNode } from 'chevrotain';
 import type { Document } from './ast.js';
 import {
   allTokens,
+  ArgdownLexer,
   Identifier,
   StringTok,
   Number,
@@ -48,6 +49,7 @@ import {
   Stakeholder,
   Domain,
 } from './tokens.js';
+import { buildAst } from './visitor.js';
 
 // ----- Result types -----
 
@@ -483,7 +485,95 @@ export function formatError(err: ParseError, filename = '<anonymous>'): string {
   return `${filename}:${err.loc.line}:${err.loc.column}: ${err.message}`;
 }
 
+function mapChevrotainError(err: {
+  message?: string;
+  token?: {
+    tokenType?: { name: string };
+    startOffset?: number;
+    endOffset?: number;
+    startLine?: number;
+    startColumn?: number;
+    endLine?: number;
+    endColumn?: number;
+  };
+  context?: { expectedTokens?: { name: string }[] };
+}): ParseError {
+  const tok = err.token;
+  const loc = {
+    line: tok?.startLine ?? 1,
+    column: tok?.startColumn ?? 1,
+    offset: tok?.startOffset ?? 0,
+  };
+  const ctorName = (err as { constructor?: { name?: string } }).constructor?.name ?? '';
+  let code: ParseErrorCode = 'parse.mismatchedToken';
+  if (ctorName === 'MismatchedTokenException')      code = 'parse.mismatchedToken';
+  else if (ctorName === 'NoViableAlternativeError') code = 'parse.noViableAlternative';
+  else if (ctorName === 'NotAllInputParsedException') code = 'parse.notAllInputParsed';
+  else if (ctorName === 'EarlyExitException')      code = 'parse.earlyExit';
+  const expected = err.context?.expectedTokens?.map((t) => t.name);
+  const found = tok?.tokenType?.name;
+  return {
+    code,
+    message: err.message ?? 'parse error',
+    severity: 'error',
+    loc,
+    ...(expected ? { expected } : {}),
+    ...(found ? { found } : {}),
+  };
+}
+
 export function parse(source: string, options: ParseOptions = {}): ParseResult {
-  // Implementation in Task 18.
-  throw new Error('parse() not yet implemented');
+  const filename = options.filename ?? '<anonymous>';
+  const maxErrors = options.maxErrors ?? 100;
+
+  // ----- Lexical errors (from the lexer itself) -----
+  const lexResult = ArgdownLexer.tokenize(source);
+  const errors: ParseError[] = [];
+
+  for (const lexErr of lexResult.errors) {
+    if (errors.length >= maxErrors) break;
+    let code: ParseErrorCode = 'parse.invalidStringEscape';
+    if (lexErr.message?.includes('UNTERMINATED')) {
+      code = lexErr.message.includes('string') ? 'parse.unterminatedString' : 'parse.unterminatedBlockComment';
+    }
+    errors.push({
+      code,
+      message: lexErr.message ?? 'lex error',
+      severity: 'error',
+      loc: {
+        line: lexErr.line ?? 1,
+        column: lexErr.column ?? 1,
+        offset: lexErr.offset ?? 0,
+      },
+    });
+  }
+
+  // ----- Parse (always run, even with lex errors, to get partial CST) -----
+  const parser = new ArgdownParser();
+  parser.input = lexResult.tokens;
+  const cst = parser.document();
+
+  for (const chevErr of parser.errors) {
+    if (errors.length >= maxErrors) break;
+    errors.push(mapChevrotainError(chevErr as never));
+  }
+
+  // ----- Build AST -----
+  // Even with lexical errors, attempt to construct the AST from whatever the parser
+  // produced and surface it as `partial` so callers can show diagnostics alongside
+  // the partial tree.
+  let ast: Document | undefined;
+  try {
+    ast = buildAst(cst as unknown as Parameters<typeof buildAst>[0]);
+  } catch {
+    ast = undefined;
+  }
+
+  if (lexResult.errors.length > 0 || parser.errors.length > 0) {
+    return ast ? { ok: false, errors, partial: ast } : { ok: false, errors };
+  }
+
+  return ast
+    ? { ok: true, ast, errors }
+    : { ok: false, errors };
 }
