@@ -53,23 +53,18 @@ function formatFuzzFailure(msg: string, ctx: FuzzCtx, extra?: Record<string, unk
 
 // Invariant 1: parse() must never throw on any input. This is the contract
 // documented in parser.ts — the parser is best-effort. The fuzz test guards
-// against regressions in that contract.
-function checkNoThrow(result: ParseResult, ctx: FuzzCtx): void {
-  // Nothing to check here — the absence of a throw is enforced by the call site
-  // wrapping `parse(source)` in a try/catch (see checkInvariants below).
-  // This function exists so the invariant set is explicit; it can grow.
-  void result;
-  void ctx;
-}
-
-function checkInvariants(source: string, ctx: FuzzCtx): ParseResult {
-  let result: ParseResult;
+// against regressions in that contract by wrapping parse() in a try/catch
+// and failing loudly if it throws.
+function checkNoThrow(source: string, ctx: FuzzCtx): ParseResult {
   try {
-    result = parse(source);
+    return parse(source);
   } catch (e) {
     throw new FuzzFailure('parse() threw', ctx, { error: String(e) });
   }
-  checkNoThrow(result, ctx);
+}
+
+function checkInvariants(source: string, ctx: FuzzCtx): ParseResult {
+  const result = checkNoThrow(source, ctx);
   checkResultShape(result, ctx);
   checkAstShape(result, ctx);
   checkIdempotence(result, source, ctx);
