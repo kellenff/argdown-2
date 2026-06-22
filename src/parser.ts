@@ -5,7 +5,34 @@ import { CstParser, EOF } from 'chevrotain';
 import type { ParserMethod, CstNode } from 'chevrotain';
 
 import type { Document } from './ast.js';
-import { allTokens } from './tokens.js';
+import {
+  allTokens,
+  Identifier,
+  StringTok,
+  Number,
+  TitleText,
+  ClaimText,
+  HeadingText,
+  PlainScalar,
+  FlowScalar,
+  LBrack,
+  RBrack,
+  LBrace,
+  RBrace,
+  LParen,
+  RParen,
+  Colon,
+  Comma,
+  Period,
+  Minus,
+  Plus,
+  RuleOp,
+  LineCommentTok,
+  BlockCommentTok,
+  True,
+  False,
+  Null,
+} from './tokens.js';
 
 // ----- Result types -----
 
@@ -36,24 +63,52 @@ export type ParseOptions = {
 };
 
 export type ParseResult =
-  | { ok: true;  ast: Document;        errors: ParseError[] }
+  | { ok: true; ast: Document; errors: ParseError[] }
   | { ok: false; errors: ParseError[]; partial?: Document };
 
 // ----- Parser class -----
 
 export class ArgdownParser extends CstParser {
-  // Rule field declarations — populated by $.RULE at runtime
+  // ----- Rule field declarations (populated by $.RULE at runtime) -----
   declare document: ParserMethod<[], CstNode>;
   declare element: ParserMethod<[], CstNode>;
   declare statement: ParserMethod<[], CstNode>;
   declare frontmatter: ParserMethod<[], CstNode>;
   declare blankLine: ParserMethod<[], CstNode>;
   declare comment: ParserMethod<[], CstNode>;
+  declare lineComment: ParserMethod<[], CstNode>;
+  declare blockComment: ParserMethod<[], CstNode>;
   declare heading: ParserMethod<[], CstNode>;
   declare block: ParserMethod<[], CstNode>;
   declare factStatement: ParserMethod<[], CstNode>;
   declare ruleStatement: ParserMethod<[], CstNode>;
   declare relationStatement: ParserMethod<[], CstNode>;
+  // Terminals
+  declare identifier: ParserMethod<[], CstNode>;
+  declare string: ParserMethod<[], CstNode>;
+  declare number: ParserMethod<[], CstNode>;
+  declare titleText: ParserMethod<[], CstNode>;
+  declare claimText: ParserMethod<[], CstNode>;
+  declare headingText: ParserMethod<[], CstNode>;
+  declare plainScalar: ParserMethod<[], CstNode>;
+  declare flowScalar: ParserMethod<[], CstNode>;
+  // Fact refs and heads
+  declare factRef: ParserMethod<[], CstNode>;
+  declare factHead: ParserMethod<[], CstNode>;
+  declare identifierHead: ParserMethod<[], CstNode>;
+  declare titleHead: ParserMethod<[], CstNode>;
+  // Values and attributes
+  declare value: ParserMethod<[], CstNode>;
+  declare boolean: ParserMethod<[], CstNode>;
+  declare nullValue: ParserMethod<[], CstNode>;
+  declare flowSequence: ParserMethod<[], CstNode>;
+  declare flowMapping: ParserMethod<[], CstNode>;
+  declare attributeBlock: ParserMethod<[], CstNode>;
+  declare attributeEntry: ParserMethod<[], CstNode>;
+  // Facts and rules
+  declare fact: ParserMethod<[], CstNode>;
+  declare rule: ParserMethod<[], CstNode>;
+  declare factRefList: ParserMethod<[], CstNode>;
 
   constructor() {
     super(allTokens, {
@@ -65,7 +120,7 @@ export class ArgdownParser extends CstParser {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const $ = this;
 
-    // ----- Top-level structure -----
+    // ----- Top-level structure (Task 6) -----
 
     $.RULE('document', () => {
       $.OPTION(() => $.SUBRULE($.frontmatter));
@@ -85,7 +140,6 @@ export class ArgdownParser extends CstParser {
       ]);
     });
 
-    // The `statement` rule disambiguates fact / rule / relation.
     $.RULE('statement', () => {
       $.OR([
         { ALT: () => $.SUBRULE($.ruleStatement) },
@@ -94,15 +148,170 @@ export class ArgdownParser extends CstParser {
       ]);
     });
 
-    // Placeholder rules — defined in later tasks
+    // Placeholders (filled in by later tasks)
     $.RULE('frontmatter', () => {});
-    $.RULE('blankLine', () => { $.CONSUME(EOF); });
-    $.RULE('comment', () => {});
+    $.RULE('blankLine', () => {
+      $.CONSUME(EOF);
+    });
     $.RULE('heading', () => {});
     $.RULE('block', () => {});
-    $.RULE('factStatement', () => {});
-    $.RULE('ruleStatement', () => {});
-    $.RULE('relationStatement', () => {});
+
+    // ----- Terminal rules (Task 7) -----
+
+    $.RULE('identifier', () => {
+      $.CONSUME(Identifier);
+    });
+    $.RULE('string', () => {
+      $.CONSUME(StringTok);
+    });
+    $.RULE('number', () => {
+      $.CONSUME(Number);
+    });
+    $.RULE('titleText', () => {
+      $.CONSUME(TitleText);
+    });
+    $.RULE('claimText', () => {
+      $.CONSUME(ClaimText);
+    });
+    $.RULE('headingText', () => {
+      $.CONSUME(HeadingText);
+    });
+    $.RULE('plainScalar', () => {
+      $.CONSUME(PlainScalar);
+    });
+    $.RULE('flowScalar', () => {
+      $.CONSUME(FlowScalar);
+    });
+
+    // ----- Fact refs and heads (Task 8, simplified — no Hash token needed) -----
+
+    $.RULE('factRef', () => {
+      $.CONSUME(LBrack);
+      $.SUBRULE($.factHead);
+      $.CONSUME(RBrack);
+    });
+
+    $.RULE('factHead', () => {
+      $.OR([{ ALT: () => $.SUBRULE($.identifierHead) }, { ALT: () => $.SUBRULE($.titleHead) }]);
+    });
+
+    $.RULE('identifierHead', () => {
+      $.CONSUME(Identifier); // The "#" is part of the Identifier pattern in the BNF
+      // NOTE: This is a simplification — the BNF's Identifier doesn't include "#",
+      // but for the parser we accept any identifier (including #-prefixed ones via
+      // the HeadingMarker's pattern, since # is in the Identifier start chars).
+      // For now, this will be revisited when we add the Hash token.
+    });
+
+    $.RULE('titleHead', () => {
+      $.SUBRULE($.titleText);
+    });
+
+    // ----- Comments (Task 8) -----
+
+    $.RULE('comment', () => {
+      $.OR([{ ALT: () => $.SUBRULE($.lineComment) }, { ALT: () => $.SUBRULE($.blockComment) }]);
+    });
+
+    $.RULE('lineComment', () => {
+      $.CONSUME(LineCommentTok);
+    });
+
+    $.RULE('blockComment', () => {
+      $.CONSUME(BlockCommentTok);
+    });
+
+    // ----- Values (Task 9) -----
+
+    $.RULE('value', () => {
+      $.OR1([
+        { ALT: () => $.SUBRULE($.string) },
+        { ALT: () => $.SUBRULE($.number) },
+        { ALT: () => $.SUBRULE($.boolean) },
+        { ALT: () => $.SUBRULE($.nullValue) },
+        { ALT: () => $.SUBRULE($.flowSequence) },
+        { ALT: () => $.SUBRULE($.flowMapping) },
+        { ALT: () => $.SUBRULE($.flowScalar) },
+      ]);
+    });
+
+    $.RULE('boolean', () => {
+      $.OR2([{ ALT: () => $.CONSUME(True) }, { ALT: () => $.CONSUME(False) }]);
+    });
+
+    $.RULE('nullValue', () => {
+      $.CONSUME(Null);
+    });
+
+    $.RULE('flowSequence', () => {
+      $.CONSUME(LBrack);
+      $.MANY_SEP({
+        SEP: Comma,
+        DEF: () => $.SUBRULE($.value),
+      });
+      $.CONSUME(RBrack);
+    });
+
+    $.RULE('flowMapping', () => {
+      $.CONSUME(LBrace);
+      $.MANY_SEP({
+        SEP: Comma,
+        DEF: () => $.SUBRULE($.attributeEntry),
+      });
+      $.CONSUME(RBrace);
+    });
+
+    // ----- Attribute blocks (Task 9) -----
+
+    $.RULE('attributeBlock', () => {
+      $.CONSUME(LBrace);
+      $.MANY_SEP({
+        SEP: Comma,
+        DEF: () => $.SUBRULE($.attributeEntry),
+      });
+      $.CONSUME(RBrace);
+    });
+
+    $.RULE('attributeEntry', () => {
+      $.SUBRULE($.identifier);
+      $.CONSUME(Colon);
+      $.SUBRULE($.value);
+    });
+
+    // ----- Facts (Task 10) -----
+
+    $.RULE('fact', () => {
+      $.SUBRULE($.factRef);
+      $.OPTION1(() => $.SUBRULE($.claimText));
+      $.OPTION2(() => $.SUBRULE($.attributeBlock));
+    });
+
+    $.RULE('factStatement', () => {
+      $.SUBRULE($.fact);
+    });
+
+    // ----- Rules (Task 11) -----
+
+    $.RULE('rule', () => {
+      $.SUBRULE($.factRef);
+      $.CONSUME(RuleOp);
+      $.SUBRULE($.factRefList);
+      $.CONSUME(Period);
+    });
+
+    $.RULE('factRefList', () => {
+      $.SUBRULE($.factRef);
+      $.MANY({
+        DEF: () => {
+          $.CONSUME(Comma);
+          $.SUBRULE($.factRef);
+        },
+      });
+    });
+
+    $.RULE('ruleStatement', () => {
+      $.SUBRULE($.rule);
+    });
   }
 }
 
