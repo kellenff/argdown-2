@@ -27,3 +27,77 @@ describe('makeRng', () => {
     expect(seqA).not.toEqual(seqB);
   });
 });
+
+import {
+  insertLine,
+  deleteLine,
+  swapLines,
+  duplicateRange,
+  spliceGarbage,
+  replaceLine,
+} from './parser.mutate.js';
+
+const SRC = 'line1\nline2\nline3\nline4';
+const SINGLE = 'only';
+
+describe('mutator ops', () => {
+  it('insertLine adds one line and preserves total newline structure', () => {
+    const rng = makeRng(1);
+    const out = insertLine(SRC, rng);
+    expect(out.split('\n').length).toBe(SRC.split('\n').length + 1);
+  });
+
+  it('deleteLine removes one line when there are at least 2', () => {
+    const rng = makeRng(2);
+    const out = deleteLine(SRC, rng);
+    expect(out.split('\n').length).toBe(SRC.split('\n').length - 1);
+  });
+
+  it('deleteLine returns input unchanged for single-line source', () => {
+    const rng = makeRng(3);
+    expect(deleteLine(SINGLE, rng)).toBe(SINGLE);
+  });
+
+  it('swapLines rearranges but preserves length', () => {
+    const rng = makeRng(4);
+    const out = swapLines(SRC, rng);
+    expect(out.split('\n').length).toBe(SRC.split('\n').length);
+    expect(out).not.toBe(SRC);
+  });
+
+  it('swapLines is a no-op for single-line source', () => {
+    const rng = makeRng(5);
+    expect(swapLines(SINGLE, rng)).toBe(SINGLE);
+  });
+
+  it('duplicateRange grows by 1–3 lines', () => {
+    const rng = makeRng(6);
+    const out = duplicateRange(SRC, rng);
+    const before = SRC.split('\n').length;
+    const after = out.split('\n').length;
+    expect(after).toBeGreaterThan(before);
+    expect(after).toBeLessThanOrEqual(before + 3);
+  });
+
+  it('spliceGarbage changes the source', () => {
+    const rng = makeRng(7);
+    const out = spliceGarbage(SRC, rng);
+    expect(out).not.toBe(SRC);
+  });
+
+  it('replaceLine overwrites one line', () => {
+    const rng = makeRng(8);
+    const out = replaceLine(SRC, rng);
+    expect(out.split('\n').length).toBe(SRC.split('\n').length);
+    const outLines = out.split('\n');
+    const srcLines = SRC.split('\n');
+    const same = outLines.filter((l, i) => l === srcLines[i]).length;
+    expect(same).toBeLessThan(srcLines.length);
+  });
+
+  it('replaceLine on empty source returns a random line', () => {
+    const rng = makeRng(9);
+    const out = replaceLine('', rng);
+    expect(out.length).toBeGreaterThan(0);
+  });
+});
