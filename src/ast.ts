@@ -5,9 +5,9 @@
 // ----- Shared -----
 
 export type Position = {
-  line: number;     // 1-indexed (IDE convention)
-  column: number;   // 1-indexed
-  offset: number;   // 0-indexed (UTF-16 code unit)
+  line: number; // 1-indexed (IDE convention)
+  column: number; // 1-indexed
+  offset: number; // 0-indexed (UTF-16 code unit)
 };
 
 export type SourceLocation = {

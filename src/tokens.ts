@@ -77,7 +77,9 @@ export const TitleText: TokenType = createToken({
   // First char: not # [ ] LF CR. Rest: not [ ] LF CR.
   // We accept anything then post-validate in the parser.
   pattern: /[^#[\]\n\r][^[\]\n\r]*/,
-  start_chars_hint: Array.from('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'`'),
+  start_chars_hint: Array.from(
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'`',
+  ),
 });
 
 export const ClaimText: TokenType = createToken({
@@ -85,25 +87,33 @@ export const ClaimText: TokenType = createToken({
   // First char: not space/tab/LF/CR/{/}/[/]/(/)/#/:/"/-/~/?/</,/.
   // Rest: not {/}/LF/CR.
   pattern: /[^\s\n\r{}[\]()#:.~?<,-][^{}\n\r]*/,
-  start_chars_hint: Array.from('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_="\''),
+  start_chars_hint: Array.from(
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_="\'',
+  ),
 });
 
 export const HeadingText: TokenType = createToken({
   name: 'HeadingText',
   pattern: /[^\n\r][^\n\r]*/,
-  start_chars_hint: Array.from('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'`'),
+  start_chars_hint: Array.from(
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'` ',
+  ),
 });
 
 export const PlainScalar: TokenType = createToken({
   name: 'PlainScalar',
   pattern: /[^\n\r]+/,
-  start_chars_hint: Array.from('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'`'),
+  start_chars_hint: Array.from(
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'`',
+  ),
 });
 
 export const FlowScalar: TokenType = createToken({
   name: 'FlowScalar',
   pattern: /[^,[\]{}\n\r]+/,
-  start_chars_hint: Array.from('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'`'),
+  start_chars_hint: Array.from(
+    'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"\'`',
+  ),
 });
 
 // ----- Single-character punctuation -----

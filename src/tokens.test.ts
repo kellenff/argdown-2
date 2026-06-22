@@ -110,23 +110,29 @@ describe('token vocabulary', () => {
 
   // ----- Single-character punctuation -----
 
-  it.each(['[', ']', '{', '}', '(', ')', ':', ',', '.', '-'])(
-    'lexes punctuation "%s"',
-    (ch) => {
-      expect(lexOne(ch).tokenType.name).toBe(
-        ch === ':' ? 'Colon'
-        : ch === ',' ? 'Comma'
-        : ch === '.' ? 'Period'
-        : ch === '-' ? 'Minus'
-        : ch === '[' ? 'LBrack'
-        : ch === ']' ? 'RBrack'
-        : ch === '{' ? 'LBrace'
-        : ch === '}' ? 'RBrace'
-        : ch === '(' ? 'LParen'
-        : 'RParen',
-      );
-    },
-  );
+  it.each(['[', ']', '{', '}', '(', ')', ':', ',', '.', '-'])('lexes punctuation "%s"', (ch) => {
+    expect(lexOne(ch).tokenType.name).toBe(
+      ch === ':'
+        ? 'Colon'
+        : ch === ','
+          ? 'Comma'
+          : ch === '.'
+            ? 'Period'
+            : ch === '-'
+              ? 'Minus'
+              : ch === '['
+                ? 'LBrack'
+                : ch === ']'
+                  ? 'RBrack'
+                  : ch === '{'
+                    ? 'LBrace'
+                    : ch === '}'
+                      ? 'RBrace'
+                      : ch === '('
+                        ? 'LParen'
+                        : 'RParen',
+    );
+  });
 
   // ----- Whitespace is skipped -----
 
