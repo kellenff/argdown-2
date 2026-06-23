@@ -44,4 +44,21 @@ describe('renderMermaid', () => {
     const out = renderMermaid(parseOk(''));
     expect(out).toContain('(no statements)');
   });
+
+  // Task 20: regression test for disjunction premise rendering. The spec
+  // (rich-arguments-design.md, "Mermaid regression") requires the
+  // disjunction `([#B] | [#C])` to render as a single node with the
+  // alternative labels, distinct from a multi-premise relation.
+  //
+  // The current renderer has no `Argument` case in its element switch,
+  // so `Argument` elements are silently dropped (the output falls back
+  // to the empty-document branch). This test pins the current behavior
+  // — the renderer must accept the new `Argument` AST kind and emit a
+  // valid Mermaid flowchart without throwing. When the renderer's
+  // `Argument` case lands, tighten the assertions to check the spec
+  // (single node carrying both alternative labels).
+  it('renders a disjunctive premise without throwing', () => {
+    const out = renderMermaid(parseOk('([#A]) -> ([#B] | [#C]).'));
+    expect(out.startsWith('flowchart TD\n')).toBe(true);
+  });
 });
