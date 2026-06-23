@@ -12,7 +12,7 @@
 import type { CstChildren, CstNode } from './ast.js';
 import { TokenStream, tokenNode, tokenRule, isNonEmptyImage } from './parser-util.js';
 import { parseIdentifier, parseComment } from './parser-fact.js';
-import { parseAttributeEntry } from './parser.js';
+import { parseAttributeEntry } from './parser-relation.js';
 
 // =========================================================================
 // Scalar token rules (used by values, flow sequences/mappings, and YAML)
@@ -20,8 +20,8 @@ import { parseAttributeEntry } from './parser.js';
 //
 // parseIdentifier and parseComment live in parser-fact.ts — shared with
 // the fact/element path (parser.ts). parseAttributeEntry lives in
-// parser.ts — shared with parseAttributeBlock, will move to
-// parser-relation.ts in Task 6.
+// parser-relation.ts — shared with parseAttributeBlock and
+// parseFlowMapping (here).
 
 function parseString(s: TokenStream): CstNode | undefined {
   return tokenRule(s, 'String');
@@ -192,9 +192,8 @@ function parseFlowMapping(s: TokenStream): CstNode | undefined {
   return cst;
 }
 
-// parseAttributeEntry lives in parser.ts — used by both parseFlowMapping
-// (here) and parseAttributeBlock (parser.ts). It will move to
-// parser-relation.ts in Task 6 of the rich-arguments cycle.
+// parseAttributeEntry lives in parser-relation.ts — used by both
+// parseFlowMapping (here) and parseAttributeBlock (parser-relation.ts).
 
 // =========================================================================
 // YAML (frontmatter body)

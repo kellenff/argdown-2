@@ -28,8 +28,6 @@ import {
 } from './parser-util.js';
 
 import {
-  parseValue,
-  parseYamlLine,
   parseFrontmatter,
 } from './parser-frontmatter.js';
 
@@ -40,9 +38,25 @@ import {
   parseFactRefList,
   parseFactStatement,
 } from './parser-fact.js';
+import { parseRelationStatement } from './parser-relation.js';
+
+export {
+  parseArrow,
+  parseRelation,
+  parseRelationEndpoint,
+  parseRelationStatement,
+  parseAttributeBlock,
+  parseAttributeEntry,
+} from './parser-relation.js';
 
 export { TokenStream, tokenNode, tokenRule, isArrowToken, isNonEmptyImage, peekPastFactRef };
 export type { CstChildren, CstNode, ParseError, ParseErrorCode };
+
+// parseElement and parseRuleExpr are still defined here (Cycle 2 / Task 7
+// move them out), but their call sites in sibling modules (parser-block.ts,
+// parser-relation.ts) need them as named imports. Re-export so the
+// forward-reference contract holds.
+export { parseElement, parseRuleExpr };
 
 export {
   parseString,
@@ -89,16 +103,6 @@ export {
   parseBlockComment,
 } from './parser-fact.js';
 
-// Cross-cutting helpers — defined here because they are used by both the
-// frontmatter path (parser-frontmatter.ts) and the top-level grammar
-// (this file). They will move to parser-relation.ts in Task 6 of the
-// rich-arguments cycle.
-export {
-  parseAttributeEntry,
-  parseAttributeBlock,
-  parseElement,
-};
-
 // =========================================================================
 // Public API
 // =========================================================================
@@ -115,69 +119,6 @@ export type ParseResult =
 // =========================================================================
 // Parsing rules
 // =========================================================================
-
-// ----- Attribute blocks -----
-
-function parseAttributeBlock(s: TokenStream): CstNode | undefined {
-  const cst: CstChildren = {};
-  const lb = s.consume('LBrace');
-  if (!lb) return undefined;
-  cst['LBrace'] = [tokenNode(lb)];
-  const entries: CstNode[] = [];
-  if (!s.check('RBrace')) {
-    const first = parseAttributeEntry(s);
-    if (first) entries.push(first);
-  }
-  while (s.check('Comma')) {
-    s.consume('Comma');
-    const next = parseAttributeEntry(s);
-    if (next) entries.push(next);
-    else break;
-  }
-  cst['attributeEntry'] = entries;
-  const rb = s.consume('RBrace');
-  if (!rb) return undefined;
-  cst['RBrace'] = [tokenNode(rb)];
-  return cst;
-}
-
-// parseAttributeEntry lives here (not parser-frontmatter.ts) because it is
-// used by both parseAttributeBlock (above) and parseFlowMapping (in
-// parser-frontmatter.ts). It will move to parser-relation.ts in Task 6 of
-// the rich-arguments cycle.
-function parseAttributeEntry(s: TokenStream): CstNode | undefined {
-  const cst: CstChildren = {};
-  // The lexer often produces HeadingText where Identifier was expected
-  // (e.g. ` author` after `{`). Accept either.
-  s.skipEmptyTextTokens();
-  let id: CstNode | undefined;
-  if (s.check('Identifier')) {
-    id = tokenRule(s, 'Identifier');
-  } else {
-    // Accept a text-run token as a surrogate identifier — strip whitespace
-    // and surrounding punctuation in the visitor.
-    for (const name of ['HeadingText', 'TitleText', 'ClaimText', 'PlainScalar']) {
-      const tok = s.peek();
-      if (tok.tokenType.name === name && (tok.image ?? '').trim().length > 0) {
-        s.pos++;
-        id = tokenNode(tok);
-        cst['__textIdentifier'] = [id];
-        break;
-      }
-    }
-  }
-  if (!id) return undefined;
-  cst['identifier'] = [id];
-  s.skipEmptyTextTokens();
-  // Silent colon check (caller handles reporting).
-  if (!s.check('Colon')) return undefined;
-  s.pos++;
-  cst['Colon'] = [tokenNode(s.peek(-1))];
-  const v = parseValue(s);
-  if (!v) return undefined;
-  cst['value'] = [v];
-  return cst;
-}
 
 // ----- Rules -----
 
@@ -196,45 +137,9 @@ function parseRule(s: TokenStream): CstNode | undefined {
   return cst;
 }
 
-// ----- Relations -----
-
-function parseRelation(s: TokenStream): CstNode | undefined {
-  const cst: CstChildren = {};
-  const from = parseRelationEndpoint(s);
-  if (!from) return undefined;
-  const arrow = parseArrow(s);
-  if (!arrow) return undefined;
-  const to = parseRelationEndpoint(s);
-  if (!to) return undefined;
-  cst['relationEndpoint'] = [from, to];
-  cst['arrow'] = [arrow];
-  // Optional attribute block
-  if (s.check('LBrace')) {
-    const attr = parseAttributeBlock(s);
-    if (attr) cst['attributeBlock'] = [attr];
-  }
-  return cst;
-}
-
-function parseRelationEndpoint(s: TokenStream): CstNode | undefined {
-  const cst: CstChildren = {};
-  if (s.check('LParen')) {
-    const re = parseRuleExpr(s);
-    if (re) {
-      cst['ruleExpr'] = [re];
-      return cst;
-    }
-  }
-  if (s.check('LBrack')) {
-    const fr = parseFactRef(s);
-    if (fr) {
-      cst['factRef'] = [fr];
-      return cst;
-    }
-  }
-  return undefined;
-}
-
+// parseRuleExpr lives here (not parser-relation.ts) because it is still
+// used by the top-level rule/relation dispatch. Cycle 2 will move it
+// alongside parseArgExpr once the rule/argument unification lands.
 function parseRuleExpr(s: TokenStream): CstNode | undefined {
   const cst: CstChildren = {};
   const lp = s.consume('LParen');
@@ -252,13 +157,6 @@ function parseRuleExpr(s: TokenStream): CstNode | undefined {
   if (!rp) return undefined;
   cst['RParen'] = [tokenNode(rp)];
   return cst;
-}
-
-function parseArrow(s: TokenStream): CstNode | undefined {
-  if (!isArrowToken(s.current().tokenType.name)) return undefined;
-  const tok = s.current();
-  s.pos++;
-  return tokenNode(tok);
 }
 
 // ----- Statements (fact | rule | relation, disambiguated by lookahead) -----
@@ -309,14 +207,6 @@ function parseRuleStatement(s: TokenStream): CstNode | undefined {
   const r = parseRule(s);
   if (!r) return undefined;
   cst['rule'] = [r];
-  return cst;
-}
-
-function parseRelationStatement(s: TokenStream): CstNode | undefined {
-  const cst: CstChildren = {};
-  const r = parseRelation(s);
-  if (!r) return undefined;
-  cst['relation'] = [r];
   return cst;
 }
 

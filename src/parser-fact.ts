@@ -9,15 +9,13 @@
 // as part of the rich-arguments cycle 1 refactor to keep that file
 // focused on the top-level dispatch.
 //
-// Forward imports: parseAttributeBlock still lives in parser.ts (it will
-// move to parser-relation.ts in Task 6 of the cycle). Importing it here
-// resolves naturally once that refactor lands.
+// Forward imports: parseAttributeBlock lives in parser-relation.ts.
 
 import type { CstChildren, CstNode } from './ast.js';
 
 import { TokenStream, tokenNode, tokenRule } from './parser-util.js';
 import { parseTitleText, parseClaimText } from './parser-frontmatter.js';
-import { parseAttributeBlock } from './parser.js';
+import { parseAttributeBlock } from './parser-relation.js';
 
 // ----- Identifier -----
 
