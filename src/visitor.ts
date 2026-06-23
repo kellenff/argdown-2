@@ -565,7 +565,7 @@ function visitRelation(cst: CstChildren): Relation {
 function visitRelationEndpoint(cst: CstChildren): RelationEndpoint {
   const fr = pickFirst(cst['factRef'] as CstNode[]);
   if (fr) return visitFactRef(fr as CstChildren);
-  const re = pickFirst(cst['ruleExpr'] as CstNode[]);
+  const re = pickFirst(cst['ruleExpr'] as CstNode[]) ?? pickFirst(cst['argExpr'] as CstNode[]);
   if (re) return visitRuleExpr(re as CstChildren);
   throw new Error('relationEndpoint matched no alternative');
 }
