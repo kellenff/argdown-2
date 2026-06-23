@@ -13,9 +13,7 @@
 // refactor so that file stays focused on top-level dispatch.
 //
 // Dependencies:
-//   - parseRelationEndpoint calls parseRuleExpr from ./parser.js (Cycle 2
-//     will replace this with parseArgExpr once the rule/argument unification
-//     lands).
+//   - parseRelationEndpoint calls parseArgExpr from ./parser-arg.js.
 //   - parseAttributeEntry calls parseValue from ./parser-frontmatter.js.
 //   - parseRelationEndpoint calls parseFactRef from ./parser-fact.js.
 
@@ -24,7 +22,7 @@ import type { CstChildren, CstNode } from './ast.js';
 import { TokenStream, tokenNode, tokenRule, isArrowToken } from './parser-util.js';
 import { parseValue } from './parser-frontmatter.js';
 import { parseFactRef } from './parser-fact.js';
-import { parseRuleExpr } from './parser.js';
+import { parseArgExpr } from './parser-arg.js';
 
 // ----- Arrows -----
 
@@ -40,11 +38,9 @@ function parseArrow(s: TokenStream): CstNode | undefined {
 function parseRelationEndpoint(s: TokenStream): CstNode | undefined {
   const cst: CstChildren = {};
   if (s.check('LParen')) {
-    // Cycle 2 replaces parseRuleExpr with parseArgExpr once the rule/
-    // argument unification lands; the call shape is identical.
-    const re = parseRuleExpr(s);
-    if (re) {
-      cst['ruleExpr'] = [re];
+    const ae = parseArgExpr(s);
+    if (ae) {
+      cst['argExpr'] = [ae];
       return cst;
     }
   }

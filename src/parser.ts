@@ -31,8 +31,9 @@ import {
 import { parseFrontmatter } from './parser-frontmatter.js';
 
 import { parseBlock, parseHeading } from './parser-block.js';
-import { parseComment, parseFactRef, parseFactRefList, parseFactStatement } from './parser-fact.js';
+import { parseComment, parseFactStatement } from './parser-fact.js';
 import { parseRelationStatement } from './parser-relation.js';
+import { parseArgumentStatement } from './parser-arg.js';
 
 export {
   parseArrow,
@@ -46,11 +47,10 @@ export {
 export { TokenStream, tokenNode, tokenRule, isArrowToken, isNonEmptyImage, peekPastFactRef };
 export type { CstChildren, CstNode, ParseError, ParseErrorCode };
 
-// parseElement and parseRuleExpr are still defined here (Cycle 2 / Task 7
-// move them out), but their call sites in sibling modules (parser-block.ts,
-// parser-relation.ts) need them as named imports. Re-export so the
-// forward-reference contract holds.
-export { parseElement, parseRuleExpr };
+// parseElement is still defined here (Cycle 2 / Task 7 moved it out),
+// but its call sites in sibling modules need it as a named import.
+// Re-export so the forward-reference contract holds.
+export { parseElement };
 
 export {
   parseString,
@@ -114,46 +114,7 @@ export type ParseResult =
 // Parsing rules
 // =========================================================================
 
-// ----- Rules -----
-
-function parseRule(s: TokenStream): CstNode | undefined {
-  const cst: CstChildren = {};
-  const ref = parseFactRef(s);
-  if (!ref) return undefined;
-  cst['factRef'] = [ref];
-  if (!s.consume('RuleOp')) return undefined;
-  cst['RuleOp'] = [tokenNode(s.peek(-1))];
-  const list = parseFactRefList(s);
-  if (!list) return undefined;
-  cst['factRefList'] = [list];
-  // Optional trailing period — attach to CST so derived loc includes it.
-  if (s.consume('Period')) cst['Period'] = [tokenNode(s.peek(-1))];
-  return cst;
-}
-
-// parseRuleExpr lives here (not parser-relation.ts) because it is still
-// used by the top-level rule/relation dispatch. Cycle 2 will move it
-// alongside parseArgExpr once the rule/argument unification lands.
-function parseRuleExpr(s: TokenStream): CstNode | undefined {
-  const cst: CstChildren = {};
-  const lp = s.consume('LParen');
-  if (!lp) return undefined;
-  cst['LParen'] = [tokenNode(lp)];
-  const ref = parseFactRef(s);
-  if (!ref) return undefined;
-  cst['factRef'] = [ref];
-  if (!s.consume('RuleOp')) return undefined;
-  cst['RuleOp'] = [tokenNode(s.peek(-1))];
-  const list = parseFactRefList(s);
-  if (!list) return undefined;
-  cst['factRefList'] = [list];
-  const rp = s.consume('RParen');
-  if (!rp) return undefined;
-  cst['RParen'] = [tokenNode(rp)];
-  return cst;
-}
-
-// ----- Statements (fact | rule | relation, disambiguated by lookahead) -----
+// ----- Statements (fact | argument | relation, disambiguated by lookahead) -----
 
 function parseStatement(s: TokenStream): CstNode | undefined {
   const cst: CstChildren = {};
@@ -195,7 +156,15 @@ function parseStatement(s: TokenStream): CstNode | undefined {
     return undefined;
   }
   if (s.check('LParen')) {
-    // Rule used as a relation endpoint (parenthesized rule statement on its own)
+    // Try argument statement first (Cycle 2: (C) -> P. form).
+    // Fall back to relation statement if the parens don't form an argument.
+    const before = s.save();
+    const as_ = parseArgumentStatement(s);
+    if (as_) {
+      cst['argumentStatement'] = [as_];
+      return cst;
+    }
+    s.restore(before);
     const rs = parseRelationStatement(s);
     if (rs) {
       cst['relationStatement'] = [rs];
@@ -204,14 +173,6 @@ function parseStatement(s: TokenStream): CstNode | undefined {
     return undefined;
   }
   return undefined;
-}
-
-function parseRuleStatement(s: TokenStream): CstNode | undefined {
-  const cst: CstChildren = {};
-  const r = parseRule(s);
-  if (!r) return undefined;
-  cst['rule'] = [r];
-  return cst;
 }
 
 // ----- Frontmatter (parseFrontmatter lives in parser-frontmatter.ts) -----

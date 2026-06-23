@@ -29,6 +29,7 @@ import type { CstChildren, CstNode } from './ast.js';
 
 import { TokenStream, tokenNode } from './parser-util.js';
 import { parseFactRef } from './parser-fact.js';
+import { parseAttributeBlock } from './parser-relation.js';
 
 // =========================================================================
 // Skeleton
@@ -153,4 +154,19 @@ export function parseDisjunction(s: TokenStream): CstNode | undefined {
   cst['RParen'] = [tokenNode(rb)];
 
   return cst;
+}
+
+// Wraps parseArgument with an optional attribute block after the period.
+// This is the top-level statement entry point used by parseStatement.
+export function parseArgumentStatement(s: TokenStream): CstNode | undefined {
+  const arg = parseArgument(s);
+  if (!arg) return undefined;
+  // Optional attribute block after the period
+  if (s.check('LBrace')) {
+    const attr = parseAttributeBlock(s);
+    if (attr) {
+      (arg as unknown as { attributeBlock?: CstNode[] }).attributeBlock = [attr];
+    }
+  }
+  return arg;
 }
