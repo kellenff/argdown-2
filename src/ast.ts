@@ -311,6 +311,9 @@ export type ParseErrorCode =
   | 'parse.unterminatedString'
   | 'parse.unterminatedBlockComment'
   | 'parse.unclosedFrontmatter'
+  | 'parse.unclosedArgument'
+  | 'parse.argumentRequiresPremise'
+  | 'parse.expectedPeriod'
   | 'parse.removedSyntax';
 
 export type ParseError = {

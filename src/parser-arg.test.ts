@@ -141,3 +141,23 @@ describe('multi-premise relations', () => {
     expect(relations.length).toBe(2);
   });
 });
+
+// Task 17: argument error emissions. Each case exercises one row of the
+// "Argument parse errors" table in the rich-arguments design spec.
+
+describe('argument errors', () => {
+  it('emits error for ([#A]) -> . (no premises)', () => {
+    const result = parse('([#A]) -> .');
+    expect(result.errors?.[0]?.message).toContain('at least one premise');
+  });
+
+  it('emits error for ([#A] -> [#B]. (unclosed paren)', () => {
+    const result = parse('([#A] -> [#B].');
+    expect(result.errors?.[0]?.message).toContain("')'");
+  });
+
+  it('emits error for ([#A]) -> [#B] (no period)', () => {
+    const result = parse('([#A]) -> [#B]');
+    expect(result.errors?.[0]?.message).toContain("'.'");
+  });
+});

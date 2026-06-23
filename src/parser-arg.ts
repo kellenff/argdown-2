@@ -35,6 +35,34 @@ import { parseAttributeBlock } from './parser-relation.js';
 // Skeleton
 // =========================================================================
 
+// Emit a parse error referencing the current token. The caller has
+// already committed to the `(...` argument shape (consumed at least the
+// opening paren), so this signals a malformed argument rather than a
+// silent backtrack. We do NOT restore position — the outer dispatch
+// (parseStatement / parseRelationEndpoint) restores its own `before`
+// marker to try alternatives.
+function recordArgumentError(
+  s: TokenStream,
+  message: string,
+  code:
+    | 'parse.unclosedArgument'
+    | 'parse.argumentRequiresPremise'
+    | 'parse.expectedPeriod',
+): void {
+  const tok = s.current();
+  s.errors.push({
+    code,
+    message,
+    severity: 'error',
+    loc: {
+      line: tok.startLine ?? 1,
+      column: tok.startColumn ?? 1,
+      offset: tok.startOffset ?? 0,
+    },
+    found: tok.tokenType.name,
+  });
+}
+
 // Parse a single-premise argument of the form `(FactRef) -> [FactRef].`.
 // Multi-premise, disjunctive, and nested-argument premises are added in
 // later tasks; this skeleton establishes the parse shape, the save/restore
@@ -44,25 +72,32 @@ import { parseAttributeBlock } from './parser-relation.js';
 // When `requirePeriod` is false, the trailing period is left in the
 // stream for the caller to consume. This is used by `parseArgExpr`,
 // where the surrounding argument owns the trailing period.
+//
+// Once the opening paren is consumed, internal failures record a
+// targeted parse error rather than silently backtracking — see the
+// "Argument parse errors" table in the rich-arguments design spec.
 export function parseArgument(
   s: TokenStream,
   requirePeriod = true,
 ): CstNode | undefined {
   const cst: CstChildren = {};
-  const before = s.save();
   const lb = s.consume('LParen');
   if (!lb) return undefined;
   cst['LParen'] = [tokenNode(lb)];
 
   const head = parseFactRef(s);
   if (!head) {
-    s.restore(before);
+    recordArgumentError(s, "Unclosed argument: missing ')'", 'parse.unclosedArgument');
     return undefined;
   }
   cst['conclusion'] = [head];
 
-  const rb = s.consume('RParen');
-  if (!rb) return undefined;
+  const rb = s.current();
+  if (rb.tokenType.name !== 'RParen') {
+    recordArgumentError(s, "Unclosed argument: missing ')'", 'parse.unclosedArgument');
+    return undefined;
+  }
+  s.pos++;
   cst['RParen'] = [tokenNode(rb)];
 
   const arrow = s.consume('Arrow');
@@ -73,7 +108,11 @@ export function parseArgument(
   const premises: CstNode[] = [];
   const first = parsePremise(s);
   if (!first) {
-    s.restore(before);
+    recordArgumentError(
+      s,
+      'Argument requires at least one premise',
+      'parse.argumentRequiresPremise',
+    );
     return undefined;
   }
   premises.push(first);
@@ -86,8 +125,12 @@ export function parseArgument(
   cst['premise'] = premises;
 
   if (requirePeriod) {
-    const period = s.consume('Period');
-    if (!period) return undefined;
+    const period = s.current();
+    if (period.tokenType.name !== 'Period') {
+      recordArgumentError(s, "Expected '.' to end argument", 'parse.expectedPeriod');
+      return undefined;
+    }
+    s.pos++;
     cst['period'] = [tokenNode(period)];
   }
 
