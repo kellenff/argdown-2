@@ -204,7 +204,7 @@ function walkElement(
 // Collect every node in `doc` matching `pred`. Walks the same tree as
 // walkAst. Used by invariants 5-8 to enumerate `Argument` and
 // `RelationStatement` nodes regardless of nesting depth.
-function findAll<T>(doc: Document, pred: (n: { kind?: string }) => n is T): T[] {
+function findAll<T extends { kind?: string }>(doc: Document, pred: (n: { kind?: string }) => n is T): T[] {
   const out: T[] = [];
   walkAst(doc, (n) => {
     if (pred(n)) out.push(n);

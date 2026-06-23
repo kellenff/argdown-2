@@ -10,7 +10,7 @@ import { ArgdownLexer } from './tokens.js';
 import { TokenStream } from './parser-util.js';
 import { parseArgument, parseDisjunction } from './parser-arg.js';
 import { parse } from './parser.js';
-import type { Argument, Document } from './ast.js';
+import type { Argument, CstNode, Document } from './ast.js';
 
 // Task 11 unit test — tests parseDisjunction directly. Integration via
 // public parse() is verified in Task 14 (dispatch wiring) and
@@ -189,7 +189,7 @@ describe('parseArgument — CST shape', () => {
 
   it('preserves the factRef shape on the conclusion (LBrack present)', () => {
     const cst = parseArgumentOk('([#A]) -> [#B].');
-    const concl = cst['conclusion']?.[0] as Record<string, unknown>;
+    const concl = (cst['conclusion'] as CstNode[])[0]!;
     expect(concl['LBrack']).toBeDefined();
   });
 
