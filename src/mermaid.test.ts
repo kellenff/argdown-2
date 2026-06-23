@@ -50,15 +50,31 @@ describe('renderMermaid', () => {
   // disjunction `([#B] | [#C])` to render as a single node with the
   // alternative labels, distinct from a multi-premise relation.
   //
-  // The current renderer has no `Argument` case in its element switch,
-  // so `Argument` elements are silently dropped (the output falls back
-  // to the empty-document branch). This test pins the current behavior
-  // — the renderer must accept the new `Argument` AST kind and emit a
-  // valid Mermaid flowchart without throwing. When the renderer's
-  // `Argument` case lands, tighten the assertions to check the spec
-  // (single node carrying both alternative labels).
-  it('renders a disjunctive premise without throwing', () => {
+  // Task 21: the renderer now has an `Argument` case in its element
+  // switch. The conclusion renders as a node, each premise renders as
+  // a node (disjunctions collapse into a single node carrying both
+  // alternative labels), and edges go from each premise to the
+  // conclusion.
+  it('renders a disjunctive premise as a single combined node', () => {
     const out = renderMermaid(parseOk('([#A]) -> ([#B] | [#C]).'));
     expect(out.startsWith('flowchart TD\n')).toBe(true);
+    // Conclusion renders as its own node.
+    expect(out).toContain('A["A"]');
+    // Disjunction collapses into a single node carrying both labels
+    // combined — no separate B or C node declarations (B and C only
+    // appear inside the disjunction in the source).
+    expect(out).toContain('B_or_C["B or C"]');
+    // Edge from the disjunction node to the conclusion.
+    expect(out).toContain('B_or_C -->|support| A');
+    // Exactly one synthetic disjunction declaration (not two).
+    expect(out.match(/^    B_or_C\["/gm)?.length).toBe(1);
+  });
+
+  it('renders an atom-premise argument with one edge per premise', () => {
+    // Multi-premise comma form: conclusion A, premises B and C.
+    const out = renderMermaid(parseOk('([#A]) -> [#B], [#C].'));
+    expect(out).toContain('A["A"]');
+    expect(out).toContain('B -->|support| A');
+    expect(out).toContain('C -->|support| A');
   });
 });
