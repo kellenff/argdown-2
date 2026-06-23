@@ -131,6 +131,7 @@ export const LBrace: TokenType = createToken({ name: 'LBrace', pattern: /\{/ });
 export const RBrace: TokenType = createToken({ name: 'RBrace', pattern: /\}/ });
 export const LParen: TokenType = createToken({ name: 'LParen', pattern: /\(/ });
 export const RParen: TokenType = createToken({ name: 'RParen', pattern: /\)/ });
+export const Pipe: TokenType = createToken({ name: 'Pipe', pattern: /\|/ });
 export const Colon: TokenType = createToken({ name: 'Colon', pattern: /:/ });
 export const Comma: TokenType = createToken({ name: 'Comma', pattern: /,/ });
 export const Period: TokenType = createToken({ name: 'Period', pattern: /\./ });
@@ -193,6 +194,7 @@ const allTokens: TokenType[] = [
   Colon,
   Comma,
   Period,
+  Pipe,
   // Identifiers
   Identifier,
   // Text runs (catch-all-ish for long runs) come after single-char punctuation.

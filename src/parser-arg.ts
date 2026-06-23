@@ -83,6 +83,54 @@ export function parseArgument(s: TokenStream): CstNode | undefined {
 }
 
 export function parsePremise(s: TokenStream): CstNode | undefined {
-  // Tries FactRef first; ArgExpr and Disjunction added in later tasks.
-  return parseFactRef(s);
+  const before = s.save();
+  const fr = parseFactRef(s);
+  if (fr) return fr;
+  s.restore(before);
+  const disj = parseDisjunction(s);
+  if (disj) return disj;
+  s.restore(before);
+  // parseArgExpr added in Task 12
+  return undefined;
+}
+
+export function parseDisjunction(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  const before = s.save();
+  const lb = s.consume('LParen');
+  if (!lb) return undefined;
+  cst['LParen'] = [tokenNode(lb)];
+
+  const refs: CstNode[] = [];
+  const first = parseFactRef(s);
+  if (!first) {
+    s.restore(before);
+    return undefined;
+  }
+  refs.push(first);
+  let pipeCount = 0;
+  while (s.check('Pipe')) {
+    s.consume('Pipe');
+    pipeCount++;
+    const next = parseFactRef(s);
+    if (!next) {
+      s.restore(before);
+      return undefined;
+    }
+    refs.push(next);
+  }
+  if (pipeCount === 0) {
+    s.restore(before);
+    return undefined;
+  }
+  cst['factRef'] = refs;
+
+  const rb = s.consume('RParen');
+  if (!rb) {
+    s.restore(before);
+    return undefined;
+  }
+  cst['RParen'] = [tokenNode(rb)];
+
+  return cst;
 }

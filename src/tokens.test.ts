@@ -147,6 +147,12 @@ describe('token vocabulary', () => {
     );
   });
 
+  it('lexes Pipe ("|")', () => {
+    const lexResult = ArgdownLexer.tokenize('|');
+    expect(lexResult.tokens).toHaveLength(1);
+    expect(lexResult.tokens[0]?.tokenType?.name).toBe('Pipe');
+  });
+
   // ----- Whitespace is skipped -----
 
   it('skips whitespace', () => {
