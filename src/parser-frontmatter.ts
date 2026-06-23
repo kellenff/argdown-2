@@ -11,14 +11,15 @@
 
 import type { CstChildren, CstNode } from './ast.js';
 import { TokenStream, tokenNode, tokenRule, isNonEmptyImage } from './parser-util.js';
+import { parseIdentifier, parseComment, parseAttributeEntry } from './parser.js';
 
 // =========================================================================
 // Scalar token rules (used by values, flow sequences/mappings, and YAML)
 // =========================================================================
-
-function parseIdentifier(s: TokenStream): CstNode | undefined {
-  return tokenRule(s, 'Identifier');
-}
+//
+// parseIdentifier lives in parser.ts — used by both parseYamlLine (here)
+// and parseIdentifierHead (parser.ts). It will move to parser-fact.ts
+// in Task 5 of the rich-arguments cycle.
 
 function parseString(s: TokenStream): CstNode | undefined {
   return tokenRule(s, 'String');
@@ -189,41 +190,9 @@ function parseFlowMapping(s: TokenStream): CstNode | undefined {
   return cst;
 }
 
-// ----- Attribute entries (used by flow mappings) -----
-
-function parseAttributeEntry(s: TokenStream): CstNode | undefined {
-  const cst: CstChildren = {};
-  // The lexer often produces HeadingText where Identifier was expected
-  // (e.g. ` author` after `{`). Accept either.
-  s.skipEmptyTextTokens();
-  let id: CstNode | undefined;
-  if (s.check('Identifier')) {
-    id = tokenRule(s, 'Identifier');
-  } else {
-    // Accept a text-run token as a surrogate identifier — strip whitespace
-    // and surrounding punctuation in the visitor.
-    for (const name of ['HeadingText', 'TitleText', 'ClaimText', 'PlainScalar']) {
-      const tok = s.peek();
-      if (tok.tokenType.name === name && (tok.image ?? '').trim().length > 0) {
-        s.pos++;
-        id = tokenNode(tok);
-        cst['__textIdentifier'] = [id];
-        break;
-      }
-    }
-  }
-  if (!id) return undefined;
-  cst['identifier'] = [id];
-  s.skipEmptyTextTokens();
-  // Silent colon check (caller handles reporting).
-  if (!s.check('Colon')) return undefined;
-  s.pos++;
-  cst['Colon'] = [tokenNode(s.peek(-1))];
-  const v = parseValue(s);
-  if (!v) return undefined;
-  cst['value'] = [v];
-  return cst;
-}
+// parseAttributeEntry lives in parser.ts — used by both parseFlowMapping
+// (here) and parseAttributeBlock (parser.ts). It will move to
+// parser-relation.ts in Task 6 of the rich-arguments cycle.
 
 // =========================================================================
 // YAML (frontmatter body)
@@ -377,42 +346,18 @@ function parseFrontmatter(s: TokenStream): CstNode | undefined {
 }
 
 // =========================================================================
-// Comments (used by frontmatter and top-level elements)
+// Comments (parseComment / parseLineComment / parseBlockComment)
 // =========================================================================
-
-function parseComment(s: TokenStream): CstNode | undefined {
-  const cst: CstChildren = {};
-  if (s.check('LineComment')) {
-    const lc = parseLineComment(s);
-    if (lc) {
-      cst['lineComment'] = [lc];
-      return cst;
-    }
-  }
-  if (s.check('BlockComment')) {
-    const bc = parseBlockComment(s);
-    if (bc) {
-      cst['blockComment'] = [bc];
-      return cst;
-    }
-  }
-  return undefined;
-}
-
-function parseLineComment(s: TokenStream): CstNode | undefined {
-  return tokenRule(s, 'LineComment');
-}
-
-function parseBlockComment(s: TokenStream): CstNode | undefined {
-  return tokenRule(s, 'BlockComment');
-}
+//
+// These live in parser.ts — used by both parseFrontmatter (here) and
+// parseElement (parser.ts). Cross-domain; will move to parser-fact.ts or
+// parser-relation.ts in a later cycle task.
 
 // =========================================================================
 // Exports
 // =========================================================================
 
 export {
-  parseIdentifier,
   parseString,
   parseNumber,
   parseTitleText,
@@ -429,10 +374,4 @@ export {
   parseYamlValue,
   isYamlScalarToken,
   parseFrontmatter,
-  // Supporting helpers moved because parseFrontmatter depends on parseComment
-  // and parseElement (still in parser.ts) consumes it via re-export.
-  parseComment,
-  parseLineComment,
-  parseBlockComment,
-  parseAttributeEntry,
 };

@@ -28,21 +28,17 @@ import {
 } from './parser-util.js';
 
 import {
-  parseIdentifier,
   parseValue,
   parseYamlLine,
   parseFrontmatter,
   parseTitleText,
   parseClaimText,
-  parseComment,
-  parseAttributeEntry,
 } from './parser-frontmatter.js';
 
 export { TokenStream, tokenNode, tokenRule, isArrowToken, isNonEmptyImage, peekPastFactRef };
 export type { CstChildren, CstNode, ParseError, ParseErrorCode };
 
 export {
-  parseIdentifier,
   parseString,
   parseNumber,
   parseTitleText,
@@ -59,11 +55,19 @@ export {
   parseYamlValue,
   isYamlScalarToken,
   parseFrontmatter,
+} from './parser-frontmatter.js';
+
+// Cross-cutting helpers — defined here because they are used by both the
+// frontmatter path (parser-frontmatter.ts) and the top-level grammar
+// (this file). They will move to parser-fact.ts / parser-relation.ts in
+// later cycle tasks.
+export {
+  parseIdentifier,
   parseComment,
   parseLineComment,
   parseBlockComment,
   parseAttributeEntry,
-} from './parser-frontmatter.js';
+};
 
 // =========================================================================
 // Public API
@@ -81,6 +85,15 @@ export type ParseResult =
 // =========================================================================
 // Parsing rules
 // =========================================================================
+
+// parseIdentifier lives here (not parser-frontmatter.ts) because it is used
+// by both the frontmatter path (parseYamlLine, in parser-frontmatter.ts)
+// and the fact path (parseIdentifierHead, below). It will move to
+// parser-fact.ts in Task 5 of the rich-arguments cycle.
+
+function parseIdentifier(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'Identifier');
+}
 
 // ----- Fact refs and heads -----
 
@@ -151,6 +164,35 @@ function parseTitleHead(s: TokenStream): CstNode | undefined {
   return cst;
 }
 
+// ----- Comments (used by parseElement and parseFrontmatter) -----
+
+function parseComment(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  if (s.check('LineComment')) {
+    const lc = parseLineComment(s);
+    if (lc) {
+      cst['lineComment'] = [lc];
+      return cst;
+    }
+  }
+  if (s.check('BlockComment')) {
+    const bc = parseBlockComment(s);
+    if (bc) {
+      cst['blockComment'] = [bc];
+      return cst;
+    }
+  }
+  return undefined;
+}
+
+function parseLineComment(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'LineComment');
+}
+
+function parseBlockComment(s: TokenStream): CstNode | undefined {
+  return tokenRule(s, 'BlockComment');
+}
+
 // ----- Attribute blocks -----
 
 function parseAttributeBlock(s: TokenStream): CstNode | undefined {
@@ -173,6 +215,44 @@ function parseAttributeBlock(s: TokenStream): CstNode | undefined {
   const rb = s.consume('RBrace');
   if (!rb) return undefined;
   cst['RBrace'] = [tokenNode(rb)];
+  return cst;
+}
+
+// parseAttributeEntry lives here (not parser-frontmatter.ts) because it is
+// used by both parseAttributeBlock (above) and parseFlowMapping (in
+// parser-frontmatter.ts). It will move to parser-relation.ts in Task 6 of
+// the rich-arguments cycle.
+function parseAttributeEntry(s: TokenStream): CstNode | undefined {
+  const cst: CstChildren = {};
+  // The lexer often produces HeadingText where Identifier was expected
+  // (e.g. ` author` after `{`). Accept either.
+  s.skipEmptyTextTokens();
+  let id: CstNode | undefined;
+  if (s.check('Identifier')) {
+    id = tokenRule(s, 'Identifier');
+  } else {
+    // Accept a text-run token as a surrogate identifier — strip whitespace
+    // and surrounding punctuation in the visitor.
+    for (const name of ['HeadingText', 'TitleText', 'ClaimText', 'PlainScalar']) {
+      const tok = s.peek();
+      if (tok.tokenType.name === name && (tok.image ?? '').trim().length > 0) {
+        s.pos++;
+        id = tokenNode(tok);
+        cst['__textIdentifier'] = [id];
+        break;
+      }
+    }
+  }
+  if (!id) return undefined;
+  cst['identifier'] = [id];
+  s.skipEmptyTextTokens();
+  // Silent colon check (caller handles reporting).
+  if (!s.check('Colon')) return undefined;
+  s.pos++;
+  cst['Colon'] = [tokenNode(s.peek(-1))];
+  const v = parseValue(s);
+  if (!v) return undefined;
+  cst['value'] = [v];
   return cst;
 }
 
