@@ -28,17 +28,10 @@ import {
   peekPastFactRef,
 } from './parser-util.js';
 
-import {
-  parseFrontmatter,
-} from './parser-frontmatter.js';
+import { parseFrontmatter } from './parser-frontmatter.js';
 
 import { parseBlock, parseHeading } from './parser-block.js';
-import {
-  parseComment,
-  parseFactRef,
-  parseFactRefList,
-  parseFactStatement,
-} from './parser-fact.js';
+import { parseComment, parseFactRef, parseFactRefList, parseFactStatement } from './parser-fact.js';
 import { parseRelationStatement } from './parser-relation.js';
 
 export {
