@@ -169,7 +169,11 @@ function walkElement(
     attributes?: unknown;
     rule?: unknown;
     relation?: unknown;
+    relations?: unknown[];
     premises?: unknown[];
+    conclusion?: unknown;
+    value?: unknown;
+    values?: unknown[];
     from?: unknown;
     to?: unknown;
     items?: unknown[];
@@ -178,6 +182,8 @@ function walkElement(
   visit(n);
   if (Array.isArray(n.body)) for (const c of n.body) walkElement(c, visit);
   if (Array.isArray(n.premises)) for (const c of n.premises) walkElement(c, visit);
+  if (Array.isArray(n.relations)) for (const c of n.relations) walkElement(c, visit);
+  if (Array.isArray(n.values)) for (const c of n.values) walkElement(c, visit);
   if (Array.isArray(n.items)) for (const c of n.items) walkElement(c, visit);
   if (n.fact) walkElement(n.fact, visit);
   if (n.head) walkElement(n.head, visit);
@@ -186,11 +192,24 @@ function walkElement(
   if (n.attributes) walkElement(n.attributes, visit);
   if (n.rule) walkElement(n.rule, visit);
   if (n.relation) walkElement(n.relation, visit);
+  if (n.conclusion) walkElement(n.conclusion, visit);
+  if (n.value && typeof n.value === 'object') walkElement(n.value, visit);
   if (n.from) walkElement(n.from, visit);
   if (n.to) walkElement(n.to, visit);
   if (n.entries && typeof n.entries === 'object') {
     for (const v of Object.values(n.entries as Record<string, unknown>)) walkElement(v, visit);
   }
+}
+
+// Collect every node in `doc` matching `pred`. Walks the same tree as
+// walkAst. Used by invariants 5-8 to enumerate `Argument` and
+// `RelationStatement` nodes regardless of nesting depth.
+function findAll<T>(doc: Document, pred: (n: { kind?: string }) => n is T): T[] {
+  const out: T[] = [];
+  walkAst(doc, (n) => {
+    if (pred(n)) out.push(n);
+  });
+  return out;
 }
 
 // Invariant 3: every AST node has a valid kind and loc; type-specific fields
@@ -270,6 +289,86 @@ describe('parse() fuzz', () => {
           iter: i,
           source: current,
         });
+      }
+    });
+  }
+});
+
+// Reusable: drive a single fixture through ITERATIONS mutations,
+// yielding the parser result for each mutation so invariant tests
+// can assert against the AST.
+function* driveMutations(name: string, path: string): Generator<{ source: string; result: ParseResult; ctx: FuzzCtx }> {
+  const source = readFileSync(join(process.cwd(), path), 'utf8');
+  const rng = makeRng(seedFromName(name));
+  const seed = seedFromName(name);
+  let current = source;
+  for (let i = 0; i < ITERATIONS; i++) {
+    current = mutate(current, rng);
+    yield {
+      source: current,
+      result: checkNoThrow(current, { fixture: name, seed, iter: i, source: current }),
+      ctx: { fixture: name, seed, iter: i, source: current },
+    };
+  }
+}
+
+describe('parse() fuzz invariants 5-8', () => {
+  for (const [name, path] of FIXTURES) {
+    // Invariant 5: every `Premise` is one of the three declared variants
+    // (atom | argument | disjunction), and disjunction values must be
+    // a non-empty FactRef list. This closes the grammar on the parser
+    // side: a `Premise` cannot drift into a new variant without an
+    // explicit grammar change.
+    it(`${name} invariant 5: premise shape closure`, () => {
+      for (const { result } of driveMutations(name, path)) {
+        if (!result.ok) continue;
+        for (const arg of findAll(result.ast, (n): n is Extract<Element, { kind: 'Argument' }> => n.kind === 'Argument')) {
+          for (const premise of arg.premises) {
+            expect(['atom', 'argument', 'disjunction']).toContain(premise.kind);
+            if (premise.kind === 'disjunction') {
+              expect(premise.values.length).toBeGreaterThanOrEqual(2);
+            }
+          }
+        }
+      }
+    });
+
+    // Invariant 6: `Conclusion` is narrower than `Premise` — it
+    // cannot be a disjunction. This is documented in ast.ts and the
+    // grammar must not regress.
+    it(`${name} invariant 6: conclusion shape closure`, () => {
+      for (const { result } of driveMutations(name, path)) {
+        if (!result.ok) continue;
+        for (const arg of findAll(result.ast, (n): n is Extract<Element, { kind: 'Argument' }> => n.kind === 'Argument')) {
+          expect(['atom', 'argument']).toContain(arg.conclusion.kind);
+        }
+      }
+    });
+
+    // Invariant 7: every `Argument` carries a `loc` (parser attaches
+    // the source range from the trailing period). A successful parse
+    // must not produce an argument with a missing location.
+    it(`${name} invariant 7: period attached`, () => {
+      for (const { result } of driveMutations(name, path)) {
+        if (!result.ok) continue;
+        for (const arg of findAll(result.ast, (n): n is Extract<Element, { kind: 'Argument' }> => n.kind === 'Argument')) {
+          expect(arg.loc).toBeDefined();
+        }
+      }
+    });
+
+    // Invariant 8: after the visitor unfolds multi-premise endpoint
+    // lists (`[#A], [#B] --> [#C]` → 2× `Relation`), every
+    // `RelationStatement` exposes a non-empty `relations` array.
+    // An empty array would mean either the visitor regressed or
+    // the parser produced a malformed `RelationStatement`.
+    it(`${name} invariant 8: multi-premise relation structure`, () => {
+      for (const { result } of driveMutations(name, path)) {
+        if (!result.ok) continue;
+        for (const rel of findAll(result.ast, (n): n is Extract<Element, { kind: 'RelationStatement' }> => n.kind === 'RelationStatement')) {
+          expect(rel.relations).toBeDefined();
+          expect(rel.relations.length).toBeGreaterThan(0);
+        }
       }
     });
   }
