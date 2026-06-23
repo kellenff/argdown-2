@@ -44,7 +44,7 @@
 (*    plain scalars (where every character is significant).          *)
 (*                                                                   *)
 (*  - <newline> IS significant: it terminates the line-oriented      *)
-(*    statements (facts, rules, relations, headings, YAML lines,     *)
+(*    statements (facts, arguments, relations, headings, YAML lines, *)
 (*    list items and block delimiters).                              *)
 (*                                                                   *)
 (*  - Inside an attribute block  "{" ... "}"  and inside a flow      *)
@@ -52,11 +52,18 @@
 (*    whitespace, so those constructs may span several physical      *)
 (*    lines (as the multi-line attribute blocks in DESIGN.md do).    *)
 (*                                                                   *)
-(*  - The three line-initial statement forms (fact / rule /          *)
-(*    relation) share a leading <fact-ref>; they are disambiguated   *)
-(*    by the token that follows it: ":-" begins a rule, an <arrow>   *)
-(*    begins a relation, and anything else (claim text, "{", or the  *)
-(*    line end) makes it a fact. See NOTE 4.                         *)
+(*  - A statement line begins with either "[" (a <fact-ref> head) or  *)
+(*    "(" (a parenthesised conclusion or endpoint):                  *)
+(*      * "[" : after the bracketed <fact-ref> the next token        *)
+(*              disambiguates. An <arrow> or a "," begins a          *)
+(*              <relation> (the comma starts a multi-endpoint list);  *)
+(*              anything else (claim text, "{", or the line end)     *)
+(*              makes it a <fact>. A ":-" is the REMOVED rule         *)
+(*              operator and is a hard parse error. See NOTES 4, 10. *)
+(*      * "(" : an <argument> (e.g. "([#A]) -> [#B].") or a          *)
+(*              <relation> whose first endpoint is a parenthesised   *)
+(*              <arg-expr>; the argument form is tried first and the *)
+(*              relation form is the fallback. See NOTE 11.          *)
 
 
 (* ================================================================= *)
@@ -79,11 +86,11 @@
                         | <heading>
                         | <block>
                         | <fact-statement>
-                        | <rule-statement>
+                        | <argument-statement>
                         | <relation-statement>
 
 <fact-statement>      ::= <fact>     <line-end>
-<rule-statement>      ::= <rule>     <line-end>
+<argument-statement>  ::= <argument> <line-end>
 <relation-statement>  ::= <relation> <line-end>
 
 
@@ -135,8 +142,8 @@
 
 (* A fact-ref is the bracketed head only: an "#identifier" OR an      *)
 (* inline title text. It carries NO trailing claim text or attribute  *)
-(* block, which keeps rule terms and relation endpoints unambiguous   *)
-(* (NOTE 2).                                                          *)
+(* block, which keeps argument premises and relation endpoints        *)
+(* unambiguous (NOTE 2).                                              *)
 <fact-ref>            ::= "[" <fact-head> "]"
 
 <fact-head>           ::= "#" <identifier>
@@ -191,29 +198,65 @@
 
 
 (* ================================================================= *)
-(*  6. RULES  (Logic and Derivations:  ":-" = if,  "," = and)       *)
+(*  6. ARGUMENTS  (Linked Inferences:  "->" = if,  "," = and)       *)
 (* ================================================================= *)
-(*  [#mitigation] :- [#co2], [#impacts], [#coord].                   *)
+(*  An argument is a single-line inference: a parenthesised          *)
+(*  conclusion, then "->", then a comma-separated premise list, then *)
+(*  a terminating ".". An optional attribute block may follow.       *)
+(*                                                                   *)
+(*    ([#mitigation]) -> [#co2], [#impacts], [#coord].   conjunction *)
+(*    ([#mitigation]) -> ([#moral] | [#economic]).       disjunction *)
+(*    ([#thesis]) -> ([#sub]) -> [#p1], [#p2].           nesting     *)
+(*    ([#A]) -> [#B]. { confidence: 0.8 }                attributes  *)
+(*                                                                   *)
+(*  The ":-" rule operator of earlier drafts is REMOVED; a line of   *)
+(*  the form "[#A] :- ..." is a hard parse error (NOTE 10).          *)
 
-<rule>                ::= <fact-ref> ":-" <fact-ref-list> "."
+<argument>            ::= "(" <conclusion> ")" "->" <premise-list> "." <opt-attribute-block>
 
-<fact-ref-list>       ::= <fact-ref>
-                        | <fact-ref> "," <fact-ref-list>
+<conclusion>          ::= <fact-ref>
+                        | <arg-expr>
+
+<premise-list>        ::= <premise>
+                        | <premise> "," <premise-list>
+
+<premise>             ::= <fact-ref>
+                        | <arg-expr>
+                        | <disjunction>
+
+(* A disjunctive premise: two or more fact-refs joined by "|"        *)
+(* inside parentheses. At least one "|" (hence >= 2 refs) is         *)
+(* required, which is what distinguishes it from an <arg-expr>       *)
+(* (whose body is followed by "->") at the same "(" lookahead.       *)
+<disjunction>         ::= "(" <fact-ref> "|" <pipe-ref-list> ")"
+
+<pipe-ref-list>       ::= <fact-ref>
+                        | <fact-ref> "|" <pipe-ref-list>
+
+(* An <arg-expr> is an <argument> used as a value: a nested argument *)
+(* appearing as a conclusion or a premise. It carries NO terminating *)
+(* "." and NO attribute block -- the enclosing <argument> owns the   *)
+(* period (NOTE 11).                                                 *)
+<arg-expr>            ::= "(" <conclusion> ")" "->" <premise-list>
 
 
 (* ================================================================= *)
 (*  7. RELATIONS  (Graph edges)                                     *)
 (* ================================================================= *)
 (*  [#A] --> [#B] { strength: "strong" }                            *)
-(*  [#Evidence-flaw] --x ([#mitigation] :- [#gradual]) { reason: ...}*)
+(*  [#A], [#B] --> [#C]                  multi-endpoint (NOTE 12)    *)
+(*  [#Evidence-flaw] --x ([#mitigation]) -> [#gradual] { reason: ...}*)
 
-<relation>            ::= <relation-endpoint> <arrow> <relation-endpoint> <opt-attribute-block>
+<relation>            ::= <endpoint-list> <arrow> <endpoint-list> <opt-attribute-block>
 
-<relation-endpoint>   ::= <fact-ref>
-                        | <rule-expr>
+(* A comma-separated list of one or more endpoints. A list of two or  *)
+(* more is a multi-endpoint relation: the visitor unfolds it into     *)
+(* several binary relations, one per endpoint pair (NOTE 12).         *)
+<endpoint-list>       ::= <endpoint>
+                        | <endpoint> "," <endpoint-list>
 
-(* A rule used as a relation endpoint (e.g. for an undercut). *)
-<rule-expr>           ::= "(" <fact-ref> ":-" <fact-ref-list> ")"
+<endpoint>            ::= <fact-ref>
+                        | <arg-expr>
 
 (* The complete relationship taxonomy from DESIGN.md section 3. *)
 <arrow>               ::= "-->"      (* Support       *)
@@ -400,8 +443,9 @@
 
 (* ----- Claim text (after the closing "]" of a fact) -------------- *)
 (*  The first character may not be whitespace nor an operator-leading *)
-(*  character, so a fact line cannot be confused with a rule or a     *)
-(*  relation (NOTE 4). Surrounding whitespace is trimmed.             *)
+(*  character, so a fact line cannot be confused with a relation     *)
+(*  nor with a removed ":-" rule (NOTES 4, 10). Surrounding           *)
+(*  whitespace is trimmed.                                           *)
 
 <claim-text>          ::= <claim-start> <claim-rest>
 
@@ -494,6 +538,8 @@
 (*     "[" <fact-head> "]" with no trailing text/attributes. Every   *)
 (*     example uses exactly this reference form. A claim WITH text    *)
 (*     or attributes is written as a standalone <fact> statement.    *)
+(*     This same bracketed head is the building block of argument     *)
+(*     conclusions/premises and relation endpoints.                  *)
 (*                                                                   *)
 (*  3. CLAIM-TEXT PLACEMENT. DESIGN.md's section-5 sketch puts `Text`*)
 (*     INSIDE the brackets ( "[" ("#" Identifier)? Text? "]" ), yet  *)
@@ -504,12 +550,13 @@
 (*     <title-text>, and an optional <claim-text> may follow "]"     *)
 (*     before any attribute block.                                   *)
 (*                                                                   *)
-(*  4. OPERATOR-LEADING DISAMBIGUATION. So that fact, rule and       *)
-(*     relation statements are distinguishable with one token of     *)
-(*     lookahead after the leading <fact-ref>, <claim-text> may not  *)
-(*     begin with whitespace nor with an operator-leading character  *)
-(*     ( ":" "-" "~" "?" "<" "{" ... ). Quote or bracket a claim     *)
-(*     that must start with such a character.                        *)
+(*  4. OPERATOR-LEADING DISAMBIGUATION. So that fact and relation    *)
+(*     statements are distinguishable with one token of lookahead    *)
+(*     after the leading <fact-ref>, <claim-text> may not begin with *)
+(*     whitespace nor with an operator-leading character ( ":" "-"   *)
+(*     "~" "?" "<" "," "{" ... ). Quote or bracket a claim that must *)
+(*     start with such a character. A "," after the <fact-ref> opens *)
+(*     a multi-endpoint <relation> rather than a <fact> (NOTE 12).   *)
 (*                                                                   *)
 (*  5. ATTRIBUTE VALUES. DESIGN.md writes attribute entries as       *)
 (*     (YAML_Line | KeyValue); both are "key: value", so they are    *)
@@ -535,4 +582,38 @@
 (*  9. FRONTMATTER is delimited by "===" (per DESIGN.md), not the    *)
 (*     "---" used by some Markdown dialects, and, when present, is   *)
 (*     the first content in the document.                            *)
+(*                                                                   *)
+(* 10. RULES REMOVED ("->" REPLACES ":-"). Earlier drafts wrote      *)
+(*     derivations as  "[#A] :- [#B], [#C]."  (the Datalog rule      *)
+(*     operator). That syntax is REMOVED. Inference is now written   *)
+(*     as an <argument>:  "([#A]) -> [#B], [#C]."  with a            *)
+(*     parenthesised conclusion and the "->" operator. The ":-"      *)
+(*     token is retained by the lexer ONLY so the parser can detect  *)
+(*     legacy input and emit a hard error ("':-' syntax was removed. *)
+(*     Use '->' for inference ..."); it is not part of any           *)
+(*     production above. The "," still means conjunction (AND).      *)
+(*                                                                   *)
+(* 11. ARGUMENTS, NESTING, AND THE "(" LOOKAHEAD. An <argument> is a *)
+(*     single-line inference. Its conclusion or any premise may      *)
+(*     itself be an argument (an <arg-expr>), so inference chains    *)
+(*     nest. A nested <arg-expr> carries no terminating "." and no   *)
+(*     attribute block -- only the OUTERMOST <argument> does. Three  *)
+(*     constructs all open with "(" and are disambiguated by what    *)
+(*     follows the matching ")":                                     *)
+(*       * "([#A])"            then "->"  -> <argument> / <arg-expr> *)
+(*       * "([#A] | [#B])"     (has "|")  -> <disjunction> premise   *)
+(*       * "([#A]) -> ..."     as a value -> nested <arg-expr>       *)
+(*     A disjunction is only valid in premise position; the narrower *)
+(*     <conclusion> cannot produce one. A statement line beginning   *)
+(*     with "(" is parsed as an <argument> first, falling back to a  *)
+(*     <relation> whose first endpoint is a parenthesised arg-expr.  *)
+(*                                                                   *)
+(* 12. MULTI-ENDPOINT RELATIONS. A relation endpoint may be a comma- *)
+(*     separated <endpoint-list>:  "[#A], [#B] --> [#C]"  attaches   *)
+(*     both #A and #B to #C. Such a list is a surface convenience;   *)
+(*     it unfolds into several binary relations (one per pair of     *)
+(*     endpoints across the arrow). DESIGN.md's section-5 sketch     *)
+(*     defines `EndpointList` separately but writes `Relation` with  *)
+(*     single endpoints; this grammar follows the examples and       *)
+(*     allows a list on either side of the <arrow>.                  *)
 (* ================================================================= *)
