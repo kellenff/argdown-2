@@ -6,12 +6,7 @@
 // limit. The argument productions are the largest new subtree this
 // cycle adds.
 
-import type {
-  Argument,
-  Conclusion,
-  Premise,
-  RelationEndpoint,
-} from './ast.js';
+import type { Argument, Conclusion, Premise, RelationEndpoint } from './ast.js';
 import type { CstChildren, CstNode } from './ast.js';
 
 import {

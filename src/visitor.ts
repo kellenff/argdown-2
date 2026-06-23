@@ -254,12 +254,14 @@ function visitRelations(cst: CstChildren): Relation[] {
   const endpointLists = (cst['endpointList'] as CstNode[]) ?? [];
   const arrowNode = pickFirst(cst['arrow'] as CstNode[]);
   const attrSub = pickFirst(cst['attributeBlock'] as CstNode[]);
-  const fromList = ((endpointLists[0] as CstChildren | undefined)?.[
-    'relationEndpoint'
-  ] as CstNode[] | undefined) ?? [];
-  const toList = ((endpointLists[1] as CstChildren | undefined)?.[
-    'relationEndpoint'
-  ] as CstNode[] | undefined) ?? [];
+  const fromList =
+    ((endpointLists[0] as CstChildren | undefined)?.['relationEndpoint'] as
+      | CstNode[]
+      | undefined) ?? [];
+  const toList =
+    ((endpointLists[1] as CstChildren | undefined)?.['relationEndpoint'] as
+      | CstNode[]
+      | undefined) ?? [];
   const arrow = arrowName(arrowNode?.tokenType?.name ?? 'Support');
   const attrs = attrSub ? visitAttributeBlock(attrSub as CstChildren) : undefined;
   const loc = locFromTokens(collectAllTokens(cst));
@@ -318,7 +320,12 @@ export function buildAst(cst: CstChildren): Document {
 
 // Re-export sibling visitor modules' surface for consumers that want
 // the full CST-to-AST surface from a single import.
-export { visitFrontmatter, visitYamlLine, makeValueNode, decodeString } from './visitor-frontmatter.js';
+export {
+  visitFrontmatter,
+  visitYamlLine,
+  makeValueNode,
+  decodeString,
+} from './visitor-frontmatter.js';
 export { visitBlock, visitListItem, visitHeading, visitComment } from './visitor-block.js';
 export {
   visitArgument,

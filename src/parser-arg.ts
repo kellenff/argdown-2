@@ -44,10 +44,7 @@ import { parseAttributeBlock } from './parser-relation.js';
 function recordArgumentError(
   s: TokenStream,
   message: string,
-  code:
-    | 'parse.unclosedArgument'
-    | 'parse.argumentRequiresPremise'
-    | 'parse.expectedPeriod',
+  code: 'parse.unclosedArgument' | 'parse.argumentRequiresPremise' | 'parse.expectedPeriod',
 ): void {
   const tok = s.current();
   s.errors.push({
@@ -76,10 +73,7 @@ function recordArgumentError(
 // Once the opening paren is consumed, internal failures record a
 // targeted parse error rather than silently backtracking — see the
 // "Argument parse errors" table in the rich-arguments design spec.
-export function parseArgument(
-  s: TokenStream,
-  requirePeriod = true,
-): CstNode | undefined {
+export function parseArgument(s: TokenStream, requirePeriod = true): CstNode | undefined {
   const cst: CstChildren = {};
   const lb = s.consume('LParen');
   if (!lb) return undefined;

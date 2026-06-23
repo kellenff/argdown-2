@@ -204,7 +204,10 @@ function walkElement(
 // Collect every node in `doc` matching `pred`. Walks the same tree as
 // walkAst. Used by invariants 5-8 to enumerate `Argument` and
 // `RelationStatement` nodes regardless of nesting depth.
-function findAll<T extends { kind?: string }>(doc: Document, pred: (n: { kind?: string }) => n is T): T[] {
+function findAll<T extends { kind?: string }>(
+  doc: Document,
+  pred: (n: { kind?: string }) => n is T,
+): T[] {
   const out: T[] = [];
   walkAst(doc, (n) => {
     if (pred(n)) out.push(n);
@@ -297,7 +300,10 @@ describe('parse() fuzz', () => {
 // Reusable: drive a single fixture through ITERATIONS mutations,
 // yielding the parser result for each mutation so invariant tests
 // can assert against the AST.
-function* driveMutations(name: string, path: string): Generator<{ source: string; result: ParseResult; ctx: FuzzCtx }> {
+function* driveMutations(
+  name: string,
+  path: string,
+): Generator<{ source: string; result: ParseResult; ctx: FuzzCtx }> {
   const source = readFileSync(join(process.cwd(), path), 'utf8');
   const rng = makeRng(seedFromName(name));
   const seed = seedFromName(name);
@@ -322,7 +328,10 @@ describe('parse() fuzz invariants 5-8', () => {
     it(`${name} invariant 5: premise shape closure`, () => {
       for (const { result } of driveMutations(name, path)) {
         if (!result.ok) continue;
-        for (const arg of findAll(result.ast, (n): n is Extract<Element, { kind: 'Argument' }> => n.kind === 'Argument')) {
+        for (const arg of findAll(
+          result.ast,
+          (n): n is Extract<Element, { kind: 'Argument' }> => n.kind === 'Argument',
+        )) {
           for (const premise of arg.premises) {
             expect(['atom', 'argument', 'disjunction']).toContain(premise.kind);
             if (premise.kind === 'disjunction') {
@@ -339,7 +348,10 @@ describe('parse() fuzz invariants 5-8', () => {
     it(`${name} invariant 6: conclusion shape closure`, () => {
       for (const { result } of driveMutations(name, path)) {
         if (!result.ok) continue;
-        for (const arg of findAll(result.ast, (n): n is Extract<Element, { kind: 'Argument' }> => n.kind === 'Argument')) {
+        for (const arg of findAll(
+          result.ast,
+          (n): n is Extract<Element, { kind: 'Argument' }> => n.kind === 'Argument',
+        )) {
           expect(['atom', 'argument']).toContain(arg.conclusion.kind);
         }
       }
@@ -351,7 +363,10 @@ describe('parse() fuzz invariants 5-8', () => {
     it(`${name} invariant 7: period attached`, () => {
       for (const { result } of driveMutations(name, path)) {
         if (!result.ok) continue;
-        for (const arg of findAll(result.ast, (n): n is Extract<Element, { kind: 'Argument' }> => n.kind === 'Argument')) {
+        for (const arg of findAll(
+          result.ast,
+          (n): n is Extract<Element, { kind: 'Argument' }> => n.kind === 'Argument',
+        )) {
           expect(arg.loc).toBeDefined();
         }
       }
@@ -365,7 +380,11 @@ describe('parse() fuzz invariants 5-8', () => {
     it(`${name} invariant 8: multi-premise relation structure`, () => {
       for (const { result } of driveMutations(name, path)) {
         if (!result.ok) continue;
-        for (const rel of findAll(result.ast, (n): n is Extract<Element, { kind: 'RelationStatement' }> => n.kind === 'RelationStatement')) {
+        for (const rel of findAll(
+          result.ast,
+          (n): n is Extract<Element, { kind: 'RelationStatement' }> =>
+            n.kind === 'RelationStatement',
+        )) {
           expect(rel.relations).toBeDefined();
           expect(rel.relations.length).toBeGreaterThan(0);
         }

@@ -114,9 +114,7 @@ export function renderMermaid(doc: Document): string {
       .join('_or_');
     const id = freshId(base);
     disjToId.set(key, id);
-    const label = values
-      .map((v) => escapeLabel(headLabel(v.head)))
-      .join(' or ');
+    const label = values.map((v) => escapeLabel(headLabel(v.head))).join(' or ');
     nodes.push(`    ${id}["${label}"]`);
     return id;
   }

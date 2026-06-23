@@ -292,8 +292,7 @@ function findFirstArgument(ast: Document): Argument | undefined {
 describe('visitRelationEndpoint', () => {
   it('visits a factRef endpoint as a FactRef node', () => {
     const ast = parseRelationOk('[#A] --> [#B].');
-    const rel = (ast.elements[0] as { relations: Array<{ to: { kind: string } }> })
-      .relations[0]!;
+    const rel = (ast.elements[0] as { relations: Array<{ to: { kind: string } }> }).relations[0]!;
     expect(rel.to.kind).toBe('FactRef');
   });
 });

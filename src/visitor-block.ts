@@ -11,13 +11,7 @@ import type {
   BlockComment,
   ListItem,
 } from './ast.js';
-import {
-  collectAllTokens,
-  locFromTokens,
-  pickFirst,
-  visitElement,
-  visitFact,
-} from './visitor.js';
+import { collectAllTokens, locFromTokens, pickFirst, visitElement, visitFact } from './visitor.js';
 import { visitYamlLine } from './visitor-frontmatter.js';
 
 function blockTypeName(tokName: string): Block['type'] {
