@@ -140,14 +140,6 @@ export function renderMermaid(doc: Document): string {
         declare(el.fact.ref.head, el.fact.claimText);
         break;
       }
-      case 'RuleStatement': {
-        const headId = declare(el.rule.ref.head);
-        for (const premise of el.rule.premises) {
-          const premiseId = declare(premise.head);
-          edges.push(`    ${headId} ==>|rule| ${premiseId}`);
-        }
-        break;
-      }
       case 'RelationStatement': {
         for (const relation of el.relations) {
           const fromId = declare(endpointHead(relation.from));

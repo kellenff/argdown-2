@@ -123,7 +123,6 @@ const VALID_KINDS: ReadonlySet<string> = new Set([
   'Relation',
   'RelationStatement',
   'Rule',
-  'RuleExpr',
   'RuleStatement',
   'StringValue',
   'TitleHead',
