@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { ArgdownLexer } from './tokens.js';
 import { TokenStream } from './parser-util.js';
-import { parseDisjunction } from './parser-arg.js';
+import { parseArgument, parseDisjunction } from './parser-arg.js';
 
 // Task 11 unit test — tests parseDisjunction directly. Integration via
 // public parse() is verified in Task 14 (dispatch wiring) and
@@ -28,5 +28,26 @@ describe('parseDisjunction', () => {
     expect(cst).toBeDefined();
     // CST should have factRef children
     expect(cst.factRef).toBeDefined();
+  });
+});
+
+// Task 12 unit test — tests parseArgument directly for the nested-
+// argument premise case. parseArgExpr is a thin wrapper around
+// parseArgument; full visitor dispatch lands in Tasks 14-15.
+
+function parseArgumentOk(source: string) {
+  const lexResult = ArgdownLexer.tokenize(source);
+  const stream = new TokenStream(lexResult.tokens);
+  const result = parseArgument(stream);
+  if (!result) throw new Error(`Expected an argument CST, got undefined`);
+  return result;
+}
+
+describe('parseArgument — nesting', () => {
+  it('parses (A) -> (B) -> [C] with a nested argument as premise', () => {
+    const cst = parseArgumentOk('([#A]) -> ([#B]) -> [#C].');
+    expect(cst).toBeDefined();
+    // The premises should have a single nested argument
+    expect(cst.premise).toBeDefined();
   });
 });

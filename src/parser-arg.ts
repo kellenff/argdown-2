@@ -13,8 +13,10 @@
 //   - parseDisjunction    — `([#A] | [#B])`
 //   - parseArgExpr        — an `Argument` used as a value (nested)
 //
-// This commit adds the skeleton (parseArgument + parsePremise) only.
-// Disjunction and nesting productions are added in subsequent tasks.
+// This commit adds the skeleton (parseArgument + parsePremise +
+// parseDisjunction + parseArgExpr). All four productions are now in
+// place; subsequent tasks wire them into the public parser and the
+// visitor.
 //
 // Dependencies:
 //   - parseArgument and parsePremise call parseFactRef from
@@ -37,7 +39,14 @@ import { parseFactRef } from './parser-fact.js';
 // later tasks; this skeleton establishes the parse shape, the save/restore
 // backtracking pattern, and the CST field names that the visitor will
 // consume.
-export function parseArgument(s: TokenStream): CstNode | undefined {
+//
+// When `requirePeriod` is false, the trailing period is left in the
+// stream for the caller to consume. This is used by `parseArgExpr`,
+// where the surrounding argument owns the trailing period.
+export function parseArgument(
+  s: TokenStream,
+  requirePeriod = true,
+): CstNode | undefined {
   const cst: CstChildren = {};
   const before = s.save();
   const lb = s.consume('LParen');
@@ -75,9 +84,11 @@ export function parseArgument(s: TokenStream): CstNode | undefined {
   }
   cst['premise'] = premises;
 
-  const period = s.consume('Period');
-  if (!period) return undefined;
-  cst['period'] = [tokenNode(period)];
+  if (requirePeriod) {
+    const period = s.consume('Period');
+    if (!period) return undefined;
+    cst['period'] = [tokenNode(period)];
+  }
 
   return cst;
 }
@@ -87,11 +98,20 @@ export function parsePremise(s: TokenStream): CstNode | undefined {
   const fr = parseFactRef(s);
   if (fr) return fr;
   s.restore(before);
+  const arg = parseArgExpr(s);
+  if (arg) return arg;
+  s.restore(before);
   const disj = parseDisjunction(s);
   if (disj) return disj;
   s.restore(before);
-  // parseArgExpr added in Task 12
   return undefined;
+}
+
+// An ArgExpr is an Argument used as a value (nested argument premise).
+// The trailing period belongs to the surrounding argument, not the
+// nested one, so we parse without requiring it.
+export function parseArgExpr(s: TokenStream): CstNode | undefined {
+  return parseArgument(s, false);
 }
 
 export function parseDisjunction(s: TokenStream): CstNode | undefined {
