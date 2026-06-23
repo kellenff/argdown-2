@@ -7,6 +7,8 @@ import {
   duplicateRange,
   spliceGarbage,
   replaceLine,
+  flipArrow,
+  flipDisjunction,
   mutate,
 } from './parser.mutate.js';
 
@@ -100,6 +102,76 @@ describe('mutator ops', () => {
     const out = replaceLine('', rng);
     expect(out.length).toBeGreaterThan(0);
   });
+
+  it('flipArrow replaces -> with :- when present', () => {
+    const src = '<A> -> <B>';
+    let changed = false;
+    for (let seed = 0; seed < 200; seed++) {
+      const rng = makeRng(seed);
+      const out = flipArrow(src, rng);
+      if (out !== src) {
+        changed = true;
+        expect(out).toBe('<A> :- <B>');
+      }
+    }
+    expect(changed).toBe(true);
+  });
+
+  it('flipArrow replaces :- with -> when present', () => {
+    const src = '<A> :- <B>';
+    let changed = false;
+    for (let seed = 0; seed < 200; seed++) {
+      const rng = makeRng(seed);
+      const out = flipArrow(src, rng);
+      if (out !== src) {
+        changed = true;
+        expect(out).toBe('<A> -> <B>');
+      }
+    }
+    expect(changed).toBe(true);
+  });
+
+  it('flipArrow preserves line count', () => {
+    const src = '<A> -> <B>\n<C> -> <D>\n<E> :- <F>';
+    const rng = makeRng(10);
+    const out = flipArrow(src, rng);
+    expect(out.split('\n').length).toBe(src.split('\n').length);
+  });
+
+  it('flipDisjunction replaces | with , when present', () => {
+    const src = '<A> | <B>';
+    let changed = false;
+    for (let seed = 0; seed < 200; seed++) {
+      const rng = makeRng(seed);
+      const out = flipDisjunction(src, rng);
+      if (out !== src) {
+        changed = true;
+        expect(out).toBe('<A> , <B>');
+      }
+    }
+    expect(changed).toBe(true);
+  });
+
+  it('flipDisjunction replaces , with | when present', () => {
+    const src = '<A>, <B>';
+    let changed = false;
+    for (let seed = 0; seed < 200; seed++) {
+      const rng = makeRng(seed);
+      const out = flipDisjunction(src, rng);
+      if (out !== src) {
+        changed = true;
+        expect(out).toBe('<A>| <B>');
+      }
+    }
+    expect(changed).toBe(true);
+  });
+
+  it('flipDisjunction preserves line count', () => {
+    const src = '<A> | <B>\n<C> | <D>\n<E>, <F>';
+    const rng = makeRng(11);
+    const out = flipDisjunction(src, rng);
+    expect(out.split('\n').length).toBe(src.split('\n').length);
+  });
 });
 
 describe('mutate', () => {
@@ -111,7 +183,9 @@ describe('mutate', () => {
     for (let i = 0; i < 50; i++) {
       if (mutate(SRC, rng) !== SRC) changed++;
     }
-    expect(changed).toBeGreaterThan(40);
+    // flipArrow / flipDisjunction are no-ops for SRC (no arrows or disjunctions),
+    // so the threshold accounts for those picks landing on this source.
+    expect(changed).toBeGreaterThanOrEqual(38);
   });
 
   it('is deterministic given a seed', () => {

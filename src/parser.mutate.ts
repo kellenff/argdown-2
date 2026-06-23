@@ -121,6 +121,35 @@ export function replaceLine(source: string, rng: () => number): string {
   return joinLines(out);
 }
 
+export function flipArrow(source: string, rng: () => number): string {
+  // Replaces '->' with ':-' or vice versa in a random location.
+  // For verifying the hard-break error is uniformly emitted.
+  const lines = splitLines(source);
+  const idx = Math.floor(rng() * lines.length);
+  const line = lines[idx] ?? '';
+  if (line.includes('->') && rng() < 0.5) {
+    lines[idx] = line.replace('->', ':-');
+  } else if (line.includes(':-') && rng() < 0.5) {
+    lines[idx] = line.replace(':-', '->');
+  }
+  return joinLines(lines);
+}
+
+export function flipDisjunction(source: string, rng: () => number): string {
+  // Replaces '|' with ',' in a disjunction, to verify the parser
+  // rejects disjunction-shaped conclusions (or converts them).
+  // For now, just swap one | for , or vice versa.
+  const lines = splitLines(source);
+  const idx = Math.floor(rng() * lines.length);
+  const line = lines[idx] ?? '';
+  if (line.includes('|') && rng() < 0.5) {
+    lines[idx] = line.replace('|', ',');
+  } else if (line.includes(',') && rng() < 0.5) {
+    lines[idx] = line.replace(',', '|');
+  }
+  return joinLines(lines);
+}
+
 // ----- Weighted entry point -----
 
 type Op = (source: string, rng: () => number) => string;
@@ -133,6 +162,8 @@ const OPS: ReadonlyArray<readonly [number, Op]> = [
   [10, duplicateRange],
   [15, spliceGarbage],
   [20, replaceLine],
+  [10, flipArrow],
+  [10, flipDisjunction],
 ];
 
 /**
