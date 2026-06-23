@@ -36,7 +36,12 @@ function escapeLabel(s: string): string {
 }
 
 function endpointHead(ep: RelationEndpoint): FactHead {
-  return ep.kind === 'FactRef' ? ep.head : ep.rule.ref.head;
+  if (ep.kind === 'FactRef') return ep.head;
+  // Argument endpoint: take the head of the conclusion's atom (nested
+  // argument conclusions recurse; for now we only need the leaf head).
+  let c = ep.conclusion;
+  while (c.kind === 'argument') c = c.value.conclusion;
+  return c.value.head;
 }
 
 export function renderMermaid(doc: Document): string {

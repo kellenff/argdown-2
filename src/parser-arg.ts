@@ -95,16 +95,25 @@ export function parseArgument(
 }
 
 export function parsePremise(s: TokenStream): CstNode | undefined {
+  // Try alternatives in order: atom (FactRef), nested Argument,
+  // Disjunction. Each failed attempt must roll back both position
+  // AND errors — `parseFactRef` records mismatched-token errors on
+  // its speculative `consume('LBrack')` call, which would otherwise
+  // leak into the final error list.
+  const errMark = s.saveErrors();
   const before = s.save();
   const fr = parseFactRef(s);
   if (fr) return fr;
   s.restore(before);
+  s.restoreErrors(errMark);
   const arg = parseArgExpr(s);
   if (arg) return arg;
   s.restore(before);
+  s.restoreErrors(errMark);
   const disj = parseDisjunction(s);
   if (disj) return disj;
   s.restore(before);
+  s.restoreErrors(errMark);
   return undefined;
 }
 

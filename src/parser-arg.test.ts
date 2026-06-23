@@ -10,6 +10,7 @@ import { ArgdownLexer } from './tokens.js';
 import { TokenStream } from './parser-util.js';
 import { parseArgument, parseDisjunction } from './parser-arg.js';
 import { parse } from './parser.js';
+import { visit } from './visitor.js';
 
 // Task 11 unit test — tests parseDisjunction directly. Integration via
 // public parse() is verified in Task 14 (dispatch wiring) and
@@ -61,5 +62,28 @@ describe('hard-break :-', () => {
     const result = parse(' [#A] :- [#B]. ');
     expect(result.ok).toBe(false);
     expect(result.errors?.[0]?.message).toContain("':-'");
+  });
+});
+
+// Task 15: visitArgument walks the typed AST end-to-end via the
+// public parse() entry point. We dispatch into Argument nodes via
+// the visitor and confirm both 'Argument' and 'disjunction' kinds
+// are observed (the disjunction premise is the load-bearing part of
+// the test — it confirms the visitor recurses into Premise variants).
+
+describe('visitArgument (end-to-end via public parse)', () => {
+  it('walks an argument with a disjunction premise', () => {
+    const result = parse('([#A]) -> ([#B] | [#C]).');
+    const ast = result.ok ? result.ast : result.partial;
+    expect(ast).toBeDefined();
+    if (!ast) return;
+    const kinds = new Set<string>();
+    visit(ast, {
+      enter: (node) => {
+        kinds.add(node.kind);
+      },
+    });
+    expect(kinds.has('Argument')).toBe(true);
+    expect(kinds.has('disjunction')).toBe(true);
   });
 });

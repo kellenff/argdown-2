@@ -48,6 +48,7 @@ export type Element =
   | Block
   | FactStatement
   | RuleStatement
+  | ArgumentStatement
   | RelationStatement
   | LineComment
   | BlockComment;
@@ -158,6 +159,12 @@ export type Argument = {
   loc: SourceLocation;
 };
 
+export type ArgumentStatement = {
+  kind: 'ArgumentStatement';
+  argument: Argument;
+  loc: SourceLocation;
+};
+
 // ----- Rule -----
 
 export type RuleStatement = {
@@ -199,13 +206,7 @@ export type Relation = {
   loc: SourceLocation;
 };
 
-export type RelationEndpoint = FactRef | RuleExpr;
-
-export type RuleExpr = {
-  kind: 'RuleExpr';
-  rule: Rule;
-  loc: SourceLocation;
-};
+export type RelationEndpoint = FactRef | Argument;
 
 // ----- Attributes -----
 

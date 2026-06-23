@@ -79,6 +79,17 @@ export class TokenStream {
     this.pos = p;
   }
 
+  // Save the current error count so a speculative attempt can roll
+  // back any errors it produced and try a different alternative
+  // without polluting the stream's error list.
+  saveErrors(): number {
+    return this.errors.length;
+  }
+
+  restoreErrors(n: number): void {
+    this.errors.length = n;
+  }
+
   eof(): boolean {
     return this.current().tokenType.name === 'EOF';
   }

@@ -3,44 +3,35 @@
 
 import type {
   Document,
-  Frontmatter,
-  Heading,
-  Block,
-  BlockTitle,
-  ListItem,
   FactStatement,
-  RuleStatement,
   RelationStatement,
   Fact,
   FactRef,
   FactHead,
   IdentifierHead,
   TitleHead,
-  Rule,
   Relation,
-  RelationEndpoint,
-  RuleExpr,
   Arrow,
   AttributeBlock,
   Value,
-  StringValue,
-  NumberValue,
-  BooleanValue,
-  NullValue,
-  FlowSequence,
-  FlowMapping,
-  FlowScalar,
-  YamlLine,
-  YamlValue,
-  PlainScalar,
-  LineComment,
-  BlockComment,
   BlockType,
   Element,
   SourceLocation,
   CstNode,
   CstChildren,
 } from './ast.js';
+
+import {
+  visitArgumentStatement,
+  visitArgument,
+  visitConclusion,
+  visitPremise,
+  visitRelationEndpoint,
+} from './visitor-arg.js';
+
+import { makeValueNode, visitFrontmatter, visitYamlLine } from './visitor-frontmatter.js';
+
+import { visitBlock, visitComment, visitHeading } from './visitor-block.js';
 
 type TokenLike = {
   image: string;
@@ -52,13 +43,13 @@ type TokenLike = {
   endColumn?: number;
 };
 
-// ----- Helpers -----
+// ----- Helpers (exported so visitor-arg.ts can share them) -----
 
-function pickFirst<T>(arr: T[] | undefined): T | undefined {
+export function pickFirst<T>(arr: T[] | undefined): T | undefined {
   return arr?.[0];
 }
 
-function locFromTokens(tokens: TokenLike[]): SourceLocation {
+export function locFromTokens(tokens: TokenLike[]): SourceLocation {
   const first = tokens[0];
   const last = tokens[tokens.length - 1];
   if (!first || !last) {
@@ -78,7 +69,7 @@ function locFromTokens(tokens: TokenLike[]): SourceLocation {
   };
 }
 
-function collectAllTokens(cst: CstChildren): TokenLike[] {
+export function collectAllTokens(cst: CstChildren): TokenLike[] {
   const out: TokenLike[] = [];
   const walk = (n: unknown): void => {
     if (!n || typeof n !== 'object') return;
@@ -134,88 +125,6 @@ function blockTypeName(tokName: string): BlockType {
   }
 }
 
-function decodeString(s: string): string {
-  const inner = s.slice(1, -1);
-  return inner
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, '\\')
-    .replace(/\\\//g, '/')
-    .replace(/\\b/g, '\b')
-    .replace(/\\f/g, '\f')
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '\r')
-    .replace(/\\t/g, '\t')
-    .replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex) => String.fromCharCode(parseInt(hex, 16)));
-}
-
-function decodeNumber(s: string): number {
-  return Number(s);
-}
-
-// ----- Value visitor -----
-
-function makeValueNode(cst: CstChildren): Value {
-  const stringChild = pickFirst(cst['string'] as CstNode[]);
-  if (stringChild) {
-    const tok = stringChild.image ?? '';
-    return {
-      kind: 'StringValue',
-      value: decodeString(tok),
-      loc: locFromTokens([stringChild as TokenLike]),
-    };
-  }
-  const numberChild = pickFirst(cst['number'] as CstNode[]);
-  if (numberChild) {
-    const tok = numberChild.image ?? '';
-    return {
-      kind: 'NumberValue',
-      value: decodeNumber(tok),
-      loc: locFromTokens([numberChild as TokenLike]),
-    };
-  }
-  const boolChild = pickFirst(cst['boolean'] as CstNode[]);
-  if (boolChild) {
-    const tok = boolChild.image ?? '';
-    return {
-      kind: 'BooleanValue',
-      value: tok === 'true',
-      loc: locFromTokens([boolChild as TokenLike]),
-    };
-  }
-  const nullChild = pickFirst(cst['nullValue'] as CstNode[]);
-  if (nullChild) {
-    return { kind: 'NullValue', loc: locFromTokens([nullChild as TokenLike]) };
-  }
-  const seqChild = pickFirst(cst['flowSequence'] as CstNode[]);
-  if (seqChild) return visitFlowSequence(seqChild as CstChildren);
-  const mapChild = pickFirst(cst['flowMapping'] as CstNode[]);
-  if (mapChild) return visitFlowMapping(mapChild as CstChildren);
-  const scalarChild = pickFirst(cst['flowScalar'] as CstNode[]);
-  if (scalarChild) {
-    const tok = scalarChild.image ?? '';
-    return { kind: 'FlowScalar', text: tok, loc: locFromTokens([scalarChild as TokenLike]) };
-  }
-  throw new Error('value rule matched no alternative');
-}
-
-function visitFlowSequence(cst: CstChildren): FlowSequence {
-  const items = ((cst['value'] as CstNode[]) ?? []).map((v) => makeValueNode(v as CstChildren));
-  return { kind: 'FlowSequence', items, loc: locFromTokens(collectAllTokens(cst)) };
-}
-
-function visitFlowMapping(cst: CstChildren): FlowMapping {
-  const entries: Record<string, Value> = {};
-  for (const entry of (cst['attributeEntry'] as CstNode[]) ?? []) {
-    const child = entry as CstChildren;
-    const idSub = pickFirst(child['identifier'] as CstNode[]);
-    const valSub = pickFirst(child['value'] as CstNode[]);
-    if (!idSub || !valSub) continue;
-    const key = idSub.image ?? '';
-    entries[key] = makeValueNode(valSub as CstChildren);
-  }
-  return { kind: 'FlowMapping', entries, loc: locFromTokens(collectAllTokens(cst)) };
-}
-
 // ----- Top-level -----
 
 function visitDocument(cst: CstChildren): Document {
@@ -232,41 +141,7 @@ function visitDocument(cst: CstChildren): Document {
   };
 }
 
-function visitFrontmatter(cst: CstChildren): Frontmatter {
-  const entries: Record<string, Value | PlainScalar> = {};
-  for (const yl of (cst['yamlLine'] as CstNode[]) ?? []) {
-    const child = yl as CstChildren;
-    const idSub = pickFirst(child['identifier'] as CstNode[]);
-    const valSub = pickFirst(child['yamlValue'] as CstNode[]);
-    if (!idSub) continue;
-    const key = idSub.image ?? '';
-    if (!valSub) continue; // empty yaml value: skip the entry
-    const yv = valSub as CstChildren;
-    const stringChild = pickFirst(yv['string'] as CstNode[]);
-    const seqChild = pickFirst(yv['flowSequence'] as CstNode[]);
-    const scalarChild = pickFirst(yv['plainScalar'] as CstNode[]);
-    if (stringChild) {
-      const tok = stringChild.image ?? '';
-      entries[key] = {
-        kind: 'StringValue',
-        value: decodeString(tok),
-        loc: locFromTokens([stringChild as TokenLike]),
-      };
-    } else if (seqChild) {
-      entries[key] = visitFlowSequence(seqChild as CstChildren);
-    } else if (scalarChild) {
-      const tok = scalarChild.image ?? '';
-      entries[key] = {
-        kind: 'PlainScalar',
-        text: tok.trim(),
-        loc: locFromTokens([scalarChild as TokenLike]),
-      };
-    }
-  }
-  return { kind: 'Frontmatter', entries, loc: locFromTokens(collectAllTokens(cst)) };
-}
-
-function visitElement(cst: CstChildren): Element | undefined {
+export function visitElement(cst: CstChildren): Element | undefined {
   if (pickFirst(cst['blankLine'] as CstNode[])) return undefined; // stripped
   const comment = pickFirst(cst['comment'] as CstNode[]);
   if (comment) return visitComment(comment as CstChildren);
@@ -282,160 +157,11 @@ function visitElement(cst: CstChildren): Element | undefined {
 function visitStatement(cst: CstChildren): Element {
   const fact = pickFirst(cst['factStatement'] as CstNode[]);
   if (fact) return visitFactStatement(fact as CstChildren);
-  const rule = pickFirst(cst['ruleStatement'] as CstNode[]);
-  if (rule) return visitRuleStatement(rule as CstChildren);
+  const arg = pickFirst(cst['argumentStatement'] as CstNode[]);
+  if (arg) return visitArgumentStatement(arg as CstChildren);
   const rel = pickFirst(cst['relationStatement'] as CstNode[]);
   if (rel) return visitRelationStatement(rel as CstChildren);
   throw new Error('statement rule matched no alternative');
-}
-
-function visitComment(cst: CstChildren): LineComment | BlockComment {
-  const line = pickFirst(cst['lineComment'] as CstNode[]);
-  if (line) {
-    const tokens = collectAllTokens(cst);
-    const text = tokens
-      .map((t) => t.image)
-      .join('')
-      .replace(/^\/\//, '');
-    return { kind: 'LineComment', text, loc: locFromTokens(tokens) };
-  }
-  const block = pickFirst(cst['blockComment'] as CstNode[]);
-  if (block) {
-    const tokens = collectAllTokens(cst);
-    const text = tokens
-      .map((t) => t.image)
-      .join('')
-      .replace(/^\/\*|\*\/$/g, '');
-    return { kind: 'BlockComment', text, loc: locFromTokens(tokens) };
-  }
-  throw new Error('comment rule matched no alternative');
-}
-
-function visitHeading(cst: CstChildren): Heading {
-  const marker = pickFirst(cst['HeadingMarker'] as CstNode[]);
-  const textNodes = (cst['headingText'] as CstNode[]) ?? [];
-  // Join multiple tokens with single spaces (skip Colon — it visually
-  // belongs in the heading text like `# Position: ...`).
-  let text = '';
-  for (const n of textNodes) {
-    if (n.tokenType?.name === 'Colon') {
-      text += ':';
-      continue;
-    }
-    const img = n.image ?? '';
-    if (text.length > 0 && !/\s$/.test(text) && !/^\s/.test(img) && !text.endsWith(':')) {
-      text += ' ';
-    }
-    text += img;
-  }
-  return {
-    kind: 'Heading',
-    level: (marker?.image?.length ?? 1) as 1 | 2 | 3 | 4 | 5 | 6,
-    text: text.trim(),
-    loc: locFromTokens(collectAllTokens(cst)),
-  };
-}
-
-function visitBlock(cst: CstChildren): Block {
-  const tokens = collectAllTokens(cst);
-  const open = pickFirst(cst['blockOpen'] as CstNode[]) as CstChildren;
-  const body = pickFirst(cst['blockBody'] as CstNode[]) as CstChildren | undefined;
-
-  const typeTok = pickFirst(open['blockType'] as CstNode[]);
-  const typeName = typeTok?.tokenType?.name ?? 'Meta';
-
-  const titleChild = pickFirst(open['blockTitle'] as CstNode[]);
-  let title: BlockTitle | undefined;
-  if (titleChild) {
-    const parts = ((titleChild as CstChildren)['titleText'] as CstNode[]) ?? [];
-    let text = '';
-    for (const n of parts) {
-      const img = n.image ?? '';
-      if (text.length > 0 && !/\s$/.test(text) && !/^\s/.test(img)) {
-        text += ' ';
-      }
-      text += img;
-    }
-    text = text.trim();
-    if (text.length > 0) {
-      title = {
-        kind: 'BlockTitle',
-        text,
-        loc: locFromTokens(collectAllTokens(titleChild as CstChildren)),
-      };
-    }
-  }
-
-  const bodyLines: Block['body'] = [];
-  if (body) {
-    for (const line of (body['blockLine'] as CstNode[]) ?? []) {
-      const child = line as CstChildren;
-      const yl = pickFirst(child['yamlLine'] as CstNode[]);
-      if (yl) {
-        bodyLines.push(visitYamlLine(yl as CstChildren));
-        continue;
-      }
-      const li = pickFirst(child['listItem'] as CstNode[]);
-      if (li) {
-        const l = visitListItem(li as CstChildren);
-        if (l) bodyLines.push(l);
-        continue;
-      }
-      const el = pickFirst(child['element'] as CstNode[]);
-      if (el) {
-        const e = visitElement(el as CstChildren);
-        if (e) bodyLines.push(e);
-      }
-    }
-  }
-  return {
-    kind: 'Block',
-    type: blockTypeName(typeName),
-    ...(title ? { title } : {}),
-    body: bodyLines,
-    loc: locFromTokens(tokens),
-  };
-}
-
-function visitListItem(cst: CstChildren): ListItem | undefined {
-  const factSub = pickFirst(cst['fact'] as CstNode[]);
-  if (!factSub) return undefined;
-  return {
-    kind: 'ListItem',
-    fact: visitFact(factSub as CstChildren),
-    loc: locFromTokens(collectAllTokens(cst)),
-  };
-}
-
-function visitYamlLine(cst: CstChildren): YamlLine {
-  const idSub = pickFirst(cst['identifier'] as CstNode[]);
-  const valSub = pickFirst(cst['yamlValue'] as CstNode[]);
-  let value: YamlValue = null;
-  if (valSub) {
-    const yv = valSub as CstChildren;
-    const stringChild = pickFirst(yv['string'] as CstNode[]);
-    const seqChild = pickFirst(yv['flowSequence'] as CstNode[]);
-    const scalarChild = pickFirst(yv['plainScalar'] as CstNode[]);
-    if (stringChild) {
-      const tok = stringChild.image ?? '';
-      value = {
-        kind: 'StringValue',
-        value: decodeString(tok),
-        loc: locFromTokens([stringChild as TokenLike]),
-      };
-    } else if (seqChild) {
-      value = visitFlowSequence(seqChild as CstChildren);
-    } else if (scalarChild) {
-      const tok = scalarChild.image ?? '';
-      value = { kind: 'PlainScalar', text: tok, loc: locFromTokens([scalarChild as TokenLike]) };
-    }
-  }
-  return {
-    kind: 'YamlLine',
-    key: idSub?.image ?? '',
-    value,
-    loc: locFromTokens(collectAllTokens(cst)),
-  };
 }
 
 function visitFactStatement(cst: CstChildren): FactStatement {
@@ -446,7 +172,7 @@ function visitFactStatement(cst: CstChildren): FactStatement {
   };
 }
 
-function visitFact(cst: CstChildren): Fact {
+export function visitFact(cst: CstChildren): Fact {
   const refSub = pickFirst(cst['factRef'] as CstNode[]);
   const claimSubs = (cst['claimText'] as CstNode[]) ?? [];
   const attrSub = pickFirst(cst['attributeBlock'] as CstNode[]);
@@ -475,7 +201,7 @@ function visitFact(cst: CstChildren): Fact {
   };
 }
 
-function visitFactRef(cst: CstChildren): FactRef {
+export function visitFactRef(cst: CstChildren): FactRef {
   return {
     kind: 'FactRef',
     head: visitFactHead(pickFirst(cst['factHead'] as CstNode[]) as CstChildren),
@@ -515,31 +241,6 @@ function visitFactHead(cst: CstChildren): FactHead {
   throw new Error('factHead matched no alternative');
 }
 
-function visitRuleStatement(cst: CstChildren): RuleStatement {
-  return {
-    kind: 'RuleStatement',
-    rule: visitRule(pickFirst(cst['rule'] as CstNode[]) as CstChildren),
-    loc: locFromTokens(collectAllTokens(cst)),
-  };
-}
-
-function visitRule(cst: CstChildren): Rule {
-  const refSub = pickFirst(cst['factRef'] as CstNode[]);
-  const listSub = pickFirst(cst['factRefList'] as CstNode[]);
-  const premises: FactRef[] = [];
-  if (listSub) {
-    for (const fr of ((listSub as CstChildren)['factRef'] as CstNode[]) ?? []) {
-      premises.push(visitFactRef(fr as CstChildren));
-    }
-  }
-  return {
-    kind: 'Rule',
-    ref: visitFactRef(refSub as CstChildren),
-    premises,
-    loc: locFromTokens(collectAllTokens(cst)),
-  };
-}
-
 function visitRelationStatement(cst: CstChildren): RelationStatement {
   return {
     kind: 'RelationStatement',
@@ -562,33 +263,7 @@ function visitRelation(cst: CstChildren): Relation {
   };
 }
 
-function visitRelationEndpoint(cst: CstChildren): RelationEndpoint {
-  const fr = pickFirst(cst['factRef'] as CstNode[]);
-  if (fr) return visitFactRef(fr as CstChildren);
-  const re = pickFirst(cst['ruleExpr'] as CstNode[]) ?? pickFirst(cst['argExpr'] as CstNode[]);
-  if (re) return visitRuleExpr(re as CstChildren);
-  throw new Error('relationEndpoint matched no alternative');
-}
-
-function visitRuleExpr(cst: CstChildren): RuleExpr {
-  const refSub = pickFirst(cst['factRef'] as CstNode[]);
-  const listSub = pickFirst(cst['factRefList'] as CstNode[]);
-  if (!refSub) throw new Error('ruleExpr matched no alternative');
-  const premises: FactRef[] = [];
-  if (listSub) {
-    for (const fr of ((listSub as CstChildren)['factRef'] as CstNode[]) ?? []) {
-      premises.push(visitFactRef(fr as CstChildren));
-    }
-  }
-  const loc = locFromTokens(collectAllTokens(cst));
-  return {
-    kind: 'RuleExpr',
-    rule: { kind: 'Rule', ref: visitFactRef(refSub as CstChildren), premises, loc },
-    loc,
-  };
-}
-
-function visitAttributeBlock(cst: CstChildren): AttributeBlock {
+export function visitAttributeBlock(cst: CstChildren): AttributeBlock {
   const entries: Record<string, Value> = {};
   for (const entry of (cst['attributeEntry'] as CstNode[]) ?? []) {
     const child = entry as CstChildren;
@@ -609,3 +284,19 @@ function visitAttributeBlock(cst: CstChildren): AttributeBlock {
 export function buildAst(cst: CstChildren): Document {
   return visitDocument(cst);
 }
+
+// Re-export the post-build AST walker so consumers can `import { visit,
+// Visitor } from './visitor.js'` rather than reaching into visitor-walk.
+export { visit, type Visitor } from './visitor-walk.js';
+
+// Re-export sibling visitor modules' surface for consumers that want
+// the full CST-to-AST surface from a single import.
+export { visitFrontmatter, visitYamlLine, makeValueNode, decodeString } from './visitor-frontmatter.js';
+export { visitBlock, visitListItem, visitHeading, visitComment } from './visitor-block.js';
+export {
+  visitArgumentStatement,
+  visitArgument,
+  visitConclusion,
+  visitPremise,
+  visitRelationEndpoint,
+} from './visitor-arg.js';
