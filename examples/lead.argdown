@@ -1,0 +1,4 @@
+[#co2] Human CO2 emissions are the primary cause { source: "@IPCC-AR6" }
+[#impacts] Current warming trends threaten critical systems
+[#coord] International coordination is achieved
+([#mitigation]) -> [#co2], [#impacts], [#coord].
