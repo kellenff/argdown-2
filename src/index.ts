@@ -4,6 +4,8 @@
 export { parse, formatError } from './parser.js';
 export type { ParseResult, ParseOptions, ParseError, ParseErrorCode } from './parser.js';
 
+export { renderMermaid } from './mermaid.js';
+
 export type {
   Document,
   Frontmatter,
