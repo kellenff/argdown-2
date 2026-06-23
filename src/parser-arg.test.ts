@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { ArgdownLexer } from './tokens.js';
 import { TokenStream } from './parser-util.js';
 import { parseArgument, parseDisjunction } from './parser-arg.js';
+import { parse } from './parser.js';
 
 // Task 11 unit test — tests parseDisjunction directly. Integration via
 // public parse() is verified in Task 14 (dispatch wiring) and
@@ -49,5 +50,16 @@ describe('parseArgument — nesting', () => {
     expect(cst).toBeDefined();
     // The premises should have a single nested argument
     expect(cst.premise).toBeDefined();
+  });
+});
+
+// Task 13: hard-break :- as a parse error. Reaches parseStatement through
+// the public parse() entry point.
+
+describe('hard-break :-', () => {
+  it('emits a parse error for [A] :- [B].', () => {
+    const result = parse(' [#A] :- [#B]. ');
+    expect(result.ok).toBe(false);
+    expect(result.errors?.[0]?.message).toContain("':-'");
   });
 });

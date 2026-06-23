@@ -13,14 +13,16 @@ function parseOk(source: string) {
 }
 
 describe('renderMermaid', () => {
-  it('renders facts, relations, and rules into flowchart TD', () => {
+  it('renders facts and relations into flowchart TD', () => {
+    // Task 13: the `:-` rule line was removed — the `:-` syntax is now a
+    // hard-break parse error. The cycle-2 Mermaid regression test for the
+    // new `->` argument syntax lands in Task 20.
     const out = renderMermaid(
       parseOk(
         '[#co2] CO2 is a greenhouse gas\n' +
           '[#warming] Global temperatures are rising\n' +
           '[#co2] --> [#warming]\n' +
-          '[#warming] --x [#denial]\n' +
-          '[#warming] :- [#co2], [#denial].\n',
+          '[#warming] --x [#denial]\n',
       ),
     );
 
@@ -30,8 +32,6 @@ describe('renderMermaid', () => {
     expect(out).toContain('denial["denial"]');
     expect(out).toContain('co2 -->|support| warming');
     expect(out).toContain('warming -.->|attack| denial');
-    expect(out).toContain('warming ==>|rule| co2');
-    expect(out).toContain('warming ==>|rule| denial');
   });
 
   it('dedupes the same FactHead to a single node', () => {

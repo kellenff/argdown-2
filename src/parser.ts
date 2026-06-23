@@ -159,14 +159,24 @@ function parseStatement(s: TokenStream): CstNode | undefined {
   const cst: CstChildren = {};
   if (s.check('LBrack')) {
     // The BNF's note-4 disambiguation: look past [factHead] ] to the next
-    // token. - 'RuleOp' → rule - arrow → relation - else → fact
+    // token. - 'RuleOp' (:-) → hard-break error (Cycle 2 removes :-)
+    //                      - arrow → relation - else → fact
     const afterClose = peekPastFactRef(s);
     if (afterClose === 'RuleOp') {
-      const rs = parseRuleStatement(s);
-      if (rs) {
-        cst['ruleStatement'] = [rs];
-        return cst;
-      }
+      // Hard break: :- is removed. Use -> for inference.
+      const tok = s.peek();
+      s.errors.push({
+        code: 'syntax-removed',
+        message: "':-' syntax was removed. Use '->' for inference (e.g., '([#A]) -> [#B].').",
+        severity: 'error',
+        loc: {
+          line: tok?.startLine ?? 1,
+          column: tok?.startColumn ?? 1,
+          offset: tok?.startOffset ?? 0,
+        },
+        found: tok?.tokenType.name,
+      });
+      s.consume('RuleOp'); // consume to make progress
       return undefined;
     }
     if (isArrowToken(afterClose)) {

@@ -310,7 +310,8 @@ export type ParseErrorCode =
   | 'parse.invalidNumber'
   | 'parse.unterminatedString'
   | 'parse.unterminatedBlockComment'
-  | 'parse.unclosedFrontmatter';
+  | 'parse.unclosedFrontmatter'
+  | 'syntax-removed';
 
 export type ParseError = {
   code: ParseErrorCode;

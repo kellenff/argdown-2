@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { parse, formatError } from './parser.js';
-import type { Document, Fact, Rule, Relation, Heading, Block, Value } from './ast.js';
+import type { Document, Fact, Relation, Heading, Block, Value } from './ast.js';
 
 function parseOk(source: string): Document {
   const r = parse(source);
@@ -77,15 +77,6 @@ describe('production: facts', () => {
     const fact = (ast.elements[0] as { fact: Fact }).fact;
     expect(fact.claimText).toBeUndefined();
     expect(fact.attributes?.entries['tags']).toMatchObject({ kind: 'FlowSequence' });
-  });
-});
-
-describe('production: rules', () => {
-  it('parses a rule with two premises', () => {
-    const ast = parseOk('[#mitigation] :- [#co2], [#impacts].');
-    const rule = (ast.elements[0] as { rule: Rule }).rule;
-    expect(rule.ref).toMatchObject({ head: { kind: 'IdentifierHead', identifier: 'mitigation' } });
-    expect(rule.premises).toHaveLength(2);
   });
 });
 
@@ -243,26 +234,6 @@ describe('error cases', () => {
       ),
     ).toBe(true);
   });
-
-  it('reports error on missing period after rule', () => {
-    const r = parse('[#mitigation] :- [#co2]');
-    expect(r.ok).toBe(false);
-    expect(r.errors.length).toBeGreaterThan(0);
-  });
-});
-
-describe('recovery', () => {
-  it('recovers from a missing period in a rule and parses a following fact', () => {
-    const r = parse('[#a] :- [#b]\n[#c] claim');
-    expect(r.errors.length).toBeGreaterThan(0);
-    const elements = r.ok ? r.ast.elements : (r.partial?.elements ?? []);
-    expect(elements.length).toBeGreaterThan(0);
-  });
-
-  it('reports multiple errors in one pass', () => {
-    const r = parse('[#a] :- [#b]\n[#c] claim { broken: }\n[unclosed');
-    expect(r.errors.length).toBeGreaterThanOrEqual(2);
-  });
 });
 
 // ============================================================================
@@ -311,61 +282,10 @@ describe('source positions', () => {
 // Task 23: DESIGN.md example tests with snapshots
 // ============================================================================
 
-describe('DESIGN.md example: Climate Policy', () => {
-  const climatePolicy = `===
-title: Climate Policy Analysis
-author: Research Team
-version: 2.1
-===
-
-# Position: Aggressive Mitigation
-
-[#co2] Human CO2 emissions are the primary cause {
-  source: "@IPCC-AR6",
-  confidence: 0.95,
-  scheme: "expert_consensus"
-}
-
-[#impacts] Current warming trends threaten critical systems {
-  certainty: 0.60,
-  tags: ["urgent", "biosphere"]
-}
-
-[#coord] International coordination is achieved
-
-# Derivation of the main position
-[#mitigation] :- [#co2], [#impacts], [#coord].
-
-# Counter-positions
-[#gradual] Gradual transition is sufficient { author: "Industry Group A" }
-
-# Relations
-[#impacts] --x [#gradual] { type: "undercut" }
-[#gradual] --x ([#mitigation] :- [#co2], [#impacts], [#coord])
-
-:::stakeholder[ipcc]
-name: Intergovernmental Panel on Climate Change
-type: scientific_body
-credibility: high
-:::
-`;
-
-  it('parses with ok: true and no errors', () => {
-    const r = parse(climatePolicy);
-    expect(r.ok).toBe(true);
-    if (!r.ok) {
-      console.error(JSON.stringify(r.errors, null, 2));
-    }
-    expect(r.errors).toEqual([]);
-  });
-
-  it('produces a stable AST (snapshot)', () => {
-    const r = parse(climatePolicy);
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.ast).toMatchSnapshot();
-  });
-});
+// (Task 13: the previous Climate Policy example used `:-` syntax, which
+// is now a hard-break parse error. The migration codemod (Task 21) and the
+// cycle-2 DESIGN.md update (Task 23) will re-introduce this example using
+// the new `->` argument syntax.)
 
 // ============================================================================
 // Task 24: Smoke test
