@@ -13,15 +13,15 @@
 //   - parseDisjunction    — `([#A] | [#B])`
 //   - parseArgExpr        — an `Argument` used as a value (nested)
 //
-// This commit adds the skeleton (parseArgument) only. Multi-premise,
-// disjunction, and nesting productions are added in subsequent tasks.
+// This commit adds the skeleton (parseArgument + parsePremise) only.
+// Disjunction and nesting productions are added in subsequent tasks.
 //
 // Dependencies:
-//   - parseArgument calls parseFactRef from ./parser-fact.js (the
-//     conclusion and the single premise are both fact refs in the
-//     skeleton; richer premise types arrive in later tasks).
-//   - Cycle 2 will introduce an `Arrow` token in ./tokens.js for the
-//     `->` operator. The skeleton references it by its planned name.
+//   - parseArgument and parsePremise call parseFactRef from
+//     ./parser-fact.js (the conclusion and each premise are fact refs
+//     for now; richer premise types arrive in later tasks).
+//   - Cycle 2 introduces an `Arrow` token in ./tokens.js for the `->`
+//     operator.
 
 import type { CstChildren, CstNode } from './ast.js';
 
@@ -59,13 +59,30 @@ export function parseArgument(s: TokenStream): CstNode | undefined {
   if (!arrow) return undefined;
   cst['arrow'] = [tokenNode(arrow)];
 
-  const premise = parseFactRef(s);
-  if (!premise) return undefined;
-  cst['premise'] = [premise];
+  // Multi-premise: comma-separated list
+  const premises: CstNode[] = [];
+  const first = parsePremise(s);
+  if (!first) {
+    s.restore(before);
+    return undefined;
+  }
+  premises.push(first);
+  while (s.check('Comma')) {
+    s.consume('Comma');
+    const next = parsePremise(s);
+    if (!next) break;
+    premises.push(next);
+  }
+  cst['premise'] = premises;
 
   const period = s.consume('Period');
   if (!period) return undefined;
   cst['period'] = [tokenNode(period)];
 
   return cst;
+}
+
+export function parsePremise(s: TokenStream): CstNode | undefined {
+  // Tries FactRef first; ArgExpr and Disjunction added in later tasks.
+  return parseFactRef(s);
 }
