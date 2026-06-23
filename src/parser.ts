@@ -166,7 +166,7 @@ function parseStatement(s: TokenStream): CstNode | undefined {
       // Hard break: :- is removed. Use -> for inference.
       const tok = s.peek();
       s.errors.push({
-        code: 'syntax-removed',
+        code: 'parse.removedSyntax',
         message: "':-' syntax was removed. Use '->' for inference (e.g., '([#A]) -> [#B].').",
         severity: 'error',
         loc: {

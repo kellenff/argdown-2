@@ -311,7 +311,7 @@ export type ParseErrorCode =
   | 'parse.unterminatedString'
   | 'parse.unterminatedBlockComment'
   | 'parse.unclosedFrontmatter'
-  | 'syntax-removed';
+  | 'parse.removedSyntax';
 
 export type ParseError = {
   code: ParseErrorCode;
