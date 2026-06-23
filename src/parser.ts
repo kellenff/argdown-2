@@ -1,16 +1,17 @@
-// src/parser.ts
-// Hand-written recursive descent parser for Argdown Extended.
+// Top-level parser dispatch.
 //
-// We walk a flat token stream produced by the Chevrotain lexer (src/tokens.ts)
-// and build a CST (concrete syntax tree) shaped to match what the visitor
-// (src/visitor.ts) consumes. Each BNF production is a standalone function
-// `parseX(s: TokenStream): CstNode | undefined` that returns either a CST
-// node for the matched production or `undefined` to signal failure.
+// This file is a thin facade. The actual parser implementations live in:
+//   - parser-util.ts:        shared helpers (TokenStream, tokenNode, etc.)
+//   - parser-frontmatter.ts: frontmatter + YAML + value parsers
+//   - parser-block.ts:       blocks + headings + list items
+//   - parser-fact.ts:        facts + fact-refs + comments
+//   - parser-relation.ts:    relations + arrows + attribute blocks
 //
-// The CST shape follows the Chevrotain default: token-bearing children live
-// under their token-type name (e.g. `cst['LBrack']`); subrules live under
-// the rule name (e.g. `cst['factRef']`). The visitor uses `pickFirst` to
-// pull the first entry from each child slot.
+// Cycle 2 (separate plan) adds:
+//   - parser-arg.ts:         arguments (the -> construct)
+//
+// We re-export everything from those files so consumers that import
+// from 'src/parser.ts' see no change.
 
 import type { ILexingResult } from 'chevrotain';
 
