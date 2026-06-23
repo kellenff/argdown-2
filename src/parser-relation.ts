@@ -34,24 +34,38 @@ function parseArrow(s: TokenStream): CstNode | undefined {
 }
 
 // ----- Relation endpoints -----
+//
+// `parseRelationEndpoint` parses an `EndpointList` — one or more
+// `Endpoint`s separated by commas. The CST shape is `{ relationEndpoint:
+// Endpoint[] }` where each `Endpoint` is itself a CST node with an
+// `argExpr` or `factRef` child. The visitor (src/visitor.ts:
+// visitRelation) unfolds an `EndpointList` of size > 1 into multiple
+// binary `Relation` AST nodes.
 
 function parseRelationEndpoint(s: TokenStream): CstNode | undefined {
   const cst: CstChildren = {};
-  if (s.check('LParen')) {
-    const ae = parseArgExpr(s);
-    if (ae) {
-      cst['argExpr'] = [ae];
-      return cst;
+  const endpoints: CstNode[] = [];
+  const addEndpoint = (): boolean => {
+    if (s.check('LParen')) {
+      const ae = parseArgExpr(s);
+      if (!ae) return false;
+      endpoints.push({ argExpr: [ae] });
+    } else if (s.check('LBrack')) {
+      const fr = parseFactRef(s);
+      if (!fr) return false;
+      endpoints.push({ factRef: [fr] });
+    } else {
+      return false;
     }
+    return true;
+  };
+  if (!addEndpoint()) return undefined;
+  while (s.check('Comma')) {
+    s.consume('Comma');
+    if (!addEndpoint()) break;
   }
-  if (s.check('LBrack')) {
-    const fr = parseFactRef(s);
-    if (fr) {
-      cst['factRef'] = [fr];
-      return cst;
-    }
-  }
-  return undefined;
+  cst['relationEndpoint'] = endpoints;
+  return cst;
 }
 
 // ----- Relations -----
@@ -64,7 +78,7 @@ function parseRelation(s: TokenStream): CstNode | undefined {
   if (!arrow) return undefined;
   const to = parseRelationEndpoint(s);
   if (!to) return undefined;
-  cst['relationEndpoint'] = [from, to];
+  cst['endpointList'] = [from, to];
   cst['arrow'] = [arrow];
   // Optional attribute block
   if (s.check('LBrace')) {

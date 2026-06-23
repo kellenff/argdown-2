@@ -83,7 +83,7 @@ describe('production: facts', () => {
 describe('production: relations', () => {
   it('parses a support relation', () => {
     const ast = parseOk('[#A] --> [#B]');
-    const rel = (ast.elements[0] as { relation: Relation }).relation;
+    const rel = (ast.elements[0] as { relations: Relation[] }).relations[0]!;
     expect(rel.arrow).toBe('support');
   });
 
@@ -99,14 +99,14 @@ describe('production: relations', () => {
     ];
     for (const [src, expected] of arrows) {
       const ast = parseOk(src);
-      const rel = (ast.elements[0] as { relation: Relation }).relation;
+      const rel = (ast.elements[0] as { relations: Relation[] }).relations[0]!;
       expect(rel.arrow).toBe(expected);
     }
   });
 
   it('parses a relation with attributes', () => {
     const ast = parseOk('[#A] --> [#B] { strength: "strong" }');
-    const rel = (ast.elements[0] as { relation: Relation }).relation;
+    const rel = (ast.elements[0] as { relations: Relation[] }).relations[0]!;
     expect(rel.attributes?.entries['strength']).toMatchObject({
       kind: 'StringValue',
       value: 'strong',

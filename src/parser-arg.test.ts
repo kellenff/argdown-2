@@ -110,3 +110,34 @@ function collectKinds(ast: Document): Set<string> {
   for (const el of ast.elements) walk(el);
   return kinds;
 }
+
+// Task 16: multi-premise relations. The parser produces an EndpointList
+// in the CST; the visitor unfolds it into multiple binary Relation AST
+// nodes. End-to-end via the public parse() entry point.
+
+function parseRelationOk(source: string): Document {
+  const r = parse(source);
+  if (!r.ok) throw new Error(`expected ok, got errors: ${JSON.stringify(r.errors)}`);
+  return r.ast;
+}
+
+describe('multi-premise relations', () => {
+  it('unfolds [A], [B] --> [C] into two binary Relations', () => {
+    const ast = parseRelationOk('[#A], [#B] --> [#C].');
+    // Find all Relation nodes in the AST
+    const relations: unknown[] = [];
+    const walk = (node: unknown): void => {
+      if (node === null || typeof node !== 'object') return;
+      const n = node as { kind?: string };
+      if (n.kind === 'Relation') relations.push(node);
+      // Recurse into children if they exist
+      for (const key of Object.keys(node)) {
+        const value = (node as Record<string, unknown>)[key];
+        if (Array.isArray(value)) value.forEach(walk);
+        else if (typeof value === 'object') walk(value);
+      }
+    };
+    walk(ast);
+    expect(relations.length).toBe(2);
+  });
+});

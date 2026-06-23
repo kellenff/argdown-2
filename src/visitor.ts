@@ -243,23 +243,55 @@ function visitFactHead(cst: CstChildren): FactHead {
 function visitRelationStatement(cst: CstChildren): RelationStatement {
   return {
     kind: 'RelationStatement',
-    relation: visitRelation(pickFirst(cst['relation'] as CstNode[]) as CstChildren),
+    relations: visitRelations(pickFirst(cst['relation'] as CstNode[]) as CstChildren),
     loc: locFromTokens(collectAllTokens(cst)),
   };
 }
 
-function visitRelation(cst: CstChildren): Relation {
-  const endpoints = (cst['relationEndpoint'] as CstNode[]) ?? [];
+function visitRelations(cst: CstChildren): Relation[] {
+  // EndpointList nodes: each contains one or more `relationEndpoint`
+  // children (a single endpoint, or a comma-separated list of endpoints).
+  const endpointLists = (cst['endpointList'] as CstNode[]) ?? [];
   const arrowNode = pickFirst(cst['arrow'] as CstNode[]);
   const attrSub = pickFirst(cst['attributeBlock'] as CstNode[]);
-  return {
-    kind: 'Relation',
-    from: visitRelationEndpoint(endpoints[0] as CstChildren),
-    arrow: arrowName(arrowNode?.tokenType?.name ?? 'Support'),
-    to: visitRelationEndpoint(endpoints[1] as CstChildren),
-    ...(attrSub ? { attributes: visitAttributeBlock(attrSub as CstChildren) } : {}),
-    loc: locFromTokens(collectAllTokens(cst)),
-  };
+  const fromList = ((endpointLists[0] as CstChildren | undefined)?.[
+    'relationEndpoint'
+  ] as CstNode[] | undefined) ?? [];
+  const toList = ((endpointLists[1] as CstChildren | undefined)?.[
+    'relationEndpoint'
+  ] as CstNode[] | undefined) ?? [];
+  const arrow = arrowName(arrowNode?.tokenType?.name ?? 'Support');
+  const attrs = attrSub ? visitAttributeBlock(attrSub as CstChildren) : undefined;
+  const loc = locFromTokens(collectAllTokens(cst));
+  // Unfold into one binary Relation per from/to pair (cartesian
+  // product). For the common single-endpoint case, this yields one
+  // Relation. For multi-premise source like `[#A], [#B] --> [#C]`,
+  // this yields two Relations. The AST is always binary; the CST
+  // preserves the source structure (EndpointList).
+  const relations: Relation[] = [];
+  for (const fromNode of fromList) {
+    for (const toNode of toList) {
+      relations.push({
+        kind: 'Relation',
+        from: visitRelationEndpoint(fromNode as CstChildren),
+        arrow,
+        to: visitRelationEndpoint(toNode as CstChildren),
+        ...(attrs ? { attributes: attrs } : {}),
+        loc,
+      });
+    }
+  }
+  return relations;
+}
+
+function visitRelation(cst: CstChildren): Relation {
+  const rels = visitRelations(cst);
+  if (rels.length !== 1) {
+    throw new Error(
+      `visitRelation: expected exactly one Relation, got ${rels.length} (use visitRelations for multi-endpoint relations)`,
+    );
+  }
+  return rels[0] as Relation;
 }
 
 export function visitAttributeBlock(cst: CstChildren): AttributeBlock {

@@ -45,7 +45,7 @@ function walkElement(el: Element, v: Visitor): void {
       walkArgument(el, v);
       break;
     case 'RelationStatement':
-      walkRelation(el.relation, v);
+      for (const r of el.relations) walkRelation(r, v);
       break;
     // Headings, blocks, comments — leaves for the walker. Consumers
     // that need their internals can add cases here.

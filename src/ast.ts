@@ -187,7 +187,12 @@ export type Arrow =
 
 export type RelationStatement = {
   kind: 'RelationStatement';
-  relation: Relation;
+  // A `RelationStatement` always carries a non-empty list of binary
+  // Relations. Multi-premise source endpoints (`[#A], [#B] --> [#C]`)
+  // are unfolded into one `Relation` per pair, so the list may have
+  // more than one element. The CST preserves the source structure;
+  // the AST is always binary.
+  relations: Relation[];
   loc: SourceLocation;
 };
 

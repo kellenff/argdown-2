@@ -84,10 +84,12 @@ export function renderMermaid(doc: Document): string {
         break;
       }
       case 'RelationStatement': {
-        const fromId = declare(endpointHead(el.relation.from));
-        const toId = declare(endpointHead(el.relation.to));
-        const glyph = ARROW_GLYPH[el.relation.arrow];
-        edges.push(`    ${fromId} ${glyph}|${el.relation.arrow}| ${toId}`);
+        for (const relation of el.relations) {
+          const fromId = declare(endpointHead(relation.from));
+          const toId = declare(endpointHead(relation.to));
+          const glyph = ARROW_GLYPH[relation.arrow];
+          edges.push(`    ${fromId} ${glyph}|${relation.arrow}| ${toId}`);
+        }
         break;
       }
     }

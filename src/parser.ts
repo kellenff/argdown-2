@@ -121,7 +121,9 @@ function parseStatement(s: TokenStream): CstNode | undefined {
   if (s.check('LBrack')) {
     // The BNF's note-4 disambiguation: look past [factHead] ] to the next
     // token. - 'RuleOp' (:-) → hard-break error (Cycle 2 removes :-)
-    //                      - arrow → relation - else → fact
+    //                      - arrow or Comma → relation (comma: the
+    //                        first endpoint of a multi-premise relation)
+    //                      - else → fact
     const afterClose = peekPastFactRef(s);
     if (afterClose === 'RuleOp') {
       // Hard break: :- is removed. Use -> for inference.
@@ -140,7 +142,7 @@ function parseStatement(s: TokenStream): CstNode | undefined {
       s.consume('RuleOp'); // consume to make progress
       return undefined;
     }
-    if (isArrowToken(afterClose)) {
+    if (isArrowToken(afterClose) || afterClose === 'Comma') {
       const rs = parseRelationStatement(s);
       if (rs) {
         cst['relationStatement'] = [rs];
