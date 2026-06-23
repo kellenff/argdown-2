@@ -4,7 +4,7 @@
 
 1. **Unambiguous Parsing**: Every construct has a clear, deterministic grammar.
 2. **Unified Attributes**: Metadata, modality, and annotations use a single curly-brace `{}` syntax.
-3. **Formal Logic**: Complex derivations use Datalog-style rules (`:-`) to eliminate keyword ambiguity.
+3. **Formal Logic**: Complex derivations use parenthesised Arguments with `->` to eliminate keyword ambiguity.
 4. **Visual Relationships**: Core arrows (`-->`, `--x`) remain intuitive for graph visualization.
 5. **Progressive Disclosure**: Simple cases stay simple; complexity is opt-in via attributes and rules.
 
@@ -39,32 +39,39 @@ Attributes use a unified `{}` syntax with `key: value` pairs. This replaces all 
 }
 ```
 
-### 2.3 Rules (Logic and Derivations)
-Logical relationships and premises are defined using the `:-` (if) operator and `,` (and) separator.
+### 2.3 Arguments (Linked Inferences)
+Logical derivations are written as **Arguments**. An argument is a single-line inference: a parenthesised conclusion followed by `->` and a list of premises.
 
 ```argdown
-# Linked Argument (Conjunctive)
-# The conclusion holds if ALL premises are true.
-[#mitigation] :- [#co2], [#impacts], [#coord].
+# Linked Argument (Conjunctive) — the conclusion holds if ALL premises are true.
+([#mitigation]) -> [#co2], [#impacts], [#coord].
 
-# Convergent Argument (Disjunctive)
-# Multiple rules for the same conclusion provide alternative paths.
-[#mitigation] :- [#moral-imperative].
-[#mitigation] :- [#economic-opportunity].
+# Disjunctive premise — the conclusion holds if ANY alternative is true.
+([#mitigation]) -> ([#moral] | [#economic]).
+
+# Nested argument — an argument as a premise of another.
+([#thesis]) -> ([#sub]) -> [#p1], [#p2].
+([#sub]) -> [#p3].
+
+# Multi-premise relation — comma list at endpoints.
+[#A], [#B] --> [#C].
 ```
 
 ### 2.4 Relations (Graph Edges)
-Relations define connections between facts or rules. Modifiers for relationships are also placed in attribute blocks.
+Relations define connections between facts or arguments. Modifiers for relationships are also placed in attribute blocks.
 
 ```argdown
 # Direct support and attack
 [#A] --> [#B] { strength: "strong" }
 [#C] --x [#B]
 
-# Undercut: Attacking a derivation rule
-[#Evidence-flaw] --x ([#mitigation] :- [#gradual]) {
+# Undercut: Attacking a derivation
+[#Evidence-flaw] --x ([#mitigation]) -> [#gradual] {
   reason: "impacts negate the sufficiency of gradualism"
 }
+
+# Multi-premise endpoints
+[#A], [#B] --> [#C].
 ```
 
 ---
@@ -135,19 +142,25 @@ The status of a claim or argument is tracked in its attribute block.
 (* Top-level Structure *)
 Document        ::= Frontmatter? Element*
 Frontmatter     ::= "===" YAML_Content "==="
-Element         ::= Heading | Fact | Rule | Relation | Block | Comment | Newline
+Element         ::= Heading | Fact | Argument | Relation | Block | Comment | Newline
 
 (* Fact: Claims with optional attributes *)
 Fact            ::= "[" ("#" Identifier)? Text? "]" AttributeBlock?
 AttributeBlock  ::= "{" (YAML_Line | KeyValue) ("," (YAML_Line | KeyValue))* "}"
-
-(* Rule: Logic Derivation *)
-Rule            ::= FactRef ":-" FactRef ("," FactRef)* "."
 FactRef         ::= "[" "#" Identifier "]" | Fact
 
-(* Relation: Graph edges *)
-Relation        ::= (FactRef | RuleExpr) Arrow (FactRef | RuleExpr) AttributeBlock?
-RuleExpr        ::= "(" FactRef ":-" FactRef ("," FactRef)* ")"
+(* Argument: a single-line inference statement *)
+Argument        ::= "(" Conclusion ")" "->" PremiseList "." AttributeBlock?
+Conclusion      ::= FactRef | ArgExpr
+PremiseList     ::= Premise ("," Premise)*
+Premise         ::= FactRef | ArgExpr | Disjunction
+Disjunction     ::= "(" FactRef ("|" FactRef)+ ")"
+ArgExpr         ::= Argument
+
+(* Relation: graph edges, with multi-premise endpoints *)
+Relation        ::= Endpoint Arrow Endpoint AttributeBlock?
+Endpoint        ::= FactRef | ArgExpr
+EndpointList    ::= Endpoint ("," Endpoint)+   (* multi-premise endpoint *)
 Arrow           ::= "-->" | "--x" | "-.->" | "-.-" | "~>" | "?>" | "<->"
 
 (* Structured Blocks *)
@@ -189,17 +202,17 @@ version: 2.1
 [#coord] International coordination is achieved
 
 # Derivation of the main position
-[#mitigation] :- [#co2], [#impacts], [#coord].
+([#mitigation]) -> [#co2], [#impacts], [#coord].
 
 # Alternative justification
-[#mitigation] :- [#moral-imperative].
+([#mitigation]) -> ([#moral-imperative]).
 
 # Counter-positions
 [#gradual] Gradual transition is sufficient { author: "Industry Group A" }
 
 # Relations
 [#impacts] --x [#gradual] { type: "undercut" }
-[#gradual] --x ([#mitigation] :- [#co2], [#impacts], [#coord])
+[#gradual] --x ([#mitigation]) -> [#co2], [#impacts], [#coord]
 
 :::stakeholder[ipcc]
 name: Intergovernmental Panel on Climate Change
