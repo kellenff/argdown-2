@@ -24,6 +24,19 @@ describe('token vocabulary', () => {
     expect(lexOne('-->').tokenType.name).toBe('Support');
   });
 
+  it('lexes Arrow ("->")', () => {
+    expect(lexOne('->').tokenType.name).toBe('Arrow');
+  });
+
+  it('prefers Arrow ("->") over Support prefix', () => {
+    // Sanity: `->` lexes as a single Arrow token, not as the start of `-->`.
+    const result = ArgdownLexer.tokenize('->');
+    expect(result.errors).toEqual([]);
+    expect(result.tokens).toHaveLength(1);
+    expect(result.tokens[0]!.tokenType.name).toBe('Arrow');
+    expect(result.tokens[0]!.image).toBe('->');
+  });
+
   it('lexes Attack ("--x")', () => {
     expect(lexOne('--x').tokenType.name).toBe('Attack');
   });

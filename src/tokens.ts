@@ -6,6 +6,9 @@ import { createToken, Lexer, type TokenType } from 'chevrotain';
 // ----- Multi-character operators (longest match wins) -----
 
 export const RuleOp: TokenType = createToken({ name: 'RuleOp', pattern: /:-/ });
+// Arrow must come before Support so `->` lexes as Arrow, not as the prefix of `-->`.
+// (ensureOptimizations is disabled, so registration order is the disambiguation order.)
+export const Arrow: TokenType = createToken({ name: 'Arrow', pattern: /->/ });
 export const Support: TokenType = createToken({ name: 'Support', pattern: /-->/ });
 export const Attack: TokenType = createToken({ name: 'Attack', pattern: /--x/ });
 export const Undercut: TokenType = createToken({ name: 'Undercut', pattern: /-\.->/ });
@@ -153,6 +156,7 @@ export const Newline: TokenType = createToken({
 const allTokens: TokenType[] = [
   // Multi-char operators
   RuleOp,
+  Arrow,
   Support,
   Attack,
   Undercut,
