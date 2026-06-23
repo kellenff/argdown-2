@@ -116,6 +116,33 @@ export type TitleHead = {
   loc: SourceLocation;
 };
 
+// ----- Argument -----
+
+// Conclusion is intentionally narrower than Premise — the grammar
+// production rules cannot produce a disjunction-conclusion.
+// Don't add a disjunction variant here without updating the parser
+// and adding a grammar rule that produces one.
+export type Conclusion =
+  | { kind: 'atom'; value: FactRef; loc: SourceLocation }
+  | { kind: 'argument'; value: Argument };
+
+// Premise is the full set — three variants earn their keep on
+// consumer-side dispatch (atom: reference resolution; argument:
+// sub-argument validation and recursion; disjunction: set-membership
+// semantics and proof-search branching).
+export type Premise =
+  | { kind: 'atom'; value: FactRef; loc: SourceLocation }
+  | { kind: 'argument'; value: Argument }
+  | { kind: 'disjunction'; values: FactRef[]; loc: SourceLocation };
+
+export type Argument = {
+  kind: 'Argument';
+  conclusion: Conclusion;
+  premises: Premise[];
+  attributes?: AttributeBlock;
+  loc: SourceLocation;
+};
+
 // ----- Rule -----
 
 export type RuleStatement = {
