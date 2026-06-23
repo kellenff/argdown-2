@@ -12,6 +12,10 @@
 # Build output
 dist/
 
+# Stryker mutation reports and sandboxes (generated on `yarn mutate`)
+reports/
+.stryker-tmp/
+
 # Dependencies
 node_modules/
 

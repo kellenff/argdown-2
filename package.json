@@ -33,6 +33,7 @@
     "format": "oxfmt src",
     "format:check": "oxfmt --check src",
     "lint": "oxlint src",
+    "mutate": "stryker run",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -41,6 +42,9 @@
     "chevrotain": "^11.0.3"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "8.7.1",
+    "@stryker-mutator/typescript-checker": "8.7.1",
+    "@stryker-mutator/vitest-runner": "8.7.1",
     "@types/node": "^20.12.0",
     "oxfmt": "^0.6.0",
     "oxlint": "^0.6.0",
