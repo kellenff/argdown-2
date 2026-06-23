@@ -6,24 +6,7 @@
 
 import type { IToken } from 'chevrotain';
 
-import type { ParseError, ParseErrorCode } from './parser.js';
-
-// =========================================================================
-// CST shape
-// =========================================================================
-
-export type CstNode = {
-  image?: string | undefined;
-  tokenType?: { name: string } | undefined;
-  startLine?: number | undefined;
-  startColumn?: number | undefined;
-  startOffset?: number | undefined;
-  endLine?: number | undefined;
-  endColumn?: number | undefined;
-  endOffset?: number | undefined;
-} & Record<string, unknown>;
-
-export type CstChildren = Record<string, CstNode[] | unknown[] | undefined>;
+import type { CstChildren, CstNode, ParseError, ParseErrorCode } from './ast.js';
 
 // =========================================================================
 // EOF constant (tokens.ts doesn't export it directly; we synthesize one)

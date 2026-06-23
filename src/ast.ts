@@ -19,6 +19,21 @@ export interface BaseNode {
   loc: SourceLocation;
 }
 
+// ----- CST shape (runtime shape produced by the parser, consumed by the visitor) -----
+
+export type CstNode = {
+  image?: string | undefined;
+  tokenType?: { name: string } | undefined;
+  startLine?: number | undefined;
+  startColumn?: number | undefined;
+  startOffset?: number | undefined;
+  endLine?: number | undefined;
+  endColumn?: number | undefined;
+  endOffset?: number | undefined;
+} & Record<string, unknown>;
+
+export type CstChildren = Record<string, CstNode[] | unknown[] | undefined>;
+
 // ----- Top-level -----
 
 export type Document = {
@@ -281,4 +296,27 @@ export type PlainScalar = {
   kind: 'PlainScalar';
   text: string;
   loc: SourceLocation;
+};
+
+// ----- Public error contract (parser consumer-facing API) -----
+
+export type ParseErrorCode =
+  | 'parse.mismatchedToken'
+  | 'parse.noViableAlternative'
+  | 'parse.notAllInputParsed'
+  | 'parse.earlyExit'
+  | 'parse.unexpectedToken'
+  | 'parse.invalidStringEscape'
+  | 'parse.invalidNumber'
+  | 'parse.unterminatedString'
+  | 'parse.unterminatedBlockComment'
+  | 'parse.unclosedFrontmatter';
+
+export type ParseError = {
+  code: ParseErrorCode;
+  message: string;
+  severity: 'error' | 'warning';
+  loc: { line: number; column: number; offset: number };
+  expected?: string[];
+  found?: string;
 };

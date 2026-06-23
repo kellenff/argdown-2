@@ -14,7 +14,7 @@
 
 import type { ILexingResult } from 'chevrotain';
 
-import type { Document } from './ast.js';
+import type { CstChildren, CstNode, Document, ParseError, ParseErrorCode } from './ast.js';
 import { ArgdownLexer } from './tokens.js';
 import { buildAst } from './visitor.js';
 
@@ -26,35 +26,13 @@ import {
   isNonEmptyImage,
   peekPastFactRef,
 } from './parser-util.js';
-import type { CstNode, CstChildren } from './parser-util.js';
 
 export { TokenStream, tokenNode, tokenRule, isArrowToken, isNonEmptyImage, peekPastFactRef };
-export type { CstNode, CstChildren };
+export type { CstChildren, CstNode, ParseError, ParseErrorCode };
 
 // =========================================================================
 // Public API
 // =========================================================================
-
-export type ParseErrorCode =
-  | 'parse.mismatchedToken'
-  | 'parse.noViableAlternative'
-  | 'parse.notAllInputParsed'
-  | 'parse.earlyExit'
-  | 'parse.unexpectedToken'
-  | 'parse.invalidStringEscape'
-  | 'parse.invalidNumber'
-  | 'parse.unterminatedString'
-  | 'parse.unterminatedBlockComment'
-  | 'parse.unclosedFrontmatter';
-
-export type ParseError = {
-  code: ParseErrorCode;
-  message: string;
-  severity: 'error' | 'warning';
-  loc: { line: number; column: number; offset: number };
-  expected?: string[];
-  found?: string;
-};
 
 export type ParseOptions = {
   filename?: string;

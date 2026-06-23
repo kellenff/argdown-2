@@ -38,12 +38,9 @@ import type {
   BlockType,
   Element,
   SourceLocation,
+  CstNode,
+  CstChildren,
 } from './ast.js';
-
-// ----- CST shape (loose runtime type; the parser produces this from any rule) -----
-
-type CstNode = { image?: string; tokenType?: { name: string } } & Record<string, unknown>;
-type CstChildren = Record<string, CstNode[] | unknown[] | undefined>;
 
 type TokenLike = {
   image: string;
