@@ -11,15 +11,17 @@
 
 import type { CstChildren, CstNode } from './ast.js';
 import { TokenStream, tokenNode, tokenRule, isNonEmptyImage } from './parser-util.js';
-import { parseIdentifier, parseComment, parseAttributeEntry } from './parser.js';
+import { parseIdentifier, parseComment } from './parser-fact.js';
+import { parseAttributeEntry } from './parser.js';
 
 // =========================================================================
 // Scalar token rules (used by values, flow sequences/mappings, and YAML)
 // =========================================================================
 //
-// parseIdentifier lives in parser.ts — used by both parseYamlLine (here)
-// and parseIdentifierHead (parser.ts). It will move to parser-fact.ts
-// in Task 5 of the rich-arguments cycle.
+// parseIdentifier and parseComment live in parser-fact.ts — shared with
+// the fact/element path (parser.ts). parseAttributeEntry lives in
+// parser.ts — shared with parseAttributeBlock, will move to
+// parser-relation.ts in Task 6.
 
 function parseString(s: TokenStream): CstNode | undefined {
   return tokenRule(s, 'String');
@@ -349,9 +351,8 @@ function parseFrontmatter(s: TokenStream): CstNode | undefined {
 // Comments (parseComment / parseLineComment / parseBlockComment)
 // =========================================================================
 //
-// These live in parser.ts — used by both parseFrontmatter (here) and
-// parseElement (parser.ts). Cross-domain; will move to parser-fact.ts or
-// parser-relation.ts in a later cycle task.
+// These live in parser-fact.ts — used by both parseFrontmatter (here)
+// and parseElement (parser.ts).
 
 // =========================================================================
 // Exports

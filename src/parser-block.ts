@@ -6,16 +6,16 @@
 // Extracted from src/parser.ts as part of the rich-arguments cycle 1
 // refactor to keep that file focused on the top-level dispatch.
 //
-// Forward imports: parseFact and parseElement still live in parser.ts
-// (they will move to parser-fact.ts and parser-relation.ts in later
-// cycle tasks). Importing them here resolves naturally once those
-// refactors land.
+// Forward imports: parseElement still lives in parser.ts (it will move
+// to a dispatch facade in Task 7 of the cycle). Importing it here
+// resolves naturally once that refactor lands.
 
 import type { CstChildren, CstNode } from './ast.js';
 
 import { TokenStream, tokenNode, tokenRule } from './parser-util.js';
 import { parseTitleText, parseYamlLine } from './parser-frontmatter.js';
-import { parseFact, parseElement } from './parser.js';
+import { parseFact } from './parser-fact.js';
+import { parseElement } from './parser.js';
 
 // ----- Headings -----
 
