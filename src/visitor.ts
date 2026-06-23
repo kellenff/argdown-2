@@ -22,7 +22,6 @@ import type {
 } from './ast.js';
 
 import {
-  visitArgumentStatement,
   visitArgument,
   visitConclusion,
   visitPremise,
@@ -157,8 +156,8 @@ export function visitElement(cst: CstChildren): Element | undefined {
 function visitStatement(cst: CstChildren): Element {
   const fact = pickFirst(cst['factStatement'] as CstNode[]);
   if (fact) return visitFactStatement(fact as CstChildren);
-  const arg = pickFirst(cst['argumentStatement'] as CstNode[]);
-  if (arg) return visitArgumentStatement(arg as CstChildren);
+  const arg = pickFirst(cst['argument'] as CstNode[]);
+  if (arg) return visitArgument(arg as CstChildren);
   const rel = pickFirst(cst['relationStatement'] as CstNode[]);
   if (rel) return visitRelationStatement(rel as CstChildren);
   throw new Error('statement rule matched no alternative');
@@ -285,16 +284,11 @@ export function buildAst(cst: CstChildren): Document {
   return visitDocument(cst);
 }
 
-// Re-export the post-build AST walker so consumers can `import { visit,
-// Visitor } from './visitor.js'` rather than reaching into visitor-walk.
-export { visit, type Visitor } from './visitor-walk.js';
-
 // Re-export sibling visitor modules' surface for consumers that want
 // the full CST-to-AST surface from a single import.
 export { visitFrontmatter, visitYamlLine, makeValueNode, decodeString } from './visitor-frontmatter.js';
 export { visitBlock, visitListItem, visitHeading, visitComment } from './visitor-block.js';
 export {
-  visitArgumentStatement,
   visitArgument,
   visitConclusion,
   visitPremise,

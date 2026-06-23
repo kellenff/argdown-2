@@ -1,6 +1,6 @@
 // src/visitor-arg.ts
-// CST → AST for the argument productions of Cycle 2: ArgumentStatement,
-// Argument, Conclusion, Premise (atom | argument | disjunction).
+// CST → AST for the argument productions of Cycle 2: Argument,
+// Conclusion, Premise (atom | argument | disjunction).
 //
 // Kept in its own module so the main visitor stays under the file-size
 // limit. The argument productions are the largest new subtree this
@@ -8,7 +8,6 @@
 
 import type {
   Argument,
-  ArgumentStatement,
   Conclusion,
   Premise,
   RelationEndpoint,
@@ -22,18 +21,6 @@ import {
   visitAttributeBlock,
   visitFactRef,
 } from './visitor.js';
-
-export function visitArgumentStatement(cst: CstChildren): ArgumentStatement {
-  // parseArgumentStatement returns the argument CST itself (with the
-  // optional attribute block attached). The visitor dispatches here
-  // only via visitStatement, so this CST IS the argument — not a
-  // wrapper containing a child `argument` key.
-  return {
-    kind: 'ArgumentStatement',
-    argument: visitArgument(cst),
-    loc: locFromTokens(collectAllTokens(cst)),
-  };
-}
 
 export function visitArgument(cst: CstChildren): Argument {
   const conclSub = pickFirst(cst['conclusion'] as CstNode[]) as CstChildren;

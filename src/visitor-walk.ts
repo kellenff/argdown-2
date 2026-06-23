@@ -41,8 +41,8 @@ function walkElement(el: Element, v: Visitor): void {
     case 'FactStatement':
       walkFact(el.fact, v);
       break;
-    case 'ArgumentStatement':
-      walkArgument(el.argument, v);
+    case 'Argument':
+      walkArgument(el, v);
       break;
     case 'RelationStatement':
       walkRelation(el.relation, v);

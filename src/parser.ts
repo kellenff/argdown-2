@@ -161,7 +161,7 @@ function parseStatement(s: TokenStream): CstNode | undefined {
     const before = s.save();
     const as_ = parseArgumentStatement(s);
     if (as_) {
-      cst['argumentStatement'] = [as_];
+      cst['argument'] = [as_];
       return cst;
     }
     s.restore(before);

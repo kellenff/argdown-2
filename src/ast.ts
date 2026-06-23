@@ -48,7 +48,7 @@ export type Element =
   | Block
   | FactStatement
   | RuleStatement
-  | ArgumentStatement
+  | Argument
   | RelationStatement
   | LineComment
   | BlockComment;
@@ -156,12 +156,6 @@ export type Argument = {
   conclusion: Conclusion;
   premises: Premise[];
   attributes?: AttributeBlock;
-  loc: SourceLocation;
-};
-
-export type ArgumentStatement = {
-  kind: 'ArgumentStatement';
-  argument: Argument;
   loc: SourceLocation;
 };
 

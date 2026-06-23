@@ -24,7 +24,6 @@ export type {
   TitleHead,
   Rule,
   Argument,
-  ArgumentStatement,
   Conclusion,
   Premise,
   Relation,

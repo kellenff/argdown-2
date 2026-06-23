@@ -10,7 +10,7 @@ import { ArgdownLexer } from './tokens.js';
 import { TokenStream } from './parser-util.js';
 import { parseArgument, parseDisjunction } from './parser-arg.js';
 import { parse } from './parser.js';
-import { visit } from './visitor.js';
+import type { Argument, Document } from './ast.js';
 
 // Task 11 unit test — tests parseDisjunction directly. Integration via
 // public parse() is verified in Task 14 (dispatch wiring) and
@@ -66,10 +66,11 @@ describe('hard-break :-', () => {
 });
 
 // Task 15: visitArgument walks the typed AST end-to-end via the
-// public parse() entry point. We dispatch into Argument nodes via
-// the visitor and confirm both 'Argument' and 'disjunction' kinds
-// are observed (the disjunction premise is the load-bearing part of
-// the test — it confirms the visitor recurses into Premise variants).
+// public parse() entry point. We walk into Argument nodes via a
+// hand-rolled collector and confirm both 'Argument' and 'disjunction'
+// kinds are observed (the disjunction premise is the load-bearing
+// part of the test — it confirms the walk recurses into Premise
+// variants).
 
 describe('visitArgument (end-to-end via public parse)', () => {
   it('walks an argument with a disjunction premise', () => {
@@ -77,13 +78,35 @@ describe('visitArgument (end-to-end via public parse)', () => {
     const ast = result.ok ? result.ast : result.partial;
     expect(ast).toBeDefined();
     if (!ast) return;
-    const kinds = new Set<string>();
-    visit(ast, {
-      enter: (node) => {
-        kinds.add(node.kind);
-      },
-    });
+    const kinds = collectKinds(ast);
     expect(kinds.has('Argument')).toBe(true);
     expect(kinds.has('disjunction')).toBe(true);
   });
 });
+
+// Hand-rolled kind collector. Replaces the prior public visit() walker
+// (Task 15 review) — narrow scope, no abstraction overhead.
+function collectKinds(ast: Document): Set<string> {
+  const kinds = new Set<string>();
+  const walk = (n: unknown): void => {
+    if (!n || typeof n !== 'object') return;
+    const node = n as { kind?: string } & Record<string, unknown>;
+    if (typeof node.kind === 'string') kinds.add(node.kind);
+    if (node.kind === 'Argument') {
+      const a = node as unknown as Argument;
+      walk(a.conclusion);
+      for (const p of a.premises) walk(p);
+      return;
+    }
+    if (node.kind === 'atom' || node.kind === 'argument') {
+      walk((node as { value: unknown }).value);
+      return;
+    }
+    if (node.kind === 'disjunction') {
+      for (const v of (node as { values: unknown[] }).values) walk(v);
+      return;
+    }
+  };
+  for (const el of ast.elements) walk(el);
+  return kinds;
+}
