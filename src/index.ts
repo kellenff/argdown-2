@@ -6,6 +6,9 @@ export type { ParseResult, ParseOptions, ParseError, ParseErrorCode } from './pa
 
 export { renderMermaid } from './mermaid.js';
 
+export { stringify } from './stringifier.js';
+export type { StringifyOptions } from './stringifier.js';
+
 export type {
   Document,
   Frontmatter,
