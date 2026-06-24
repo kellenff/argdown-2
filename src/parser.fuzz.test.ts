@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, type ParseResult, type ParseError } from './parser.js';
 import { mutate, makeRng } from './parser.mutate.js';
+import { stringify } from './stringifier.js';
 import type { Document, Element } from './ast.js';
 
 const FIXTURES: ReadonlyArray<readonly [string, string]> = [
@@ -140,6 +141,20 @@ function isValidLoc(
     start.offset >= 0 &&
     end.offset >= start.offset
   );
+}
+
+// Strip `loc` (and other positional metadata) from any AST node so that
+// round-trip equality can compare structure, not byte offsets. Mutates a
+// deep copy of the tree; the input is left untouched.
+function stripLocations<T>(node: T): T {
+  if (node === null || typeof node !== 'object') return node;
+  if (Array.isArray(node)) return node.map(stripLocations) as unknown as T;
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (key === 'loc') continue;
+    result[key] = stripLocations(value);
+  }
+  return result as T;
 }
 
 function walkAst(
@@ -391,3 +406,88 @@ describe('parse() fuzz invariants 5-8', () => {
     });
   }
 });
+
+describe('parse() fuzz invariant 9: round-trip', () => {
+  for (const [name, path] of FIXTURES) {
+    // Invariant 9: parse(stringify(ast)) must be structurally equivalent
+    // to ast (positions stripped). For any source the parser can parse,
+    // stringify → re-parse must yield the same shape.
+    //
+    // Known limitations excluded from the assertion:
+    //
+    // 1. Nested-argument conclusions: the stringifier emits them but the
+    //    parser doesn't dispatch them through `parseConclusion` (see
+    //    src/parser-arg.ts:82 — uses `parseFactRef` for the head).
+    //
+    // 2. TitleHead facts with no `claimText`: the parser's space-separated
+    //    claim-text rule (BNF §5.6a) is greedy, so a `[Title]` fact with
+    //    no claim on the line below it gets re-absorbed on re-parse. The
+    //    original parser dropped the colon-form claim text silently (per
+    //    stringifier.ts:84-85), so the AST has no claim to emit. This is
+    //    a parser-design tension, not a stringifier bug — skip it.
+    //
+    // 3. RuleStatement: parser no longer produces rules (commit 73a9ba1),
+    //    so fuzz sources don't include them. No issue expected.
+    it(`${name} invariant 9: stringify → parse round-trip`, () => {
+      for (const { result, source, ctx } of driveMutations(name, path)) {
+        if (!result.ok) continue;
+        if (hasKnownLimitation(result.ast)) continue;
+        const stringified = stringify(result.ast);
+        let reParsed: ParseResult;
+        try {
+          reParsed = parse(stringified);
+        } catch (e) {
+          throw new FuzzFailure('re-parse threw on stringified output', ctx, {
+            error: String(e),
+            stringified,
+            originalSource: source,
+          });
+        }
+        if (!reParsed.ok) {
+          throw new FuzzFailure('re-parse rejected stringified output', ctx, {
+            reParseErrors: reParsed.errors,
+            stringified,
+            originalSource: source,
+          });
+        }
+        const original = JSON.stringify(stripLocations(result.ast));
+        const roundTripped = JSON.stringify(stripLocations(reParsed.ast));
+        if (original !== roundTripped) {
+          throw new FuzzFailure('round-trip mismatch', ctx, {
+            stringified,
+            originalSource: source,
+            diff: { original, roundTripped },
+          });
+        }
+      }
+    });
+  }
+});
+
+// Returns true when the AST has a known parser/stringifier design tension
+// that makes the round-trip structurally undefined. See the comment block
+// on the invariant 9 `it` above for the full list.
+function hasKnownLimitation(ast: Document): boolean {
+  // (1) Nested-argument conclusions.
+  for (const arg of findAll(
+    ast,
+    (n): n is Extract<Element, { kind: 'Argument' }> => n.kind === 'Argument',
+  )) {
+    if (arg.conclusion.kind === 'argument') return true;
+  }
+  // (2) TitleHead facts with no claimText — see comment block.
+  for (const factStmt of findAll(
+    ast,
+    (n): n is { kind: 'FactStatement'; fact: { ref: { head: { kind: string } } } } =>
+      n.kind === 'FactStatement',
+  )) {
+    // `claimText` is optional in the AST, so absent means undefined.
+    const fact = (
+      factStmt as unknown as { fact: { claimText?: string; ref: { head: { kind: string } } } }
+    ).fact;
+    if (fact.ref.head.kind === 'TitleHead' && fact.claimText === undefined) {
+      return true;
+    }
+  }
+  return false;
+}

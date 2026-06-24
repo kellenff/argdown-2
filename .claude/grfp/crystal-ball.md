@@ -1,120 +1,142 @@
 # Crystal Ball Report — `argdown-2`
 
-**Date:** 2026-06-22
-**Graph tools available:** Yes (520 nodes, 1200 edges)
-**Reviewing:** `.claude/grfp/deep-dive.md`
+**Stage:** 2 of 5 (Crystal Ball) — RESTART after drift resolution
+**Date:** 2026-06-23
+**Codebase HEAD:** `9384257`
+**Graph tools available:** ✅ Yes (`Users-kellen-Projects-argdown-2`, 705 nodes, 1559 edges)
+**Reviewing:** `.claude/grfp/deep-dive.md` (post-`308c0b9`)
 
 ---
 
-## 1. Dead code (graph + manual confirmation)
+## 1. Dead code (graph-confirmed)
 
-| Symbol | File:Line | Inbound edges | Confidence | Action |
+| Symbol | Location | Inbound edges (graph) | Confidence | Action |
 |---|---|---|---|---|
-| `parseHeadingText` | `src/parser.ts:293-302` | 0 | **High** | Defined, never called. Grep across `src/` returns only its definition + a stale comment ("matches parseTitleText / parseHeadingText" at line 787). Likely a vestige from a chevrotain declarative-rule approach that was abandoned. **Safe to delete.** |
-| `parsePlainScalar` | `src/parser.ts:304-306` | 0 | **High** | Same pattern: defined, no callers. Wraps `tokenRule(s, 'PlainScalar')` but the token is consumed inline at lines 774-777 / 176 by `skipEmptyTextTokens` and the lookahead checks. **Safe to delete.** |
-| `formatError` | `src/parser.ts:1209-1211` | 0 (graph) | **Low — false positive** | Re-exported via `src/index.ts` line 3 — it IS part of the public API. The graph only tracks internal `CALLS` edges, not module-level re-exports. **Keep.** |
+| `parseHeadingText` | `src/parser-frontmatter.ts:63–72` | **0** (confirmed via `trace_path` + grep) | **High** | Defined, re-exported by `src/parser.ts:60`, but never imported or called anywhere. ~10 lines + the stale comment at line 231 ("matches parseTitleText / parseHeadingText — see those for the lexer"). **Delete.** |
+| `parsePlainScalar` | `src/parser-frontmatter.ts:74–76` | **0** (confirmed via `trace_path` + grep) | **High** | Defined, re-exported by `src/parser.ts:61`, but never called. The `PlainScalar` token is consumed inline by other parsers. 3 lines. **Delete.** |
+| `blockTypeName` (duplicate) | `src/visitor.ts:110–125` | **0** | **High** | A second copy exists at `src/visitor-block.ts:17` (and IS used at line 88). The one in `visitor.ts` is genuine dead code from the cycle-2 visitor split. 16 lines. **Delete** (the `visitor-block.ts` copy is the canonical one). |
 
-**Bench interfaces (`RunBenchOptions`, `RunBenchResult`, `BaselineEntry`, `BaselineFile`)**: graph says 0 in-degree, but they are imported as types by `src/parser.bench.test.ts:12,89,109`. Same false-positive pattern (type imports aren't `CALLS` edges). **Keep.**
+**Verified non-dead (false positives flagged by graph):**
 
-**Action:** Delete `parseHeadingText` + `parsePlainScalar` (≈13 lines + stale comment) before publishing; nothing else is dead.
+- `formatError` — re-exported via `src/index.ts:4`. **Keep** (public API).
+- `tokenNode` (parser-util.ts) — graph shows 20 in-degree. **Keep** (workhorse).
+- `pickFirst`, `locFromTokens`, `collectAllTokens` (visitor.ts) — graph shows 14–17 in-degree. **Keep** (visitor helpers).
+- All `src/index.ts` re-exports — they're the public surface, even if internal callers don't exist.
 
-## 2. Complexity hotspots (fan-out, not cyclomatic)
+**Total removable:** ~29 lines and a confusing duplicate. XS effort, M impact (smaller, cleaner surface for first publish).
 
-The graph's `complexity` field is empty for most functions, so I'm ranking by **fan-out** (how many other symbols a function calls). High fan-out means more coupling, not necessarily bad code.
+## 2. Complexity hotspots (fan-in / fan-out)
 
-**Top hotspots (visitor.ts, parser.ts):**
+The graph's `complexity` field is empty for most functions, so I'm ranking by **structural fan-in/fan-out** from the live graph.
 
-| Function | File | Fan-out | Role |
+**Top fan-out (high coupling — these orchestrate):**
+
+| Function | File | Out-degree | Role |
 |---|---|---|---|
-| `parseValue` | `src/parser.ts:???` | 8 | Value parser for YAML-like attributes |
-| `visitBlock` | `src/visitor.ts` | 7 | AST constructor for `:::meta[…]` blocks |
-| `makeValueNode` | `src/visitor.ts` | 6 | CST → AST for any `Value` variant |
-| `visitRelation` | `src/visitor.ts` | 6 | Builds `Relation` nodes (any arrow) |
-| `parseAttributeEntry` | `src/parser.ts` | 6 | Single `key: value` inside `{}` |
-| `parseYamlValue` | `src/parser.ts` | 6 | YAML-ish scalar/sequence/mapping parser |
-| `visitDocument` | `src/visitor.ts` | 5 | Top-level AST builder |
-| `parseFact`, `parseRule`, `parseRuleExpr`, `parseYamlLine` | `src/parser.ts` | 5 each | Main statement parsers |
+| `parseFrontmatter` | `parser-frontmatter.ts` | 10 | YAML + value parser dispatch |
+| `parseStatement` | `parser.ts` | 9 | Per-line dispatcher (fact / arg / relation / block / heading) |
+| `parseValue` | `parser-frontmatter.ts` | 8 | Value-type dispatcher (string / number / bool / null / flow) |
+| `visitBlock` | `visitor-block.ts` | 8 | AST constructor for `:::meta[…]`, `:::evidence[…]`, etc. |
+| `parseArgument` | `parser-arg.ts` | 7 | Argument parser (conclusion + premise-list + attributes) |
+| `parsePremise` | `parser-arg.ts` | 7 | Premise parser (atom / disjunction / nested arg) |
+| `parseDisjunction` | `parser-arg.ts` | 6 | `([#A] | [#B])` parser |
+| `parseAttributeEntry` | `parser-relation.ts` | 6 | Single `key: value` entry in `{}` |
+| `visitFact`, `visitRelations` | `visitor.ts` | 6 each | CST → AST constructors |
 
-These are inherent to the problem (every construct fans into its sub-constructs) and not a smell. **Action: none.**
+These are inherent to the problem: dispatchers must know about every variant. Not a smell. **Action: none.**
 
-## 3. Performance headroom (from `perf-baseline.json`)
+**Top fan-in (highly reused helpers — KEEP GREEN):**
 
-Current `parse()` throughput on Node 24.17.0, arm64 darwin:
-
-| Fixture | Size | ops/sec | p99 (ms) |
+| Function | File | In-degree | Role |
 |---|---|---|---|
-| small-claim | 181 B | 41,478 | 0.038 |
-| small-rule | 127 B | 56,723 | 0.024 |
-| small-relation | 216 B | 31,131 | 0.045 |
-| medium-climate | (bigger) | — | — |
-| heavy-relations | (bigger) | — | — |
-| deep-nesting | (bigger) | — | — |
-| large-stress | (largest) | — | — |
+| `tokenNode` | `parser-util.ts` | **20** | CST node wrapper — used everywhere |
+| `pickFirst` | `visitor.ts` | 17 | First-child helper |
+| `locFromTokens` | `visitor.ts` | 14 | Source location from token range |
+| `collectAllTokens` | `visitor.ts` | 14 | Flatten CST children |
+| `parse` | `parser.ts` | 11 | **Public entry point** |
+| `tokenRule` | `parser-util.ts` | 11 | Token → CST rule helper |
+| `splitLines`, `joinLines` | `parser.mutate.ts` | 8 each | Mutation testing infrastructure |
 
-Throughput already ~30-60k ops/sec on small inputs. Chevrotain 12 is faster than 11 in many benchmarks; the dep upgrade (see §5) is likely a free 10-30% speedup.
+**Action:** keep these stable. If anyone changes a 20-in-degree workhorse, it propagates to 1/4 of the parser.
+
+## 3. Performance posture (`perf-baseline.json`, captured 2026-06-22)
+
+| Fixture | Size | ops/sec | p99 (ms) | Peak heap Δ (MB) |
+|---|---|---|---|---|
+| `small-claim` | 181 B | 41,479 | 0.038 | 0.6 |
+| `small-rule` (now small-arg) | 127 B | 56,723 | 0.024 | 0.3 |
+| `small-relation` | 216 B | 31,132 | 0.045 | 0.7 |
+| `medium-climate` | 1,646 B | 5,261 | 0.326 | 0.9 |
+| `heavy-relations` | 2,311 B | 2,487 | 0.585 | 1.2 |
+| `deep-nesting` | 1,439 B | 7,415 | 0.168 | 0.4 |
+| `large-stress` | 120,873 B | 41 | 39.66 | 34.8 |
+
+Throughput scales linearly with file size; `large-stress` (121 KB) takes ~40ms p99 — comfortably interactive for editor use. No regression versus prior capture. Chevrotain 12 is faster than 11 in published benchmarks but requires Node ≥22 — this project's `engines.node: ">=18"`, so the upgrade is a coupled decision (see §5).
 
 ## 4. Dependency posture
 
-| Dep | Pinned | Latest | Notes |
-|---|---|---|---|
-| `chevrotain` | `^11.0.3` | **`12.0.0`** (released 2026-03-13) | Major version behind. Chevrotain 12 requires `node >=22.0.0`; this project says `engines.node: >=18`. **Real fork**: bump the engine floor OR stay on 11 and document why. |
-| `vitest` | `^1.6.0` | (2.x line stable) | Minor drift; works fine. |
-| `typescript` | `^5.4.5` | (5.x stable) | Fine. |
-| `oxlint`, `oxfmt` | `^0.6.0` | — | These are actively-developed rust formatters/linters; they will move. |
+| Dep | Pinned | Notes |
+|---|---|---|
+| `chevrotain` | `^11.0.3` | Major version behind (12.x released 2026-03; requires Node ≥22). **Real fork:** bump `engines.node` to `>=22` or stay on 11 and document why. |
+| `vitest` | `^1.6.0` | Minor drift; works fine. |
+| `typescript` | `^5.4.5` | Stable. |
+| `oxlint`, `oxfmt` | `^0.6.0` | Active rust-based tooling; will move. |
+| `@stryker-mutator/*` | `8.7.1` | Pinned exact. |
 
-**No security advisories detected in `package.json`.** No hardcoded secrets in source.
+**No security advisories visible in `package.json`.** No hardcoded secrets in source. No `TODO`/`FIXME`/`HACK`/`XXX` markers anywhere in `src/` (grep returns empty).
 
 ## 5. Ecosystem fit & gaps
 
-**What's adjacent:**
+**Adjacent / next-door projects:**
 
-- **Original Argdown** (`@argdown/core`): the predecessor. This project is a clean-room successor; no shim for 1.x syntax exists. Anyone migrating needs a translator — *opportunity for a sibling `argdown-migrate` package*.
-- **Prolog/Datalog engines**: `argdown-2`'s `:-` + `,` syntax is Datalog-flavored but the AST doesn't expose an evaluation interface. A pure-TS Datalog interpreter on top of the AST would unlock "ask questions about the argument graph" — a clear product feature.
-- **Graphviz/D2 renderers**: the arrow taxonomy maps cleanly to DOT; a `argdown-to-dot` package is the obvious next step.
-- **Argument-mapping UIs**: VS Code / Obsidian plugins need this kind of parser. The `./ast` subpath export already makes integration easy.
+- **Original Argdown** (`@argdown/core`) — canonical predecessor. Clean-room successor; **no shim for 1.x syntax exists** (the `:-` lexer token is retained only to emit a hard error, not to translate). Anyone migrating needs a translator → opportunity for a sibling `argdown-migrate` package.
+- **Datalog engines** (`Soufflé`, `logic.js`) — argdown-2's `->` + `,` argument syntax is *Datalog-evocative* but the AST doesn't yet expose an evaluation interface. A pure-TS evaluator on top of `Argument`/`Fact` would unlock "ask questions about the argument graph" — a clear product feature.
+- **Graphviz/D2/DOT renderers** — the seven-arrow taxonomy maps cleanly to DOT; a sibling `argdown-to-dot` package is the obvious next step.
+- **Editor plugins** (VS Code, Obsidian) — the `./ast` subpath export and the partial-AST-on-error behavior are exactly what editor integrations need.
 
 ## 6. Audience segments that could benefit
 
-1. **Academic argument-mapping researchers** (philosophy, rhetoric, communication studies) — currently use Argdown 1.x or hand-rolled tools.
-2. **LLM pipeline builders** who want `Fact` / `Rule` shapes to slot into RAG knowledge graphs.
-3. **Formal-reasoning / knowledge-rep hobbyists** (the Datalog-lite angle).
-4. **Editors / IDE plugin authors** who need a deterministic parser with error recovery for hover/diagnostics.
-5. **Argument-mining researchers** extracting claims from text (the `Fact`/`Rule` shape is downstream-friendly).
+1. **Policy analysts / researchers** writing structured argument maps (climate, ethics, jurisprudence). The DESIGN.md worked example is literally a climate-policy graph.
+2. **LLM pipeline builders** who want `Fact` / `Argument` / `Relation` shapes for RAG knowledge graphs.
+3. **Argument-mining researchers** extracting claims from text — the typed AST is downstream-friendly.
+4. **Formal-reasoning hobbyists** — the linked-argument / nested / disjunction syntax reads like a logic textbook.
+5. **Editor / IDE plugin authors** who need a deterministic parser with error recovery for hover/diagnostics.
+6. **Argdown 1.x users** wanting a clean replacement (segment 5 → migration tooling).
 
 ## 7. Roadmap candidates (ranked)
 
 | # | Title | Effort | Impact | Why now |
 |---|---|---|---|---|
-| 1 | **Delete dead code** (`parseHeadingText`, `parsePlainScalar`) | XS | M | First thing before publishing — zero risk, smaller surface. |
-| 2 | **Decide on chevrotain 12 upgrade path** | S | M | Engine floor (Node 22) decision affects all downstream consumers. Pick now or document explicitly. |
-| 3 | **Add a CI workflow** (`.github/workflows/ci.yml`) | S | H | No CI today — `bench:check` and `lint`/`typecheck` aren't gated. `npx vitest` + `oxlint` + `oxfmt --check` + `tsc --noEmit` is one file. |
-| 4 | **Add a `parseFile()` / `parseFiles()` helper** | S | M | 80% of consumers will want this; current API is `parse(source: string)` and consumers do their own I/O. |
-| 5 | **Expose `FormatOptions` + a stringifier (`format(ast)`)** | M | H | Symmetric surface: read AND write argdown. Closes the loop for editor plugins. |
-| 6 | **Datalog evaluator on top of the AST** | L | H | Unlocks "evaluate argument graph" — biggest product differentiation move. |
+| 1 | **Delete dead code** (`parseHeadingText`, `parsePlainScalar`, `blockTypeName` dup) | XS | M | ~29 lines gone; zero risk. Do before any public commit. |
+| 2 | **Add CI workflow** (`.github/workflows/ci.yml`) | S | H | No CI today; `vitest` + `oxlint` + `oxfmt --check` + `tsc --noEmit` + `bench:check` is one file. |
+| 3 | **Decide on chevrotain 12 + Node 22** | S | M | Coupled engine-floor decision; affects every consumer. Document either way. |
+| 4 | **Publish to npm** (`private: true` → `false`, `0.0.0` → `0.1.0`) | XS | H | One-line change + provenance + signing. README cannot do its job until the package is findable. |
+| 5 | **Add `parseFile()` / `parseFiles()` helper** | S | M | 80% of consumers will want this; today every caller does their own I/O. |
+| 6 | **Stringifier (`format(ast)`) + `FormatOptions`** | M | H | Symmetric read/write surface; closes the loop for editor plugins. |
 | 7 | **Argdown 1.x → 2.x translator** (`argdown-migrate`) | M | M | Unblocks adoption from existing Argdown users. |
 | 8 | **D2/DOT/graphviz renderer** (`argdown-to-dot`) | M | H | Standalone package; immediately useful for visualization. |
-| 9 | **Editor plugin** (VS Code or Obsidian) | L | H | Distribution channel. The `./ast` export already makes integration painless. |
-| 10 | **Language Server** (LSP wrapper around `parse`) | M | H | Reusable across editors; foundation for diagnostics, hover, jump-to-def. |
-| 11 | **Publish to npm** (today `private: true`) | XS | H | One-line change in `package.json` + provenance + signing. |
+| 9 | **Argument evaluator** (does the conclusion follow from the premises, given assumptions?) | L | H | Unlocks "evaluate argument graph" — biggest product differentiation move. |
+| 10 | **Editor plugin** (VS Code or Obsidian) | L | H | Distribution channel. `./ast` export already makes integration painless. |
+| 11 | **Language Server** (LSP wrapper around `parse`) | M | H | Reusable across editors; foundation for diagnostics, hover, jump-to-def. |
 
 ## 8. Vision (the "could be" picture)
 
-`argdown-2` is currently a *parser library*. The natural arc is:
+argdown-2 is currently a *parser + Mermaid renderer*. The natural arc:
 
 ```
-parser ──→ stringifier ──→ migrator (1.x → 2.x)
+parser ──→ stringifier ──→ migrator (Argdown 1.x → 2.x)
                 ↓
-         graph renderers (D2/DOT)
+         graph renderers (D2 / DOT / Mermaid-alternatives)
                 ↓
-         Datalog evaluator
+         argument evaluator (does the inference hold?)
                 ↓
          editor plugins (VS Code, Obsidian)
                 ↓
-         language server (diagnostics, hover)
+         language server (diagnostics, hover, jump-to-def)
 ```
 
-In one year this could be a **small toolkit** (4-6 packages under `@casualtheorics/argdown-*`) covering read, write, migrate, evaluate, and visualize — with the parser as the foundational truth and a unified `.argdown` file extension. The current architecture (clean CST→AST boundary, rich discriminated-union AST, fuzz+mutate invariants as the test base) is already the right shape for that.
+In one year this could be a **small toolkit** (4–6 packages under `@casualtheorics/argdown-*`) covering read, write, migrate, evaluate, and visualize — with the parser as the foundational truth and `.argdown` as the unified file extension. The current architecture (clean CST→AST boundary, rich discriminated-union AST, fuzz+mutate invariants as the test base, spec-as-source-of-truth with the BNF) is already the right shape for that. The two missing pieces are *distribution* (npm publish, CI) and *symmetry* (stringifier).
 
 ---
 
-**Next stage:** `/claudikins-grfp:think-tank` — research how similar high-star parser/grammar projects nail their READMEs and extract patterns.
+**Next stage:** `/claudikins-grfp:think-tank` — research how similar high-star parser/grammar projects write their READMEs.

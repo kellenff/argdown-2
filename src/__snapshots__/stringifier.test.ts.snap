@@ -1,0 +1,31 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`canonical output > matches snapshot for a representative document 1`] = `
+"===
+title: "Snapshot"
+===
+
+# Heading
+
+::: evidence
+key: value
+
+:::
+
+[#A] claim text
+
+[#A] --> [#B]
+
+([#C]) -> [#P1], [#P2].
+"
+`;
+
+exports[`canonical output > matches snapshot for empty document 1`] = `""`;
+
+exports[`canonical output > matches snapshot for fact with multi-attribute block 1`] = `
+"[#A] claim text {
+  weight: 2,
+  source: "paper",
+}
+"
+`;
