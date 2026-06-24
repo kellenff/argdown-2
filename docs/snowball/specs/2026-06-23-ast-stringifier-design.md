@@ -138,8 +138,17 @@ Emit literally: `'evidence'` → `::: evidence`, `'position'` → `::: position`
 
 ### 5.6 Fact heads
 
-- `IdentifierHead` → `[identifier]`
+- `IdentifierHead` → `[#identifier]` — the AST stores the bare identifier (e.g., `identifier: 'A'`); the source form has a `#` prefix that must be re-emitted for round-trip.
 - `TitleHead` → `[Title With Spaces]` (the existing title form; the AST discriminated between them, so the choice is determined by `kind`).
+
+### 5.6a Claim text
+
+Fact claim text uses **space-separated** syntax, not colon-separated. The argdown-2 grammar's `<fact>` production is `<fact-ref> <opt-claim-text>` (per `docs/GRAMMAR.bnf` NOTE 4); the colon form `[#A]: claim` is silently stripped by the parser. The stringifier emits:
+
+- Fact with claim: `[#identifier] claim text` (space, not colon)
+- Fact without claim: `[#identifier]`
+
+When round-tripping through the current parser, the colon form is rejected — the canonical form is what the parser actually accepts. (If the grammar is later extended to accept colon-separated claims, both forms are valid; the spec is correct for the current grammar.)
 
 ### 5.7 Premises
 
@@ -151,12 +160,12 @@ Emit on individual lines prefixed with `-- ` under the conclusion. Disjunction e
 
 Single attribute:
 ```
-[fact-ref]: claim text {key: value}
+[#identifier] claim text {key: value}
 ```
 
 Multiple attributes:
 ```
-[fact-ref]: claim text {
+[#identifier] claim text {
   key: value,
   list: [a, b]
 }
