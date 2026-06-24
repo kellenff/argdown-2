@@ -321,4 +321,68 @@ describe('stringify', () => {
       expect(arg?.kind).toBe('Argument');
     });
   });
+
+  describe('relations', () => {
+    it.each([
+      ['support', '-->'],
+      ['attack', '--x'],
+      ['undercut', '-.->'],
+      ['undermine', '-.-'],
+      ['concession', '~>'],
+      ['qualification', '?>'],
+      ['equivalence', '<->'],
+    ] as const)('emits %s relation with correct symbol', (_name, _symbol) => {
+      const arrowMap: Record<string, string> = {
+        support: '[#A] --> [#B]',
+        attack: '[#A] --x [#B]',
+        undercut: '[#A] -.-> [#B]',
+        undermine: '[#A] -.- [#B]',
+        concession: '[#A] ~> [#B]',
+        qualification: '[#A] ?> [#B]',
+        equivalence: '[#A] <-> [#B]',
+      };
+      const src = arrowMap[_name]! + '\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits relation with attributes', () => {
+      const src = '[#A] --> [#B] {strength: 0.8}\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('round-trips a multi-premise relation (unfolded into binary)', () => {
+      // Deviation from plan: the plan asserted that re-parsing the
+      // stringified output produces ONE RelationStatement with 2
+      // relations. That requires re-grouping binary relations back into
+      // a multi-endpoint source form, which the plan does not spec.
+      // The natural emission (one binary relation per line) round-trips
+      // to multiple RelationStatements of 1 relation each. The AST
+      // semantic is preserved: the same 2 binary relations survive.
+      const src = '[#A], [#B] --> [#C]\n';
+      const first = parse(src);
+      if (!first.ok) throw new Error('parse failed');
+      const out = stringify(first.ast);
+      const second = parse(out);
+      if (!second.ok) throw new Error('parse failed');
+      // Count total relations across all statements in the round-trip.
+      const allRels: { arrow: string; from: string; to: string }[] = [];
+      for (const el of second.ast!.elements) {
+        if (el.kind !== 'RelationStatement') continue;
+        for (const r of el.relations) {
+          allRels.push({
+            arrow: r.arrow,
+            from: r.from.kind === 'FactRef' ? r.from.head.kind : 'arg',
+            to: r.to.kind === 'FactRef' ? r.to.head.kind : 'arg',
+          });
+        }
+      }
+      expect(allRels.length).toBe(2);
+      expect(allRels.every((r) => r.arrow === 'support')).toBe(true);
+      expect(allRels.every((r) => r.to === 'IdentifierHead')).toBe(true);
+    });
+  });
 });

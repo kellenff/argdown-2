@@ -5,6 +5,7 @@
 
 import type {
   Argument,
+  Arrow,
   Block,
   Conclusion,
   Document,
@@ -14,6 +15,8 @@ import type {
   FactStatement,
   Frontmatter,
   Premise,
+  Relation,
+  RelationEndpoint,
   RelationStatement,
   RuleStatement,
   AttributeBlock,
@@ -157,8 +160,33 @@ function emitPremise(p: Premise): string {
   }
 }
 
-function emitRelationStatement(_r: RelationStatement): string {
-  return '';
+const ARROW_SYMBOL: Record<Arrow, string> = {
+  support: '-->',
+  attack: '--x',
+  undercut: '-.->',
+  undermine: '-.-',
+  concession: '~>',
+  qualification: '?>',
+  equivalence: '<->',
+};
+
+function emitRelationStatement(rs: RelationStatement): string {
+  return rs.relations.map(emitRelation).join('\n');
+}
+
+function emitRelation(r: Relation): string {
+  const from = emitRelationEndpoint(r.from);
+  const arrow = ARROW_SYMBOL[r.arrow];
+  const to = emitRelationEndpoint(r.to);
+  const attrPart = r.attributes ? emitAttributeBlock(r.attributes) : '';
+  return `${from} ${arrow} ${to}${attrPart}`;
+}
+
+function emitRelationEndpoint(e: RelationEndpoint): string {
+  if (e.kind === 'FactRef') {
+    return emitFactRef(e);
+  }
+  return emitArgument(e);
 }
 
 function emitRuleStatement(_r: RuleStatement): string {
