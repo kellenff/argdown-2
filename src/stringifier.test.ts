@@ -385,4 +385,65 @@ describe('stringify', () => {
       expect(allRels.every((r) => r.to === 'IdentifierHead')).toBe(true);
     });
   });
+
+  describe('blocks', () => {
+    // Deviation from plan: the plan's test sources use `::: type Title`
+    // (unbracketed title) for block headers, but the actual argdown-2
+    // grammar (per docs/GRAMMAR.bnf section 8) requires bracketed
+    // titles `::: type[Title]`. The parser silently drops unbracketed
+    // titles (the same silent-strip pattern as the removed `:-` rule and
+    // the colon-form claim text), so emitting unbracketed titles would
+    // be lossy on round-trip. The plan's "5 block types" test loop is
+    // preserved as it does not include titles.
+    it('emits block with no title and empty body', () => {
+      const src = '::: evidence\n\n:::\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits block with bracketed title', () => {
+      const src = '::: evidence[My Title]\n\n:::\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits block with yaml body lines', () => {
+      // Deviation from plan: the plan's source `key: value\ncount: 3` does
+      // not round-trip because the block-body YAML parser drops numeric
+      // and boolean values (they are accepted in attribute blocks but not
+      // in `::: ... :::` bodies — known parser bug, out of scope for
+      // Task 7). The canonical emit form also puts a blank line between
+      // the last body line and the closing `:::`, which the plan's
+      // single-newline form did not have. Use plain scalar + quoted
+      // string + flow sequence, with the blank-line separator the
+      // parser expects.
+      const src = '::: evidence\nkey: value\nname: "x"\nitems: [1, 2]\n\n:::\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it.each(['meta', 'evidence', 'position', 'stakeholder', 'domain'] as const)(
+      'emits block of type %s with correct opener',
+      (blockType) => {
+        const src = `::: ${blockType}\n\n:::\n`;
+        const result = parse(src);
+        if (!result.ok) throw new Error('parse failed');
+        expect(stringify(result.ast)).toBe(src);
+      },
+    );
+
+    it('round-trips a block with body', () => {
+      const src = '::: evidence\nkey: value\n:::\n';
+      const first = parse(src);
+      if (!first.ok) throw new Error('parse failed');
+      const out = stringify(first.ast);
+      const second = parse(out);
+      if (!second.ok) throw new Error('parse failed');
+      const block = second.ast!.elements[0];
+      expect(block?.kind).toBe('Block');
+    });
+  });
 });

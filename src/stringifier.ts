@@ -7,9 +7,11 @@ import type {
   Argument,
   Arrow,
   Block,
+  BlockLine,
   Conclusion,
   Document,
   Element,
+  Fact,
   FactHead,
   FactRef,
   FactStatement,
@@ -77,18 +79,54 @@ function emitElement(el: Element): string {
   }
 }
 
-function emitBlock(_b: Block): string {
-  return '';
+function emitBlock(b: Block): string {
+  // Block titles are bracketed per docs/GRAMMAR.bnf section 8: the parser
+  // accepts `::: type[Title]` and silently drops unbracketed titles (same
+  // silent-strip pattern as the removed `:-` rule and the colon-form claim
+  // text). Emitting unbracketed titles would lose the title on round-trip.
+  const opener = b.title ? `::: ${b.type}[${b.title.text}]` : `::: ${b.type}`;
+  const bodyLines = b.body.map(emitBlockLine);
+  const body = bodyLines.length > 0 ? '\n' + bodyLines.join('\n') : '';
+  return `${opener}${body}\n\n:::`;
+}
+
+function emitBlockLine(line: BlockLine): string {
+  switch (line.kind) {
+    case 'YamlLine':
+      return emitYamlLine(line);
+    case 'ListItem':
+      return `- ${emitFact(line.fact)}`;
+    case 'Heading':
+    case 'Block':
+    case 'FactStatement':
+    case 'Argument':
+    case 'RelationStatement':
+    case 'RuleStatement':
+    case 'LineComment':
+    case 'BlockComment':
+      return emitElement(line);
+  }
+}
+
+function emitYamlLine(line: YamlLine): string {
+  return `${line.key}: ${emitYamlValue(line.value)}`;
+}
+
+function emitYamlValue(v: YamlValue): string {
+  if (v === null) return '';
+  return emitValue(v);
+}
+
+function emitFact(f: Fact): string {
+  const ref = emitFactRef(f.ref);
+  // argdown-2 uses space-separated claim text (spec §5.6a, BNF NOTE 4).
+  const claimPart = f.claimText !== undefined ? ` ${f.claimText}` : '';
+  const attrPart = f.attributes ? emitAttributeBlock(f.attributes) : '';
+  return `${ref}${claimPart}${attrPart}`;
 }
 
 function emitFactStatement(f: FactStatement): string {
-  const fact = f.fact;
-  const ref = emitFactRef(fact.ref);
-  // argdown-2 uses space-separated claim text (BNF NOTE 4); the colon form
-  // is silently stripped by the parser. Spec §5.6a.
-  const claimPart = fact.claimText !== undefined ? ` ${fact.claimText}` : '';
-  const attrPart = fact.attributes ? emitAttributeBlock(fact.attributes) : '';
-  return `${ref}${claimPart}${attrPart}`;
+  return emitFact(f.fact);
 }
 
 function emitFactRef(ref: FactRef): string {
