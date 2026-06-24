@@ -239,4 +239,85 @@ describe('stringify', () => {
       expect(elements[2]?.kind).toBe('LineComment');
     });
   });
+
+  describe('arguments', () => {
+    // Deviation from plan: the plan's test sources use `[#C]\n-- [#P1]\n`,
+    // which is grammar drift. The actual argdown-2 grammar (per
+    // docs/GRAMMAR.bnf NOTE 4 + DESIGN.md §2.3) is single-line:
+    // `([#C]) -> [#P1].` with comma-separated multi-premise and a
+    // terminating period. Emit must produce parseable source to honour
+    // the round-trip invariant (spec §7), so these tests use the
+    // canonical argdown-2 form.
+    it('emits argument with atom conclusion and atom premise', () => {
+      const src = '([#C]) -> [#P1].\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits argument with multiple atom premises (comma-separated)', () => {
+      const src = '([#C]) -> [#P1], [#P2].\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits argument with disjunction premise', () => {
+      const src = '([#C]) -> ([#P1] | [#P2]).\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits argument with nested conclusion (an argument as a value)', () => {
+      // The plan's `<[#A] sub claim>` form is grammar drift — a nested
+      // argument premise is written as an <arg-expr>, per docs/GRAMMAR.bnf
+      // NOTE 11. We test the AST shape directly: an Argument with an
+      // `argument` conclusion. The emit must (a) wrap the nested
+      // conclusion in parens, (b) carry no period inside those nested
+      // parens (NOTE 11 — arg-expr), (c) carry exactly one period at
+      // the very end. Round-trip through public `parse()` is currently
+      // blocked by a parser dispatch limitation (out of scope for the
+      // stringifier); see DONE_WITH_CONCERNS in the report.
+      const src = '([#A]) -> [#B].\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const outer = result.ast!.elements[0];
+      if (outer?.kind !== 'Argument') throw new Error('expected Argument');
+      const nestedAst: Document = {
+        kind: 'Document',
+        elements: [
+          {
+            ...outer,
+            conclusion: { kind: 'argument', value: outer },
+          },
+        ],
+        loc: result.ast!.loc,
+      };
+      const out = stringify(nestedAst);
+      expect(out).toContain('(([#A]) -> [#B])');
+      // No period inside the inner arg-expr's parens.
+      expect(out).not.toMatch(/(\(\([^)]*\)\.)/);
+      // Exactly one terminating period.
+      expect(out.trimEnd().endsWith('.')).toBe(true);
+    });
+
+    it('emits argument with attributes', () => {
+      const src = '([#C]) -> [#P1]. {weight: 1}\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('round-trips an argument with disjunction', () => {
+      const src = '([#C]) -> ([#P1] | [#P2]).\n';
+      const first = parse(src);
+      if (!first.ok) throw new Error('parse failed');
+      const out = stringify(first.ast);
+      const second = parse(out);
+      if (!second.ok) throw new Error('parse failed');
+      const arg = second.ast!.elements[0];
+      expect(arg?.kind).toBe('Argument');
+    });
+  });
 });

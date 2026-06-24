@@ -6,12 +6,14 @@
 import type {
   Argument,
   Block,
+  Conclusion,
   Document,
   Element,
   FactHead,
   FactRef,
   FactStatement,
   Frontmatter,
+  Premise,
   RelationStatement,
   RuleStatement,
   AttributeBlock,
@@ -110,8 +112,47 @@ function emitAttributeBlock(attr: AttributeBlock): string {
   return ` {\n${lines.join('\n')}\n}`;
 }
 
-function emitArgument(_a: Argument): string {
-  return '';
+// Deviation from plan: the plan's emit format uses `-- ` premises on
+// separate lines under the conclusion, but the argdown-2 grammar (per
+// docs/GRAMMAR.bnf NOTE 4 + DESIGN.md §2.3) does NOT accept `--` as
+// a premise prefix. Emitting non-parseable source would break the
+// round-trip invariant (spec §7). We emit the canonical single-line
+// form `([#C]) -> [#P1], [#P2]. {attrs}` matching what the parser
+// accepts. A future grammar extension that adds `--` premise syntax
+// can swap this without changing the AST shape.
+//
+// When an argument is used as a value (a conclusion or a premise),
+// it becomes an <arg-expr>: per docs/GRAMMAR.bnf NOTE 11, an arg-expr
+// carries NO terminating period and NO attribute block — only the
+// outermost argument owns them. `asExpr` propagates that constraint.
+function emitArgument(a: Argument, asExpr = false): string {
+  const conclText = emitConclusion(a.conclusion);
+  const premisesText = a.premises.map(emitPremise).join(', ');
+  if (asExpr) {
+    return `(${conclText}) -> ${premisesText}`;
+  }
+  const attrPart = a.attributes ? emitAttributeBlock(a.attributes) : '';
+  return `(${conclText}) -> ${premisesText}.${attrPart}`;
+}
+
+function emitConclusion(c: Conclusion): string {
+  switch (c.kind) {
+    case 'atom':
+      return emitFactRef(c.value);
+    case 'argument':
+      return emitArgument(c.value, true);
+  }
+}
+
+function emitPremise(p: Premise): string {
+  switch (p.kind) {
+    case 'atom':
+      return emitFactRef(p.value);
+    case 'argument':
+      return emitArgument(p.value, true);
+    case 'disjunction':
+      return `(${p.values.map(emitFactRef).join(' | ')})`;
+  }
 }
 
 function emitRelationStatement(_r: RelationStatement): string {
