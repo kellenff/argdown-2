@@ -134,7 +134,8 @@ export function visitComment(cst: CstChildren): LineComment | BlockComment {
     const text = tokens
       .map((t) => t.image)
       .join('')
-      .replace(/^\/\//, '');
+      .replace(/^\/\//, '')
+      .trim();
     return { kind: 'LineComment', text, loc: locFromTokens(tokens) };
   }
   const block = pickFirst(cst['blockComment'] as CstNode[]);
@@ -143,7 +144,8 @@ export function visitComment(cst: CstChildren): LineComment | BlockComment {
     const text = tokens
       .map((t) => t.image)
       .join('')
-      .replace(/^\/\*|\*\/$/g, '');
+      .replace(/^\/\*|\*\/$/g, '')
+      .trim();
     return { kind: 'BlockComment', text, loc: locFromTokens(tokens) };
   }
   throw new Error('comment rule matched no alternative');

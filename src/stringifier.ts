@@ -53,9 +53,9 @@ function emitElement(el: Element): string {
     case 'Heading':
       return `${'#'.repeat(el.level)} ${el.text}`;
     case 'LineComment':
-      return `// ${el.text.trim()}`;
+      return `// ${el.text}`;
     case 'BlockComment':
-      return `/* ${el.text.trim()} */`;
+      return `/* ${el.text} */`;
     case 'Block':
       return emitBlock(el);
     case 'FactStatement':
