@@ -1,4 +1,6 @@
 // src/stringifier.test.ts
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { stringify } from './stringifier.js';
 import { parse } from './parser.js';
@@ -8,6 +10,19 @@ const emptyLoc: SourceLocation = {
   start: { line: 1, column: 1, offset: 0 },
   end: { line: 1, column: 1, offset: 0 },
 };
+
+// Strip `loc` (and other positional metadata) from any AST node so that
+// round-trip equality can compare structure, not byte offsets.
+function stripLocations<T>(node: T): T {
+  if (node === null || typeof node !== 'object') return node;
+  if (Array.isArray(node)) return node.map(stripLocations) as unknown as T;
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (key === 'loc') continue;
+    result[key] = stripLocations(value);
+  }
+  return result as T;
+}
 
 describe('stringify', () => {
   it('exports a function', () => {
@@ -487,4 +502,37 @@ describe('stringify', () => {
       expect(out).toContain('[#R] :- [#A]');
     });
   });
+});
+
+describe('fixture round-trip', () => {
+  const fixtureDir = 'src/parser.fixtures';
+  const fixtureFiles = [
+    'small-claim.argdown',
+    'small-relation.argdown',
+    'small-rule.argdown',
+    'medium-climate.argdown',
+    'deep-nesting.argdown',
+    'heavy-relations.argdown',
+    'large-stress.argdown',
+  ];
+
+  for (const file of fixtureFiles) {
+    it(`round-trips ${file}`, () => {
+      const src = readFileSync(join(fixtureDir, file), 'utf8');
+      const first = parse(src);
+      const firstAst = first.ok ? first.ast : first.partial;
+      if (!firstAst) {
+        // Some fixtures may be intentionally invalid; skip.
+        return;
+      }
+      const out = stringify(firstAst);
+      const second = parse(out);
+      const secondAst = second.ok ? second.ast : second.partial;
+      expect(secondAst).toBeDefined();
+      if (!secondAst) return;
+      expect(JSON.stringify(stripLocations(firstAst))).toBe(
+        JSON.stringify(stripLocations(secondAst)),
+      );
+    });
+  }
 });
