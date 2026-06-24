@@ -536,3 +536,41 @@ describe('fixture round-trip', () => {
     });
   }
 });
+
+describe('canonical output', () => {
+  it('matches snapshot for a representative document', () => {
+    const src = [
+      '===',
+      'title: "Snapshot"',
+      '===',
+      '',
+      '# Heading',
+      '',
+      '::: evidence',
+      'key: value',
+      ':::',
+      '',
+      '[#A] claim text',
+      '',
+      '[#A] --> [#B]',
+      '',
+      '([#C]) -> [#P1], [#P2].',
+    ].join('\n');
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    expect(stringify(result.ast)).toMatchSnapshot();
+  });
+
+  it('matches snapshot for empty document', () => {
+    const result = parse('');
+    if (!result.ok) throw new Error('parse failed');
+    expect(stringify(result.ast)).toMatchSnapshot();
+  });
+
+  it('matches snapshot for fact with multi-attribute block', () => {
+    const src = '[#A] claim text {\n  weight: 2,\n  source: "paper"\n}\n';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    expect(stringify(result.ast)).toMatchSnapshot();
+  });
+});
