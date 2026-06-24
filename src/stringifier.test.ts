@@ -118,4 +118,58 @@ describe('stringify', () => {
       expect((secondT as StringValue).value).toEqual((firstT as StringValue).value);
     });
   });
+
+  describe('headings', () => {
+    it('emits level-1 heading', () => {
+      const src = '# Title\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits level-6 heading', () => {
+      const src = '###### Smallest\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('round-trips a heading', () => {
+      const src = '## Section\n';
+      const first = parse(src);
+      if (!first.ok) throw new Error('parse failed');
+      const out = stringify(first.ast);
+      const second = parse(out);
+      if (!second.ok) throw new Error('parse failed');
+      const el = second.ast!.elements[0];
+      expect(el?.kind).toBe('Heading');
+      if (el?.kind === 'Heading') {
+        expect(el.level).toBe(2);
+        expect(el.text).toBe('Section');
+      }
+    });
+  });
+
+  describe('comments', () => {
+    it('emits a line comment', () => {
+      const src = '// just a note\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits a block comment', () => {
+      const src = '/* multi\nline */\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits a comment between other elements in document order', () => {
+      const src = '# A\n\n// middle note\n\n# B\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+  });
 });

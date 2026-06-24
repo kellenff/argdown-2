@@ -4,9 +4,14 @@
 // (positions may differ).
 
 import type {
+  Argument,
+  Block,
   Document,
   Element,
+  FactStatement,
   Frontmatter,
+  RelationStatement,
+  RuleStatement,
   Value,
   YamlValue,
   YamlLine,
@@ -43,9 +48,44 @@ function emitFrontmatter(fm: Frontmatter): string {
   return lines.join('\n');
 }
 
-function emitElement(_el: Element): string {
-  // Stub — returns empty until later tasks.
-  void _el;
+function emitElement(el: Element): string {
+  switch (el.kind) {
+    case 'Heading':
+      return `${'#'.repeat(el.level)} ${el.text}`;
+    case 'LineComment':
+      return `// ${el.text.trim()}`;
+    case 'BlockComment':
+      return `/* ${el.text.trim()} */`;
+    case 'Block':
+      return emitBlock(el);
+    case 'FactStatement':
+      return emitFactStatement(el);
+    case 'Argument':
+      return emitArgument(el);
+    case 'RelationStatement':
+      return emitRelationStatement(el);
+    case 'RuleStatement':
+      return emitRuleStatement(el);
+  }
+}
+
+function emitBlock(_b: Block): string {
+  return '';
+}
+
+function emitFactStatement(_f: FactStatement): string {
+  return '';
+}
+
+function emitArgument(_a: Argument): string {
+  return '';
+}
+
+function emitRelationStatement(_r: RelationStatement): string {
+  return '';
+}
+
+function emitRuleStatement(_r: RuleStatement): string {
   return '';
 }
 
