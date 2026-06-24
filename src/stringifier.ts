@@ -227,8 +227,10 @@ function emitRelationEndpoint(e: RelationEndpoint): string {
   return emitArgument(e);
 }
 
-function emitRuleStatement(_r: RuleStatement): string {
-  return '';
+function emitRuleStatement(rs: RuleStatement): string {
+  const head = emitFactRef(rs.rule.ref);
+  const premises = rs.rule.premises.map(emitFactRef).join(', ');
+  return `${head} :- ${premises}`;
 }
 
 function emitValue(v: Value | PlainScalar): string {

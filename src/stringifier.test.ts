@@ -446,4 +446,45 @@ describe('stringify', () => {
       expect(block?.kind).toBe('Block');
     });
   });
+
+  describe('rule statements', () => {
+    it('emits a rule statement from a synthesized AST', () => {
+      // Build a RuleStatement AST manually since the parser no longer
+      // produces them post-73a9ba1 (grammar drift — BNF describes `:-`
+      // rules, code removed them).
+      const result = parse('([#A]) -> [#B].\n');
+      if (!result.ok) throw new Error('parse failed');
+      const ast = result.ast;
+      const ruleElement = {
+        kind: 'RuleStatement' as const,
+        rule: {
+          kind: 'Rule' as const,
+          ref: {
+            kind: 'FactRef' as const,
+            head: { kind: 'IdentifierHead' as const, identifier: 'R', loc: ast.loc },
+            loc: ast.loc,
+          },
+          premises: [
+            {
+              kind: 'FactRef' as const,
+              head: { kind: 'IdentifierHead' as const, identifier: 'A', loc: ast.loc },
+              loc: ast.loc,
+            },
+          ],
+          loc: ast.loc,
+        },
+        loc: ast.loc,
+      };
+      const docWithRule = {
+        ...ast,
+        elements: [...ast.elements, ruleElement],
+      };
+      const out = stringify(docWithRule);
+      // Canonical argdown-2 emit form: each identifier head is wrapped in
+      // `[#...]` (per spec §5.6a / BNF IdentifierHead rule). The plan's
+      // loose `toContain('R :- A')` check assumed a no-brackets form;
+      // matching the real emit requires `[#R] :- [#A]`.
+      expect(out).toContain('[#R] :- [#A]');
+    });
+  });
 });
