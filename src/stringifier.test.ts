@@ -192,14 +192,15 @@ describe('stringify', () => {
       const src = '[#A] some claim\n';
       const result = parse(src);
       if (!result.ok) throw new Error('parse failed');
-      expect(stringify(result.ast)).toBe('[#A]: some claim\n');
+      // argdown-2 uses space-separated claim text (spec §5.6a, BNF NOTE 4).
+      expect(stringify(result.ast)).toBe('[#A] some claim\n');
     });
 
     it('emits fact with single attribute in flow-mapping form', () => {
       const src = '[#A] claim {weight: 2}\n';
       const result = parse(src);
       if (!result.ok) throw new Error('parse failed');
-      expect(stringify(result.ast)).toBe('[#A]: claim {weight: 2}\n');
+      expect(stringify(result.ast)).toBe('[#A] claim {weight: 2}\n');
     });
 
     it('emits fact with multiple attributes on multiple lines', () => {
@@ -210,7 +211,7 @@ describe('stringify', () => {
       // Either the flow form or the multi-line form is acceptable — both
       // are valid emit output. We just check the parse path matches a
       // known-good source.
-      expect(out).toMatch(/^\[#A\]: claim/);
+      expect(out).toMatch(/^\[#A\] claim/);
     });
 
     it('round-trips a fact with attributes', () => {
@@ -270,15 +271,15 @@ describe('stringify', () => {
     });
 
     it('emits argument with nested conclusion (an argument as a value)', () => {
-      // The plan's `<[#A] sub claim>` form is grammar drift — a nested
-      // argument premise is written as an <arg-expr>, per docs/GRAMMAR.bnf
-      // NOTE 11. We test the AST shape directly: an Argument with an
-      // `argument` conclusion. The emit must (a) wrap the nested
-      // conclusion in parens, (b) carry no period inside those nested
-      // parens (NOTE 11 — arg-expr), (c) carry exactly one period at
-      // the very end. Round-trip through public `parse()` is currently
-      // blocked by a parser dispatch limitation (out of scope for the
-      // stringifier); see DONE_WITH_CONCERNS in the report.
+      // Argdown-2's nested-argument conclusion is an <arg-expr> (per BNF NOTE 11):
+      // a parenthesised argument expression with no terminating period.
+      // The stringifier emits this with `asExpr: true` for the nested level.
+      //
+      // KNOWN LIMITATION: The parser does not currently dispatch nested-argument
+      // conclusions through the public `parse()` entry point (uses parseFactRef
+      // instead of parseConclusion in src/parser-arg.ts:82). This test asserts
+      // emit output against a hand-constructed AST — true parser round-trip is
+      // blocked. Track as parser bug, not stringifier bug.
       const src = '([#A]) -> [#B].\n';
       const result = parse(src);
       if (!result.ok) throw new Error('parse failed');
@@ -296,9 +297,9 @@ describe('stringify', () => {
       };
       const out = stringify(nestedAst);
       expect(out).toContain('(([#A]) -> [#B])');
-      // No period inside the inner arg-expr's parens.
-      expect(out).not.toMatch(/(\(\([^)]*\)\.)/);
-      // Exactly one terminating period.
+      // No period inside the inner arg-expr's parens (NOTE 11).
+      expect(out).not.toMatch(/\(\([^)]*\)\./);
+      // Exactly one terminating period at the outermost level.
       expect(out.trimEnd().endsWith('.')).toBe(true);
     });
 

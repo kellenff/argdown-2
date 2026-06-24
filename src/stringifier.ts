@@ -81,7 +81,9 @@ function emitBlock(_b: Block): string {
 function emitFactStatement(f: FactStatement): string {
   const fact = f.fact;
   const ref = emitFactRef(fact.ref);
-  const claimPart = fact.claimText !== undefined ? `: ${fact.claimText}` : '';
+  // argdown-2 uses space-separated claim text (BNF NOTE 4); the colon form
+  // is silently stripped by the parser. Spec §5.6a.
+  const claimPart = fact.claimText !== undefined ? ` ${fact.claimText}` : '';
   const attrPart = fact.attributes ? emitAttributeBlock(fact.attributes) : '';
   return `${ref}${claimPart}${attrPart}`;
 }
