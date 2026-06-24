@@ -150,9 +150,24 @@ Fact claim text uses **space-separated** syntax, not colon-separated. The argdow
 
 When round-tripping through the current parser, the colon form is rejected — the canonical form is what the parser actually accepts. (If the grammar is later extended to accept colon-separated claims, both forms are valid; the spec is correct for the current grammar.)
 
-### 5.7 Premises
+### 5.7 Argument syntax (corrected for argdown-2 grammar)
 
-Emit on individual lines prefixed with `-- ` under the conclusion. Disjunction emits `(` `[a]` `,` `[b]` `)` to mirror source form.
+The argdown-2 grammar (per `docs/GRAMMAR.bnf` NOTE 4 and `docs/DESIGN.md` §2.3) uses a single-line form for arguments, NOT multi-line `-- ` premises. The canonical form is:
+
+```
+([#conclusion]) -> [#premise1], [#premise2].
+```
+
+Premise list:
+- Atom premise: `[#identifier]` (with `#` prefix per §5.6)
+- Disjunction premise: `([#a], [#b])` (parenthesised, comma-separated, with the `\|` separator inside, or comma-only — confirm against BNF; current parser accepts comma-only form)
+- Sub-argument premise: `([#A]) -> [#B]` (a nested argument expression; the AST `Premise.kind === 'argument'` carries the inner `Argument`)
+
+Argument as a top-level statement MUST end with a period `.`. Argument as an embedded arg-expr (in a conclusion or premise) MUST NOT have a period — `docs/GRAMMAR.bnf` NOTE 11.
+
+**Implementation note:** `emitArgument` accepts an `asExpr: boolean` flag (default `false`). When `true`, the argument is emitted without the trailing period and without attributes (per NOTE 11). `emitConclusion` and `emitPremise` pass `asExpr: true` when dispatching to nested `emitArgument`.
+
+**Known parser limitation:** Nested-argument conclusions are not currently dispatched by the public `parse()` entry point (it uses `parseFactRef` instead of `parseConclusion` for the head — see `src/parser-arg.ts:82`). This means emission of nested arguments can be verified against the AST shape but not round-tripped through the parser. The limitation is in the parser, not the stringifier; it should be tracked separately.
 
 ### 5.8 Attributes (flow-mapping form, by default)
 
