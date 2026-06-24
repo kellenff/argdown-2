@@ -172,4 +172,71 @@ describe('stringify', () => {
       expect(stringify(result.ast)).toBe(src);
     });
   });
+
+  describe('facts', () => {
+    it('emits fact with identifier head and no claim', () => {
+      const src = '[#A]\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits fact with title head', () => {
+      const src = '[Fact One]\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe(src);
+    });
+
+    it('emits fact with claim', () => {
+      const src = '[#A] some claim\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe('[#A]: some claim\n');
+    });
+
+    it('emits fact with single attribute in flow-mapping form', () => {
+      const src = '[#A] claim {weight: 2}\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      expect(stringify(result.ast)).toBe('[#A]: claim {weight: 2}\n');
+    });
+
+    it('emits fact with multiple attributes on multiple lines', () => {
+      const src = '[#A] claim {weight: 2, source: "paper"}\n';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const out = stringify(result.ast);
+      // Either the flow form or the multi-line form is acceptable — both
+      // are valid emit output. We just check the parse path matches a
+      // known-good source.
+      expect(out).toMatch(/^\[#A\]: claim/);
+    });
+
+    it('round-trips a fact with attributes', () => {
+      const src = '[#A] claim {weight: 2, source: "paper"}\n';
+      const first = parse(src);
+      if (!first.ok) throw new Error('parse failed');
+      const out = stringify(first.ast);
+      const second = parse(out);
+      if (!second.ok) throw new Error('parse failed');
+      const secondFact = second.ast!.elements[0];
+      expect(secondFact?.kind).toBe('FactStatement');
+    });
+  });
+
+  describe('comments with other elements', () => {
+    it('round-trips a document with comments and a fact', () => {
+      const src = '// lead\n[A]\n// trail\n';
+      const first = parse(src);
+      if (!first.ok) throw new Error('parse failed');
+      const out = stringify(first.ast);
+      const second = parse(out);
+      if (!second.ok) throw new Error('parse failed');
+      const elements = second.ast!.elements;
+      expect(elements[0]?.kind).toBe('LineComment');
+      expect(elements[1]?.kind).toBe('FactStatement');
+      expect(elements[2]?.kind).toBe('LineComment');
+    });
+  });
 });

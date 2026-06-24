@@ -8,10 +8,13 @@ import type {
   Block,
   Document,
   Element,
+  FactHead,
+  FactRef,
   FactStatement,
   Frontmatter,
   RelationStatement,
   RuleStatement,
+  AttributeBlock,
   Value,
   YamlValue,
   YamlLine,
@@ -73,8 +76,38 @@ function emitBlock(_b: Block): string {
   return '';
 }
 
-function emitFactStatement(_f: FactStatement): string {
-  return '';
+function emitFactStatement(f: FactStatement): string {
+  const fact = f.fact;
+  const ref = emitFactRef(fact.ref);
+  const claimPart = fact.claimText !== undefined ? `: ${fact.claimText}` : '';
+  const attrPart = fact.attributes ? emitAttributeBlock(fact.attributes) : '';
+  return `${ref}${claimPart}${attrPart}`;
+}
+
+function emitFactRef(ref: FactRef): string {
+  return emitFactHead(ref.head);
+}
+
+function emitFactHead(head: FactHead): string {
+  switch (head.kind) {
+    case 'IdentifierHead':
+      return `[#${head.identifier}]`;
+    case 'TitleHead':
+      return `[${head.title}]`;
+  }
+}
+
+function emitAttributeBlock(attr: AttributeBlock): string {
+  const entries = Object.entries(attr.entries);
+  if (entries.length === 0) {
+    return '';
+  }
+  if (entries.length === 1) {
+    const [k, v] = entries[0]!;
+    return ` {${k}: ${emitValue(v)}}`;
+  }
+  const lines = entries.map(([k, v]) => `  ${k}: ${emitValue(v)},`);
+  return ` {\n${lines.join('\n')}\n}`;
 }
 
 function emitArgument(_a: Argument): string {
