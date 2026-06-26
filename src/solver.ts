@@ -239,7 +239,17 @@ export function solveBipolar(document: Document): SolveResult {
         continue;
       }
       if (rel.arrow === 'equivalence') {
-        // Task 5
+        const fromKey = endpointKey(rel.from, argByNode);
+        const toKey = endpointKey(rel.to, argByNode);
+        if (!labels.has(toKey)) {
+          warnings.push(`dangling equivalence edge: ${fromKey} <-> ${toKey}`);
+          continue;
+        }
+        if (!labels.has(fromKey)) {
+          labels.set(fromKey, 'undec');
+        }
+        addSupport(fromKey, toKey);
+        addSupport(toKey, fromKey);
         continue;
       }
       const fromKey = endpointKey(rel.from, argByNode);

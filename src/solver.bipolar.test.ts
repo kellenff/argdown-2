@@ -94,6 +94,25 @@ describe('solveBipolar — support edges', () => {
   });
 });
 
+describe('solveBipolar — equivalence', () => {
+  it('labels A=undec, B=undec for mutual equivalence A <-> B', () => {
+    const src = '[#a].\n[#b].\n[#a] <-> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveBipolar(result.ast);
+    expect(solved.labels.get('a')).toBe('undec');
+    expect(solved.labels.get('b')).toBe('undec');
+  });
+
+  it('emits no warnings about dropped edges for equivalence', () => {
+    const src = '[#a].\n[#b].\n[#a] <-> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveBipolar(result.ast);
+    expect(solved.warnings).toEqual([]);
+  });
+});
+
 describe('public API', () => {
   it('re-exports solveBipolar from index.ts', () => {
     expect(publicSolveBipolar).toBe(solveBipolar);
