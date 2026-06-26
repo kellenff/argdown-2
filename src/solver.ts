@@ -181,6 +181,54 @@ export function solve(document: Document): SolveResult {
 }
 
 export function solveBipolar(document: Document): SolveResult {
-  void document;
-  return { labels: new Map(), warnings: [] };
+  const labels = new Map<string, Label>();
+  const warnings: string[] = [];
+
+  // Pass 1: key addressable nodes.
+  const argByNode = new Map<Argument, string>();
+  const attacks = new Map<string, string[]>();
+  for (const el of document.elements) {
+    if (el.kind === 'FactStatement') {
+      const key = factKey(el);
+      if (labels.has(key)) warnings.push('duplicate fact id: ' + key);
+      labels.set(key, 'undec');
+      if (!attacks.has(key)) attacks.set(key, []);
+    } else if (el.kind === 'Argument') {
+      const key = argKey(el);
+      if (labels.has(key)) warnings.push('duplicate argument location: ' + key);
+      labels.set(key, 'undec');
+      argByNode.set(el, key);
+      if (!attacks.has(key)) attacks.set(key, []);
+      const conclKey = conclusionRefKey(el.conclusion);
+      if (conclKey !== undefined && !labels.has(conclKey)) {
+        labels.set(conclKey, 'undec');
+        if (!attacks.has(conclKey)) attacks.set(conclKey, []);
+      }
+    }
+  }
+
+  // Pass 2: walk relations, attach attacks. Support edges handled in Task 4.
+  for (const el of document.elements) {
+    if (el.kind !== 'RelationStatement') continue;
+    const rs = el as RelationStatement;
+    for (const rel of rs.relations) {
+      if (rel.arrow === 'support' || rel.arrow === 'equivalence') {
+        continue; // Task 4 and Task 5
+      }
+      const fromKey = endpointKey(rel.from, argByNode);
+      const toKey = endpointKey(rel.to, argByNode);
+      if (!labels.has(toKey)) {
+        warnings.push(`dangling attack edge: ${fromKey} --x ${toKey}`);
+        continue;
+      }
+      if (!labels.has(fromKey)) {
+        labels.set(fromKey, 'undec');
+      }
+      const list = attacks.get(toKey) ?? [];
+      list.push(fromKey);
+      attacks.set(toKey, list);
+    }
+  }
+
+  return { labels: label(attacks), warnings };
 }
