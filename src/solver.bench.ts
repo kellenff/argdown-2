@@ -301,3 +301,42 @@ export async function checkAgainstSolverBaseline(
     console.log('No performance diff vs baseline.');
   }
 }
+
+const BASELINE_DEFAULT_PATH = 'perf-baseline-solver.json';
+
+async function main(): Promise<void> {
+  const mode = argv[2];
+  const { results, peakHeapMB } = await runSolverBench();
+
+  if (mode === '--baseline') {
+    await writeSolverBaselineJson(results, peakHeapMB, BASELINE_DEFAULT_PATH);
+    console.log(`Baseline written to ${BASELINE_DEFAULT_PATH}`);
+    return;
+  }
+
+  if (mode === '--check') {
+    // this cycle: no threshold enforcement — a clean diff run exits 0.
+    // Errors inside loadSolverBaseline / checkAgainstSolverBaseline throw and
+    // propagate to a non-zero exit.
+    const baseline = await loadSolverBaseline(BASELINE_DEFAULT_PATH);
+    await checkAgainstSolverBaseline(results, peakHeapMB, baseline);
+    return;
+  }
+
+  // Default: print a per-task summary including peak heap delta.
+  console.log('solver perf summary (peak heap per task):');
+  for (const r of results) {
+    const peak = peakHeapMB.get(r.name as TaskName)?.toFixed(2) ?? '?';
+    console.log(
+      `  ${r.name.padEnd(38)} ${r.hz.toFixed(1).padStart(10)} ops/sec ±${r.rme.toFixed(2)}%  p99=${r.p99.toFixed(3)}ms  peak=${peak}MB`,
+    );
+  }
+}
+
+// Run as CLI only when this file is the entry point.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err: unknown) => {
+    console.error(err);
+    exit(1);
+  });
+}
