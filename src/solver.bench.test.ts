@@ -1,7 +1,7 @@
 // src/solver.bench.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -9,7 +9,10 @@ import {
   TASK_TYPES,
   runSolverBench,
   writeSolverBaselineJson,
+  loadSolverBaseline,
+  checkAgainstSolverBaseline,
   type SolverBaselineFile,
+  type SolverTaskBaseline,
   type TaskName,
 } from './solver.bench.js';
 
@@ -157,6 +160,125 @@ describe('writeSolverBaselineJson', () => {
       const errored = [{ name: 'solve:small-claim', ok: false, hz: 0, p99: 0, rme: 0 }];
       const peakHeapMB = new Map();
       await expect(writeSolverBaselineJson(errored, peakHeapMB, out)).rejects.toThrow(/errored/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+function makeValidBaseline(): SolverBaselineFile {
+  const fixtures = {} as SolverBaselineFile['fixtures'];
+  for (const [name] of FIXTURES) {
+    const tasks = {} as Record<string, SolverTaskBaseline>;
+    for (const taskType of TASK_TYPES) {
+      tasks[taskType] = {
+        opsPerSec: 1000,
+        marginOfError: 1,
+        p99Ms: 1,
+        peakHeapDeltaMB: 0.1,
+      };
+    }
+    fixtures[name] = { sizeBytes: 100, tasks: tasks as never };
+  }
+  return {
+    schemaVersion: 1,
+    capturedAt: '2026-06-26T00:00:00.000Z',
+    environment: { nodeVersion: 'v22.0.0', platform: 'darwin', arch: 'arm64' },
+    fixtures,
+  };
+}
+
+describe('loadSolverBaseline', () => {
+  it('throws when baseline file is missing', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
+    try {
+      const baselinePath = join(dir, 'missing.json');
+      await expect(loadSolverBaseline(baselinePath)).rejects.toThrow(/no baseline/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('throws on schema version mismatch', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
+    try {
+      const baselinePath = join(dir, 'baseline.json');
+      await writeFile(
+        baselinePath,
+        JSON.stringify({ ...makeValidBaseline(), schemaVersion: 2 }),
+        'utf8',
+      );
+      await expect(loadSolverBaseline(baselinePath)).rejects.toThrow(/schema/i);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('checkAgainstSolverBaseline', () => {
+  it('throws when a bench task errored', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
+    try {
+      const out = join(dir, 'baseline.json');
+      const { results, peakHeapMB } = await runSolverBench(FAST_BENCH);
+      await writeSolverBaselineJson(results, peakHeapMB, out);
+      const baseline = await loadSolverBaseline(out);
+
+      const errored = results.map((r) => ({ ...r }));
+      errored[0] = Object.assign({}, errored[0], { ok: false, error: new Error('boom') });
+      await expect(checkAgainstSolverBaseline(errored, peakHeapMB, baseline)).rejects.toThrow(
+        /errored/,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('throws when baseline is missing a fixture entry', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
+    try {
+      const out = join(dir, 'baseline.json');
+      const { results, peakHeapMB } = await runSolverBench(FAST_BENCH);
+      await writeSolverBaselineJson(results, peakHeapMB, out);
+      const baseline = await loadSolverBaseline(out);
+      delete (baseline.fixtures as Record<string, unknown>)['large-stress'];
+
+      await expect(checkAgainstSolverBaseline(results, peakHeapMB, baseline)).rejects.toThrow(
+        /large-stress/,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('prints no diff and returns when current matches baseline exactly', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
+    try {
+      const out = join(dir, 'baseline.json');
+      const { results, peakHeapMB } = await runSolverBench(FAST_BENCH);
+      await writeSolverBaselineJson(results, peakHeapMB, out);
+      const baseline = await loadSolverBaseline(out);
+      await expect(checkAgainstSolverBaseline(results, peakHeapMB, baseline)).resolves.toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a diff when ops/sec regresses by more than the tolerance', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
+    try {
+      const out = join(dir, 'baseline.json');
+      const { results, peakHeapMB } = await runSolverBench(FAST_BENCH);
+      await writeSolverBaselineJson(results, peakHeapMB, out);
+      const baseline = await loadSolverBaseline(out);
+      const slowed = results.map((r) => ({ ...r, hz: r.hz / 2 }));
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        await expect(checkAgainstSolverBaseline(slowed, peakHeapMB, baseline)).resolves.toBeUndefined();
+        expect(log).toHaveBeenCalledWith('Performance diff vs baseline:');
+      } finally {
+        log.mockRestore();
+      }
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

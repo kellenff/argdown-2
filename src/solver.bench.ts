@@ -209,3 +209,95 @@ export async function writeSolverBaselineJson(
 
   await writeFile(outPath, JSON.stringify(baseline, null, 2) + '\n', 'utf8');
 }
+
+export async function loadSolverBaseline(baselinePath: string): Promise<SolverBaselineFile> {
+  let raw: string;
+  try {
+    raw = await readFile(baselinePath, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(`no baseline at ${baselinePath}. Run 'yarn bench:solver:baseline' first.`);
+    }
+    throw err;
+  }
+  const baseline = JSON.parse(raw) as SolverBaselineFile;
+  if (baseline.schemaVersion !== BASELINE_SCHEMA_VERSION) {
+    throw new Error(
+      `baseline schemaVersion ${baseline.schemaVersion} does not match expected ${BASELINE_SCHEMA_VERSION}`,
+    );
+  }
+  return baseline;
+}
+
+const PERCENT_FORMAT = new Intl.NumberFormat('en-US', {
+  maximumFractionDigits: 2,
+});
+
+function formatPercent(value: number): string {
+  return `${value >= 0 ? '+' : ''}${PERCENT_FORMAT.format(value)}%`;
+}
+
+function diffLine(
+  taskName: string,
+  label: string,
+  baseline: number,
+  current: number,
+): string {
+  const delta = current - baseline;
+  const pct = baseline === 0 ? 0 : (delta / baseline) * 100;
+  return `  ${taskName}  ${label}: ${current.toFixed(2)} (baseline ${baseline.toFixed(2)}, ${formatPercent(pct)})`;
+}
+
+export async function checkAgainstSolverBaseline(
+  results: BenchTaskResult[],
+  peakHeapMB: Map<TaskName, number>,
+  baseline: SolverBaselineFile,
+): Promise<void> {
+  const errored = results.filter((r) => !r.ok);
+  if (errored.length > 0) {
+    const names = errored.map((r) => r.name).join(', ');
+    throw new Error(`task(s) errored: ${names}`);
+  }
+
+  let printedHeader = false;
+  for (const [name] of FIXTURES) {
+    const fixtureBaseline = baseline.fixtures[name];
+    if (!fixtureBaseline) {
+      throw new Error(`baseline missing entry for fixture '${name}'`);
+    }
+    for (const taskType of TASK_TYPES) {
+      const taskName = `${taskType}:${name}` as TaskName;
+      const result = results.find((r) => r.name === taskName);
+      if (!result) {
+        throw new Error(`Missing bench result for task ${taskName}`);
+      }
+      const taskBaseline = fixtureBaseline.tasks[taskType];
+      if (!taskBaseline) {
+        throw new Error(`baseline missing task '${taskType}' for fixture '${name}'`);
+      }
+      const peak = peakHeapMB.get(taskName) ?? 0;
+
+      const opsDelta = result.hz - taskBaseline.opsPerSec;
+      const opsPct =
+        taskBaseline.opsPerSec === 0 ? 0 : (opsDelta / taskBaseline.opsPerSec) * 100;
+      const p99Delta = result.p99 - taskBaseline.p99Ms;
+      const peakDelta = peak - taskBaseline.peakHeapDeltaMB;
+
+      const hasDiff =
+        Math.abs(opsPct) > 0.5 || Math.abs(p99Delta) > 0.01 || Math.abs(peakDelta) > 0.01;
+      if (hasDiff) {
+        if (!printedHeader) {
+          console.log('Performance diff vs baseline:');
+          printedHeader = true;
+        }
+        console.log(diffLine(taskName, 'ops/sec', taskBaseline.opsPerSec, result.hz));
+        console.log(diffLine(taskName, 'p99 ms  ', taskBaseline.p99Ms, result.p99));
+        console.log(diffLine(taskName, 'peak MB ', taskBaseline.peakHeapDeltaMB, peak));
+      }
+    }
+  }
+
+  if (!printedHeader) {
+    console.log('No performance diff vs baseline.');
+  }
+}
