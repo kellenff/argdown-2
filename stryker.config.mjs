@@ -51,6 +51,8 @@ export default {
     'src/parser-relation.ts',
     'src/visitor-arg.ts',
     'src/visitor.ts',
+    'src/solver.ts',
+    'src/mermaid.ts',
     '!src/**/*.test.ts',
     '!src/**/*.bench.ts',
     '!src/**/*.fuzz.test.ts',
