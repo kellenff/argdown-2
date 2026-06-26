@@ -52,9 +52,14 @@ function label(attacks: Map<string, string[]>): Map<string, Label> {
   const labels = new Map<string, Label>();
 
   // Initialize: every targeted node starts UNDEC unless it has no attackers
-  // (then it's trivially IN). Sources that never appear as targets are also IN.
+  // (then it's trivially IN). Self-attackers are forced OUT (a node cannot
+  // be IN if it attacks itself). Sources that never appear as targets are IN.
   for (const [target, sources] of attacks) {
-    labels.set(target, sources.length === 0 ? 'in' : 'undec');
+    if (sources.includes(target)) {
+      labels.set(target, 'out');
+    } else {
+      labels.set(target, sources.length === 0 ? 'in' : 'undec');
+    }
   }
   const allSources = new Set<string>();
   for (const sources of attacks.values()) for (const s of sources) allSources.add(s);

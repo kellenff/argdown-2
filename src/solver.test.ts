@@ -271,13 +271,14 @@ describe('solve', () => {
     });
 
     it('labels the diamond topology correctly', () => {
-      // a attacks b and c; d attacks b and c.
-      // a is unattacked → IN. d is attacked by a → OUT.
+      // a attacks b, c, and d; d attacks b and c.
+      // a is unattacked → IN. d is attacked by a (IN) → OUT.
       // b and c are attacked by a (IN) and d (OUT) → IN (some attacker OUT).
       const src = [
         '[#a].', '[#b].', '[#c].', '[#d].',
         '[#a] --x [#b].',
         '[#a] --x [#c].',
+        '[#a] --x [#d].',
         '[#d] --x [#b].',
         '[#d] --x [#c].',
       ].join('\n');
