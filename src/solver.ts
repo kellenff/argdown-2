@@ -179,3 +179,8 @@ export function solve(document: Document): SolveResult {
 
   return { labels: label(attacks), warnings };
 }
+
+export function solveBipolar(document: Document): SolveResult {
+  void document;
+  return { labels: new Map(), warnings: [] };
+}

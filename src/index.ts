@@ -9,7 +9,7 @@ export { renderMermaid } from './mermaid.js';
 export { stringify } from './stringifier.js';
 export type { StringifyOptions } from './stringifier.js';
 
-export { solve } from './solver.js';
+export { solve, solveBipolar } from './solver.js';
 export type { SolveResult, Label } from './solver.js';
 
 export type {
