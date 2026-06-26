@@ -258,7 +258,9 @@ describe('checkAgainstSolverBaseline', () => {
       const { results, peakHeapMB } = await runSolverBench(FAST_BENCH);
       await writeSolverBaselineJson(results, peakHeapMB, out);
       const baseline = await loadSolverBaseline(out);
-      await expect(checkAgainstSolverBaseline(results, peakHeapMB, baseline)).resolves.toBeUndefined();
+      await expect(
+        checkAgainstSolverBaseline(results, peakHeapMB, baseline),
+      ).resolves.toBeUndefined();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -274,7 +276,9 @@ describe('checkAgainstSolverBaseline', () => {
       const slowed = results.map((r) => ({ ...r, hz: r.hz / 2 }));
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
       try {
-        await expect(checkAgainstSolverBaseline(slowed, peakHeapMB, baseline)).resolves.toBeUndefined();
+        await expect(
+          checkAgainstSolverBaseline(slowed, peakHeapMB, baseline),
+        ).resolves.toBeUndefined();
         expect(log).toHaveBeenCalledWith('Performance diff vs baseline:');
       } finally {
         log.mockRestore();

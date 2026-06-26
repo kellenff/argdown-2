@@ -22,20 +22,13 @@ export const FIXTURES = [
 
 export type FixtureName = (typeof FIXTURES)[number][0];
 
-export const TASK_TYPES = [
-  'solve',
-  'solve-bipolar',
-  'parse-solve',
-  'parse-solve-bipolar',
-] as const;
+export const TASK_TYPES = ['solve', 'solve-bipolar', 'parse-solve', 'parse-solve-bipolar'] as const;
 
 export type TaskType = (typeof TASK_TYPES)[number];
 
 export type TaskName = `${TaskType}:${FixtureName}`;
 
-async function loadFixtures(): Promise<
-  Array<readonly [FixtureName, string, Document]>
-> {
+async function loadFixtures(): Promise<Array<readonly [FixtureName, string, Document]>> {
   return Promise.all(
     FIXTURES.map(async ([name, path]) => {
       const source = await readFile(path, 'utf8');
@@ -94,9 +87,7 @@ export interface RunBenchResult {
 const DEFAULT_ITERATIONS = 50;
 const DEFAULT_TIME_MS = 1000;
 
-export async function runSolverBench(
-  options: RunBenchOptions = {},
-): Promise<RunBenchResult> {
+export async function runSolverBench(options: RunBenchOptions = {}): Promise<RunBenchResult> {
   const loaded = await loadFixtures();
   const bench = new Bench({
     iterations: options.iterations ?? DEFAULT_ITERATIONS,
@@ -237,12 +228,7 @@ function formatPercent(value: number): string {
   return `${value >= 0 ? '+' : ''}${PERCENT_FORMAT.format(value)}%`;
 }
 
-function diffLine(
-  taskName: string,
-  label: string,
-  baseline: number,
-  current: number,
-): string {
+function diffLine(taskName: string, label: string, baseline: number, current: number): string {
   const delta = current - baseline;
   const pct = baseline === 0 ? 0 : (delta / baseline) * 100;
   return `  ${taskName}  ${label}: ${current.toFixed(2)} (baseline ${baseline.toFixed(2)}, ${formatPercent(pct)})`;
@@ -278,8 +264,7 @@ export async function checkAgainstSolverBaseline(
       const peak = peakHeapMB.get(taskName) ?? 0;
 
       const opsDelta = result.hz - taskBaseline.opsPerSec;
-      const opsPct =
-        taskBaseline.opsPerSec === 0 ? 0 : (opsDelta / taskBaseline.opsPerSec) * 100;
+      const opsPct = taskBaseline.opsPerSec === 0 ? 0 : (opsDelta / taskBaseline.opsPerSec) * 100;
       const p99Delta = result.p99 - taskBaseline.p99Ms;
       const peakDelta = peak - taskBaseline.peakHeapDeltaMB;
 
