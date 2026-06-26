@@ -177,16 +177,15 @@ describe('solveBipolar — edge cases', () => {
     const result = parse(src);
     if (!result.ok) throw new Error('parse failed');
     const solved = solveBipolar(result.ast);
-    // `a` is unattacked → IN. The argument node is supported by a → IN.
-    // `c` (the argument's conclusion atom) is supported via the argument → IN.
+    // `a` is unattacked → IN. The top-level argument `([#b]) -> [#c]` has no
+    // attackers, so the argument is IN; its conclusion `b` is also IN. `c` is
+    // a premise — not tracked in labels. The relation `[#a] --> (nested_arg)`
+    // references an argument-as-endpoint that Pass 1 did not register (nested
+    // arguments are out of scope for the current solver), so the support edge
+    // is reported as dangling and skipped.
     expect(solved.labels.get('a')).toBe('in');
-    // The top-level argument `([#b]) -> [#c]` has no attackers, so it is IN;
-    // its conclusion `b` is also IN. `c` is a premise — not tracked in labels.
     expect(solved.labels.get('arg:2:1')).toBe('in');
     expect(solved.labels.get('b')).toBe('in');
-    // The relation `[#a] --> (nested_arg)` references an argument that Pass 1
-    // did not register (nested arguments are out of scope for the current
-    // solver), so the support edge is reported as dangling and skipped.
     expect(solved.warnings.some((w) => w.includes('dangling support edge'))).toBe(true);
     expect(solved.labels.has('c')).toBe(false);
   });
@@ -199,7 +198,9 @@ describe('solveBipolar — edge cases', () => {
     const dungResult = parse(src);
     const bipolarResult = parse(src);
     if (!dungResult.ok || !bipolarResult.ok) throw new Error('parse failed');
-    // Re-import solve inline to avoid the eslint no-shadow rule on this test file.
+    // Re-import solve inline (rather than at the top of the file) to keep
+    // both solver entry points available without a name clash on the local
+    // `solve` binding.
     const { solve } = await import('./solver.js');
     const dung = solve(dungResult.ast);
     const bipolar = solveBipolar(bipolarResult.ast);
