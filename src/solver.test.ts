@@ -46,7 +46,7 @@ describe('solve', () => {
       const result = parse(src);
       if (!result.ok) throw new Error('parse failed');
       const solved = solve(result.ast);
-      expect(solved.warnings.some(w => w.includes('duplicate fact id: co2'))).toBe(true);
+      expect(solved.warnings.some((w) => w.includes('duplicate fact id: co2'))).toBe(true);
       expect(solved.labels.has('co2')).toBe(true);
     });
   });
@@ -67,7 +67,7 @@ describe('solve', () => {
       if (!result.ok) throw new Error('parse failed');
       const solved = solve(result.ast);
       // Both arguments appear, with distinct keys.
-      const argKeys = [...solved.labels.keys()].filter(k => k.startsWith('arg:'));
+      const argKeys = [...solved.labels.keys()].filter((k) => k.startsWith('arg:'));
       expect(argKeys.length).toBe(2);
       expect(new Set(argKeys).size).toBe(2);
     });
@@ -173,46 +173,78 @@ describe('solve', () => {
                 head: {
                   kind: 'IdentifierHead' as const,
                   identifier: 'a',
-                  loc: { start: { line: 1, column: 2, offset: 1 }, end: { line: 1, column: 4, offset: 3 } },
+                  loc: {
+                    start: { line: 1, column: 2, offset: 1 },
+                    end: { line: 1, column: 4, offset: 3 },
+                  },
                 },
-                loc: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 5, offset: 4 } },
+                loc: {
+                  start: { line: 1, column: 1, offset: 0 },
+                  end: { line: 1, column: 5, offset: 4 },
+                },
               },
-              loc: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 5, offset: 4 } },
+              loc: {
+                start: { line: 1, column: 1, offset: 0 },
+                end: { line: 1, column: 5, offset: 4 },
+              },
             },
-            loc: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 5, offset: 4 } },
+            loc: {
+              start: { line: 1, column: 1, offset: 0 },
+              end: { line: 1, column: 5, offset: 4 },
+            },
           },
           {
             kind: 'RelationStatement' as const,
-            relations: [{
-              kind: 'Relation' as const,
-              from: {
-                kind: 'FactRef' as const,
-                head: {
-                  kind: 'IdentifierHead' as const,
-                  identifier: 'a',
-                  loc: { start: { line: 2, column: 2, offset: 7 }, end: { line: 2, column: 4, offset: 9 } },
+            relations: [
+              {
+                kind: 'Relation' as const,
+                from: {
+                  kind: 'FactRef' as const,
+                  head: {
+                    kind: 'IdentifierHead' as const,
+                    identifier: 'a',
+                    loc: {
+                      start: { line: 2, column: 2, offset: 7 },
+                      end: { line: 2, column: 4, offset: 9 },
+                    },
+                  },
+                  loc: {
+                    start: { line: 2, column: 1, offset: 6 },
+                    end: { line: 2, column: 5, offset: 10 },
+                  },
                 },
-                loc: { start: { line: 2, column: 1, offset: 6 }, end: { line: 2, column: 5, offset: 10 } },
-              },
-              arrow: 'attack' as const,
-              to: {
-                kind: 'FactRef' as const,
-                head: {
-                  kind: 'IdentifierHead' as const,
-                  identifier: 'ghost',
-                  loc: { start: { line: 2, column: 11, offset: 16 }, end: { line: 2, column: 17, offset: 22 } },
+                arrow: 'attack' as const,
+                to: {
+                  kind: 'FactRef' as const,
+                  head: {
+                    kind: 'IdentifierHead' as const,
+                    identifier: 'ghost',
+                    loc: {
+                      start: { line: 2, column: 11, offset: 16 },
+                      end: { line: 2, column: 17, offset: 22 },
+                    },
+                  },
+                  loc: {
+                    start: { line: 2, column: 10, offset: 15 },
+                    end: { line: 2, column: 18, offset: 23 },
+                  },
                 },
-                loc: { start: { line: 2, column: 10, offset: 15 }, end: { line: 2, column: 18, offset: 23 } },
+                loc: {
+                  start: { line: 2, column: 1, offset: 6 },
+                  end: { line: 2, column: 18, offset: 23 },
+                },
               },
-              loc: { start: { line: 2, column: 1, offset: 6 }, end: { line: 2, column: 18, offset: 23 } },
-            }],
-            loc: { start: { line: 2, column: 1, offset: 6 }, end: { line: 2, column: 18, offset: 23 } },
+            ],
+            loc: {
+              start: { line: 2, column: 1, offset: 6 },
+              end: { line: 2, column: 18, offset: 23 },
+            },
           },
         ],
         loc: { start: { line: 1, column: 1, offset: 0 }, end: { line: 2, column: 18, offset: 23 } },
       };
       const solved = solve(doc);
-      expect(solved.warnings.some(w => w.includes('dangling attack edge'))).toBe(true);
+      expect(solved.warnings.some((w) => w.includes('dangling attack edge'))).toBe(true);
       expect(solved.labels.has('ghost')).toBe(false);
     });
   });
@@ -257,7 +289,9 @@ describe('solve', () => {
 
     it('labels three-cycle UNDEC', () => {
       const src = [
-        '[#a].', '[#b].', '[#c].',
+        '[#a].',
+        '[#b].',
+        '[#c].',
         '[#a] --x [#b].',
         '[#b] --x [#c].',
         '[#c] --x [#a].',
@@ -275,7 +309,10 @@ describe('solve', () => {
       // a is unattacked → IN. d is attacked by a (IN) → OUT.
       // b and c are attacked by a (IN) and d (OUT) → IN (some attacker OUT).
       const src = [
-        '[#a].', '[#b].', '[#c].', '[#d].',
+        '[#a].',
+        '[#b].',
+        '[#c].',
+        '[#d].',
         '[#a] --x [#b].',
         '[#a] --x [#c].',
         '[#a] --x [#d].',
@@ -293,7 +330,11 @@ describe('solve', () => {
   });
 });
 
-import { solve as publicSolve, type SolveResult as PublicSolveResult, type Label as PublicLabel } from './index.js';
+import {
+  solve as publicSolve,
+  type SolveResult as PublicSolveResult,
+  type Label as PublicLabel,
+} from './index.js';
 
 describe('public API', () => {
   it('re-exports solve from index.ts', () => {
@@ -304,7 +345,14 @@ describe('public API', () => {
     const label: PublicLabel = 'in';
     const result: PublicSolveResult = {
       labels: new Map([['x', label]]),
-      dropped: { support: 0, undercut: 0, undermine: 0, concession: 0, qualification: 0, equivalence: 0 },
+      dropped: {
+        support: 0,
+        undercut: 0,
+        undermine: 0,
+        concession: 0,
+        qualification: 0,
+        equivalence: 0,
+      },
       warnings: [],
     };
     expect(result.labels.get('x')).toBe('in');

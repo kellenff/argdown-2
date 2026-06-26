@@ -7,7 +7,10 @@ import { join } from 'node:path';
 
 const CLI_PATH = join(process.cwd(), 'dist', 'cli.js');
 
-function runCli(args: string[], stdin?: string): { stdout: string; stderr: string; status: number } {
+function runCli(
+  args: string[],
+  stdin?: string,
+): { stdout: string; stderr: string; status: number } {
   const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
     input: stdin,
     encoding: 'utf8',

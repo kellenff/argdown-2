@@ -25,7 +25,7 @@ function readStdin(): Promise<string> {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const solveMode = argv.includes('--solve');
-  const positional = argv.filter(a => a !== '--solve');
+  const positional = argv.filter((a) => a !== '--solve');
   const filename = positional[0];
   const source = filename ? readFileSync(filename, 'utf8') : await readStdin();
 
@@ -51,7 +51,7 @@ async function main(): Promise<void> {
     const d = solved.dropped;
     lines.push(
       `Dropped:   ${d.support} support, ${d.undercut} undercut, ${d.undermine} undermine, ` +
-      `${d.concession} concession, ${d.qualification} qualification, ${d.equivalence} equivalence`,
+        `${d.concession} concession, ${d.qualification} qualification, ${d.equivalence} equivalence`,
     );
     process.stdout.write(lines.join('\n') + '\n');
     for (const w of solved.warnings) {

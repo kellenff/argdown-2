@@ -4,7 +4,13 @@
 // Method 1 of the design; Methods 2 (bipolar) and 3 (ASPIC+) are future cycles.
 
 import type {
-  Argument, Conclusion, Document, FactRef, FactStatement, RelationEndpoint, RelationStatement,
+  Argument,
+  Conclusion,
+  Document,
+  FactRef,
+  FactStatement,
+  RelationEndpoint,
+  RelationStatement,
 } from './ast.js';
 
 export type Label = 'in' | 'out' | 'undec';
@@ -71,10 +77,15 @@ function label(attacks: Map<string, string[]>): Map<string, Label> {
     changed = false;
     for (const [target, sources] of attacks) {
       if (labels.get(target) !== 'undec') continue;
-      const allIn = sources.every(s => labels.get(s) === 'in');
-      const someOut = sources.some(s => labels.get(s) === 'out');
-      if (allIn) { labels.set(target, 'out'); changed = true; }
-      else if (someOut) { labels.set(target, 'in'); changed = true; }
+      const allIn = sources.every((s) => labels.get(s) === 'in');
+      const someOut = sources.some((s) => labels.get(s) === 'out');
+      if (allIn) {
+        labels.set(target, 'out');
+        changed = true;
+      } else if (someOut) {
+        labels.set(target, 'in');
+        changed = true;
+      }
     }
   }
   return labels;
@@ -84,8 +95,12 @@ export function solve(document: Document): SolveResult {
   const labels = new Map<string, Label>();
   const warnings: string[] = [];
   const dropped = {
-    support: 0, undercut: 0, undermine: 0,
-    concession: 0, qualification: 0, equivalence: 0,
+    support: 0,
+    undercut: 0,
+    undermine: 0,
+    concession: 0,
+    qualification: 0,
+    equivalence: 0,
   };
 
   // Pass 1: key addressable nodes.
@@ -132,12 +147,24 @@ export function solve(document: Document): SolveResult {
           attacks.set(toKey, list);
           break;
         }
-        case 'support': dropped.support++; break;
-        case 'undercut': dropped.undercut++; break;
-        case 'undermine': dropped.undermine++; break;
-        case 'concession': dropped.concession++; break;
-        case 'qualification': dropped.qualification++; break;
-        case 'equivalence': dropped.equivalence++; break;
+        case 'support':
+          dropped.support++;
+          break;
+        case 'undercut':
+          dropped.undercut++;
+          break;
+        case 'undermine':
+          dropped.undermine++;
+          break;
+        case 'concession':
+          dropped.concession++;
+          break;
+        case 'qualification':
+          dropped.qualification++;
+          break;
+        case 'equivalence':
+          dropped.equivalence++;
+          break;
       }
     }
   }
@@ -147,14 +174,18 @@ export function solve(document: Document): SolveResult {
   // The `label` function already populated both targets and sources.
 
   const totalDropped =
-    dropped.support + dropped.undercut + dropped.undermine +
-    dropped.concession + dropped.qualification + dropped.equivalence;
+    dropped.support +
+    dropped.undercut +
+    dropped.undermine +
+    dropped.concession +
+    dropped.qualification +
+    dropped.equivalence;
   if (totalDropped > 0) {
     warnings.push(
       `Method 1 (grounded Dung) dropped ${totalDropped} non-attack edge(s): ` +
-      `support=${dropped.support}, undercut=${dropped.undercut}, ` +
-      `undermine=${dropped.undermine}, concession=${dropped.concession}, ` +
-      `qualification=${dropped.qualification}, equivalence=${dropped.equivalence}`,
+        `support=${dropped.support}, undercut=${dropped.undercut}, ` +
+        `undermine=${dropped.undermine}, concession=${dropped.concession}, ` +
+        `qualification=${dropped.qualification}, equivalence=${dropped.equivalence}`,
     );
   }
 
