@@ -104,10 +104,30 @@ The `./ast` subpath exists so type-only consumers don't pull Chevrotain into the
 import type { Document, FactStatement, Argument } from '@casualtheorics/argdown-2/ast';
 ```
 
+**Solver API:** the package ships two grounded-extension solvers, each taking a parsed `Document` and returning a label map.
+
+```ts
+import { solve, solveBipolar, renderMermaid } from '@casualtheorics/argdown-2';
+
+// Method 1: Dung's grounded extension on a pure-attack reduction.
+const dung = solve(parsed.ast);
+
+// Method 2: Cayrol & Lagasquie-Schiex deductive-support reduction.
+const bipolar = solveBipolar(parsed.ast);
+
+// Both return { labels: Map<string, 'in' | 'out' | 'undec'>, warnings: string[] }.
+// The labels map flows directly into renderMermaid() to color winners/losers.
+const mermaid = renderMermaid(parsed.ast, bipolar.labels);
+```
+
 **CLI:**
 
 ```bash
 echo '[#A] --> [#B]' | npx argdown-mermaid
+```
+
+```bash
+echo '[#A] --> [#B]' | npx argdown-mermaid --solve --semantics=bipolar
 ```
 
 `argdown-mermaid` reads stdin (or a filename argument) and writes a Mermaid `flowchart TD` to stdout. Parse errors go to stderr with non-zero exit.
