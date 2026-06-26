@@ -136,3 +136,76 @@ export async function runSolverBench(
   });
   return { results, peakHeapMB };
 }
+
+export interface SolverTaskBaseline {
+  opsPerSec: number;
+  marginOfError: number;
+  p99Ms: number;
+  peakHeapDeltaMB: number;
+}
+
+export interface SolverFixtureBaseline {
+  sizeBytes: number;
+  tasks: Record<TaskType, SolverTaskBaseline>;
+}
+
+export interface SolverBaselineFile {
+  schemaVersion: 1;
+  capturedAt: string;
+  environment: {
+    nodeVersion: string;
+    platform: NodeJS.Platform;
+    arch: string;
+  };
+  fixtures: Record<FixtureName, SolverFixtureBaseline>;
+}
+
+const BASELINE_SCHEMA_VERSION = 1 as const;
+
+export async function writeSolverBaselineJson(
+  results: BenchTaskResult[],
+  peakHeapMB: Map<TaskName, number>,
+  outPath: string,
+): Promise<void> {
+  const errored = results.filter((r) => !r.ok);
+  if (errored.length > 0) {
+    const names = errored.map((r) => r.name).join(', ');
+    throw new Error(`Cannot write baseline: task(s) errored: ${names}`);
+  }
+
+  const fixtures = {} as Record<FixtureName, SolverFixtureBaseline>;
+  for (const [name, path] of FIXTURES) {
+    const source = await readFile(path, 'utf8');
+    const sizeBytes = Buffer.byteLength(source, 'utf8');
+
+    const tasks = {} as Record<TaskType, SolverTaskBaseline>;
+    for (const taskType of TASK_TYPES) {
+      const taskName = `${taskType}:${name}` as TaskName;
+      const result = results.find((r) => r.name === taskName);
+      if (!result) {
+        throw new Error(`Missing bench result for task ${taskName}`);
+      }
+      tasks[taskType] = {
+        opsPerSec: result.hz,
+        marginOfError: result.rme,
+        p99Ms: result.p99,
+        peakHeapDeltaMB: peakHeapMB.get(taskName) ?? 0,
+      };
+    }
+
+    fixtures[name] = { sizeBytes, tasks };
+  }
+
+  const baseline: SolverBaselineFile = {
+    schemaVersion: BASELINE_SCHEMA_VERSION,
+    capturedAt: new Date().toISOString(),
+    environment: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+    },
+    fixtures,
+  };
+
+  await writeFile(outPath, JSON.stringify(baseline, null, 2) + '\n', 'utf8');
+}
