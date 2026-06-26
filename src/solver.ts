@@ -269,8 +269,9 @@ export function solveBipolar(document: Document): SolveResult {
 
   // Run fixpoint on the augmented graph, then strip auxiliaries from the output.
   const fullLabels = label(attacks);
-  for (const key of [...fullLabels.keys()]) {
-    if (key.startsWith('sup:')) fullLabels.delete(key);
+  const out = new Map<string, Label>();
+  for (const [key, value] of fullLabels) {
+    if (!key.startsWith('sup:')) out.set(key, value);
   }
-  return { labels: fullLabels, warnings };
+  return { labels: out, warnings };
 }
