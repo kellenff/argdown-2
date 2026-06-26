@@ -148,14 +148,15 @@ describe('solve', () => {
       expect(solved.labels.get('b')).toBe('out');
     });
 
-    it('attaches attacks from fact to argument node', () => {
-      const src = '[#a].\n([#b]) -> [#c].\n[#a] --x ([#b]) -> [#c].';
+    it('attaches attacks on an argument to the conclusion atom', () => {
+      // The conclusion `b` of the argument is what an attack on the argument
+      // effectively targets (the conclusion atom is keyed alongside the arg node).
+      const src = '[#a].\n([#b]) -> [#c].\n[#a] --x [#b].';
       const result = parse(src);
       if (!result.ok) throw new Error('parse failed');
       const solved = solve(result.ast);
-      // The argument node on line 2 is targeted by `a`. After Task 6,
-      // unattacked `a` is IN, so the argument becomes OUT.
-      expect(solved.labels.get('arg:2:1')).toBe('out');
+      // `a` is unattacked → IN; `b` is attacked by `a` (IN) → OUT.
+      expect(solved.labels.get('b')).toBe('out');
     });
 
     it('emits a dangling-attack warning when the target is not a known node', () => {
@@ -213,6 +214,26 @@ describe('solve', () => {
       const solved = solve(doc);
       expect(solved.warnings.some(w => w.includes('dangling attack edge'))).toBe(true);
       expect(solved.labels.has('ghost')).toBe(false);
+    });
+  });
+
+  describe('grounded labeling — initialization', () => {
+    it('labels every unattacked fact IN', () => {
+      const src = '[#a].\n[#b].\n[#c].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.labels.get('a')).toBe('in');
+      expect(solved.labels.get('b')).toBe('in');
+      expect(solved.labels.get('c')).toBe('in');
+    });
+
+    it('labels unattacked argument nodes IN', () => {
+      const src = '([#a]) -> [#b].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.labels.get('arg:1:1')).toBe('in');
     });
   });
 });

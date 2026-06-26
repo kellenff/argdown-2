@@ -48,6 +48,33 @@ function endpointKey(ep: RelationEndpoint, argByNode: Map<Argument, string>): st
   return argKey(ep as Argument);
 }
 
+function label(attacks: Map<string, string[]>): Map<string, Label> {
+  const labels = new Map<string, Label>();
+
+  // Initialize: every targeted node starts UNDEC unless it has no attackers
+  // (then it's trivially IN). Sources that never appear as targets are also IN.
+  for (const [target, sources] of attacks) {
+    labels.set(target, sources.length === 0 ? 'in' : 'undec');
+  }
+  const allSources = new Set<string>();
+  for (const sources of attacks.values()) for (const s of sources) allSources.add(s);
+  for (const s of allSources) if (!labels.has(s)) labels.set(s, 'in');
+
+  // Fixpoint: promote UNDEC nodes to IN or OUT based on attacker labels.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [target, sources] of attacks) {
+      if (labels.get(target) !== 'undec') continue;
+      const allIn = sources.every(s => labels.get(s) === 'in');
+      const someOut = sources.some(s => labels.get(s) === 'out');
+      if (allIn) { labels.set(target, 'out'); changed = true; }
+      else if (someOut) { labels.set(target, 'in'); changed = true; }
+    }
+  }
+  return labels;
+}
+
 export function solve(document: Document): SolveResult {
   const labels = new Map<string, Label>();
   const warnings: string[] = [];
@@ -58,25 +85,28 @@ export function solve(document: Document): SolveResult {
 
   // Pass 1: key addressable nodes.
   const argByNode = new Map<Argument, string>();
+  const attacks = new Map<string, string[]>();
   for (const el of document.elements) {
     if (el.kind === 'FactStatement') {
       const key = factKey(el);
       if (labels.has(key)) warnings.push('duplicate fact id: ' + key);
       labels.set(key, 'undec');
+      if (!attacks.has(key)) attacks.set(key, []);
     } else if (el.kind === 'Argument') {
       const key = argKey(el);
       if (labels.has(key)) warnings.push('duplicate argument location: ' + key);
       labels.set(key, 'undec');
       argByNode.set(el, key);
+      if (!attacks.has(key)) attacks.set(key, []);
       const conclKey = conclusionRefKey(el.conclusion);
       if (conclKey !== undefined && !labels.has(conclKey)) {
         labels.set(conclKey, 'undec');
+        if (!attacks.has(conclKey)) attacks.set(conclKey, []);
       }
     }
   }
 
-  // Pass 2: walk relations, count drops, attach attacks (labeling in Task 6).
-  const attacks = new Map<string, string[]>();
+  // Pass 2: walk relations, count drops, attach attacks.
   for (const el of document.elements) {
     if (el.kind !== 'RelationStatement') continue;
     const rs = el as RelationStatement;
@@ -107,8 +137,9 @@ export function solve(document: Document): SolveResult {
     }
   }
 
-  // Tasks 6+ will replace this stub with the grounded fixpoint.
-  void attacks;
+  const finalLabels = label(attacks);
+  // Final labels: every addressable claim (including sources that aren't targets).
+  // The `label` function already populated both targets and sources.
 
   const totalDropped =
     dropped.support + dropped.undercut + dropped.undermine +
@@ -122,5 +153,5 @@ export function solve(document: Document): SolveResult {
     );
   }
 
-  return { labels, dropped, warnings };
+  return { labels: finalLabels, dropped, warnings };
 }
