@@ -292,3 +292,21 @@ describe('solve', () => {
     });
   });
 });
+
+import { solve as publicSolve, type SolveResult as PublicSolveResult, type Label as PublicLabel } from './index.js';
+
+describe('public API', () => {
+  it('re-exports solve from index.ts', () => {
+    expect(publicSolve).toBe(solve);
+  });
+
+  it('exposes SolveResult and Label as types', () => {
+    const label: PublicLabel = 'in';
+    const result: PublicSolveResult = {
+      labels: new Map([['x', label]]),
+      dropped: { support: 0, undercut: 0, undermine: 0, concession: 0, qualification: 0, equivalence: 0 },
+      warnings: [],
+    };
+    expect(result.labels.get('x')).toBe('in');
+  });
+});
