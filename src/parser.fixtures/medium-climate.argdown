@@ -26,13 +26,15 @@ date: 2026-06-22
 
 [#economic-opportunity] Green economy creates jobs { certainty: 0.70 }
 
-[#mitigation] :- [#co2], [#impacts], [#coord].
-[#mitigation] :- [#moral-imperative].
-[#mitigation] :- [#economic-opportunity].
+([#co2]) -> [#mitigation].
+([#impacts]) -> [#mitigation].
+([#coord]) -> [#mitigation].
+([#moral-imperative]) -> [#mitigation].
+([#economic-opportunity]) -> [#mitigation].
 
 # Relations
 [#impacts] --x [#gradual] { type: "undercut" }
-[#gradual] --x ([#mitigation] :- [#co2], [#impacts], [#coord]) { reason: "sufficiency" }
+[#gradual] --x [#mitigation] { reason: "sufficiency" }
 [#co2] --> [#mitigation] { type: "support" }
 [#impacts] --> [#mitigation] { type: "support" }
 [#coord] --> [#mitigation] { type: "support" }

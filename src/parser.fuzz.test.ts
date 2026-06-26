@@ -101,11 +101,15 @@ function checkResultShape(result: ParseResult, ctx: FuzzCtx): void {
 
 // All `kind` discriminants declared in src/ast.ts. Keep in sync.
 const VALID_KINDS: ReadonlySet<string> = new Set([
+  'Argument',
+  'atom',
+  'argument',
   'AttributeBlock',
   'Block',
   'BlockComment',
   'BlockTitle',
   'BooleanValue',
+  'disjunction',
   'Document',
   'Fact',
   'FactRef',

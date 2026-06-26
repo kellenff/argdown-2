@@ -1,3 +1,5 @@
-[#mitigation] :- [#co2], [#impacts], [#coord].
-[#mitigation] :- [#moral-imperative].
-[#mitigation] :- [#economic-opportunity].
+([#co2]) -> [#mitigation].
+([#impacts]) -> [#mitigation].
+([#coord]) -> [#mitigation].
+([#moral-imperative]) -> [#mitigation].
+([#economic-opportunity]) -> [#mitigation].

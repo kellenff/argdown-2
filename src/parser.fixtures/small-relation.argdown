@@ -3,6 +3,6 @@
   reason: "impacts negate the sufficiency of gradualism"
 }
 
-[#gradual] --x ([#mitigation] :- [#co2], [#impacts], [#coord]) {
+[#gradual] --x [#mitigation] {
   reason: "attacks the inferential link"
 }
