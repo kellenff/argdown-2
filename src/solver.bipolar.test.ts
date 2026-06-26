@@ -131,6 +131,85 @@ describe('solveBipolar — auxiliary stripping', () => {
   });
 });
 
+describe('solveBipolar — edge cases', () => {
+  it('labels self-support A --> A as undec', () => {
+    const src = '[#a].\n[#a] --> [#a].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveBipolar(result.ast);
+    expect(solved.labels.get('a')).toBe('undec');
+  });
+
+  it('handles a mix of all arrow kinds without dropping any', () => {
+    const src = [
+      '[#a].',
+      '[#b].',
+      '[#c].',
+      '[#d].',
+      '[#e].',
+      '[#f].',
+      '[#g].',
+      '[#a] --> [#b].',
+      '[#a] --x [#c].',
+      '[#a] -.-> [#d].',
+      '[#a] -.-  [#e].',
+      '[#a] ~>   [#f].',
+      '[#a] ?>   [#g].',
+    ].join('\n');
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveBipolar(result.ast);
+    // No "dropped" warning — bipolar has nothing to drop.
+    expect(solved.warnings).toEqual([]);
+    // `a` is unattacked → IN. `b` is supported by a → IN.
+    expect(solved.labels.get('a')).toBe('in');
+    expect(solved.labels.get('b')).toBe('in');
+    // `c`–`g` are attacked by `a` (IN) → OUT.
+    expect(solved.labels.get('c')).toBe('out');
+    expect(solved.labels.get('d')).toBe('out');
+    expect(solved.labels.get('e')).toBe('out');
+    expect(solved.labels.get('f')).toBe('out');
+    expect(solved.labels.get('g')).toBe('out');
+  });
+
+  it('supports through an argument node', () => {
+    const src = '[#a].\n([#b]) -> [#c].\n[#a] --> ([#b]) -> [#c].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveBipolar(result.ast);
+    // `a` is unattacked → IN. The argument node is supported by a → IN.
+    // `c` (the argument's conclusion atom) is supported via the argument → IN.
+    expect(solved.labels.get('a')).toBe('in');
+    // The top-level argument `([#b]) -> [#c]` has no attackers, so it is IN;
+    // its conclusion `b` is also IN. `c` is a premise — not tracked in labels.
+    expect(solved.labels.get('arg:2:1')).toBe('in');
+    expect(solved.labels.get('b')).toBe('in');
+    // The relation `[#a] --> (nested_arg)` references an argument that Pass 1
+    // did not register (nested arguments are out of scope for the current
+    // solver), so the support edge is reported as dangling and skipped.
+    expect(solved.warnings.some((w) => w.includes('dangling support edge'))).toBe(true);
+    expect(solved.labels.has('c')).toBe(false);
+  });
+
+  it('diverges from Method 1 on a document with supports', async () => {
+    // A --> B, X --x A: Method 1 has X=in, A=out, B=in (unattacked). Method 2 has
+    // X=in, A=in, B=in (auxiliary s is OUT because B is IN; the fixpoint's
+    // `someOut → IN` rule on A promotes A from OUT to IN).
+    const src = '[#a].\n[#b].\n[#x].\n[#a] --> [#b].\n[#x] --x [#a].';
+    const dungResult = parse(src);
+    const bipolarResult = parse(src);
+    if (!dungResult.ok || !bipolarResult.ok) throw new Error('parse failed');
+    // Re-import solve inline to avoid the eslint no-shadow rule on this test file.
+    const { solve } = await import('./solver.js');
+    const dung = solve(dungResult.ast);
+    const bipolar = solveBipolar(bipolarResult.ast);
+    expect(dung.labels.get('a')).toBe('out');
+    expect(dung.labels.get('b')).toBe('in');
+    expect(bipolar.labels.get('a')).toBe('in');
+    expect(bipolar.labels.get('b')).toBe('in');
+  });
+});
+
 describe('solveBipolar — dangling edges', () => {
   it('emits a warning for a dangling support edge', () => {
     // Hand-build: a fact `a` plus a support edge to a non-existent `ghost`.
