@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 
 import { parse } from './parser.js';
 import { renderMermaid } from './mermaid.js';
-import { solve } from './solver.js';
+import { solve, solveBipolar } from './solver.js';
 
 function parseOk(source: string) {
   const r = parse(source);
@@ -109,5 +109,15 @@ describe('renderMermaid with labels', () => {
     const solved = solve(result.ast);
     const out = renderMermaid(result.ast, solved.labels);
     expect(out).not.toContain('arg_');
+  });
+
+  it('classDefs nodes from solveBipolar output', () => {
+    const src = '[#A].\n[#B].\n[#A] --> [#B].\n';
+    const parsed = parse(src);
+    if (!parsed.ok) throw new Error('parse failed');
+    const labels = solveBipolar(parsed.ast).labels;
+    const out = renderMermaid(parsed.ast, labels);
+    expect(out).toContain('classDef in');
+    expect(out).toMatch(/class\s+\S+\s+in/);
   });
 });
