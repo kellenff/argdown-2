@@ -466,7 +466,7 @@ Replace `src/solver.ts` with:
 // becomes an attack edge; every other arrow kind is counted in `dropped`.
 // Method 1 of the design; Methods 2 (bipolar) and 3 (ASPIC+) are future cycles.
 
-import type { Argument, Document, FactRef, FactStatement, RelationEndpoint, RelationStatement } from './ast.js';
+import type { Document, FactRef, FactStatement, RelationStatement } from './ast.js';
 
 export type Label = 'in' | 'out' | 'undec';
 
@@ -493,15 +493,6 @@ function factKey(stmt: FactStatement): string {
   return factKeyFromRef(stmt.fact.ref);
 }
 
-function argKey(arg: Argument): string {
-  return `arg:${arg.loc.start.line}:${arg.loc.start.column}`;
-}
-
-function endpointKey(ep: RelationEndpoint, argLocations: Map<number, string>): string {
-  if (ep.kind === 'FactRef') return factKeyFromRef(ep);
-  return argLocations.get(ep as unknown as number) ?? argKey(ep as Argument);
-}
-
 export function solve(document: Document): SolveResult {
   const labels = new Map<string, Label>();
   const warnings: string[] = [];
@@ -510,25 +501,17 @@ export function solve(document: Document): SolveResult {
     concession: 0, qualification: 0, equivalence: 0,
   };
 
-  // Pass 1: key addressable nodes and remember each Argument's location→key mapping
-  // so RelationEndpoints of kind 'Argument' resolve correctly. (Endpoints of kind
-  // 'Argument' appear at parse time as nested Argument nodes; we use a simple
-  // structural-equal match against elements to recover their arg:L:C key.)
-  const argByNode = new Map<Argument, string>();
+  // Pass 1: key FactStatements. Arguments will be added in Task 3 (already
+  // present in this snapshot but the file as written here pre-args only has
+  // FactStatement handling).
   for (const el of document.elements) {
-    if (el.kind === 'FactStatement') {
-      const key = factKey(el);
-      if (labels.has(key)) warnings.push('duplicate fact id: ' + key);
-      labels.set(key, 'undec');
-    } else if (el.kind === 'Argument') {
-      const key = argKey(el);
-      if (labels.has(key)) warnings.push('duplicate argument location: ' + key);
-      labels.set(key, 'undec');
-      argByNode.set(el, key);
-    }
+    if (el.kind !== 'FactStatement') continue;
+    const key = factKey(el);
+    if (labels.has(key)) warnings.push('duplicate fact id: ' + key);
+    labels.set(key, 'undec');
   }
 
-  // Pass 2: walk relations, count drops, and (Tasks 5+) attach attacks.
+  // Pass 2: walk relations, count drops. Attack wiring lands in Task 5.
   for (const el of document.elements) {
     if (el.kind !== 'RelationStatement') continue;
     const rs = el as RelationStatement;
@@ -552,7 +535,7 @@ export function solve(document: Document): SolveResult {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `yarn test src/solver.test.ts`
-Expected: all 12 tests PASS. (The `endpointKey` and `argByNode` helpers are referenced but unused until Task 5; remove or silence the warning in Task 5.)
+Expected: all 12 tests PASS. (The argument keying and attack wiring land in Tasks 3 and 5 respectively.)
 
 - [ ] **Step 5: Lint and typecheck**
 
@@ -561,7 +544,7 @@ Run:
 yarn lint src/solver.ts
 yarn typecheck
 ```
-Expected: no errors. The `noUnusedLocals`/`noUnusedParameters` defaults in tsconfig should be lenient; if lint complains about `endpointKey`, suppress with `// @ts-expect-error — wired in Task 5` or simply leave — TS doesn't error on unused locals by default in this repo. Verify and continue.
+Expected: no errors. The reduced import list (no `Argument`, `RelationEndpoint`) keeps the file minimal until those types are actually used.
 
 - [ ] **Step 6: Commit**
 
