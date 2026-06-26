@@ -203,10 +203,8 @@ describe('solveAspic — untuned warning', () => {
     if (!result.ok) throw new Error('parse failed');
     const solved = solveAspic(result.ast);
     expect(
-      solved.warnings.some(
-        (w) =>
-          w.includes('0 preference values declared') ||
-          w.includes('rebut/undermine will not produce defeats'),
+      solved.warnings.some((w) =>
+        w.includes('non-attack edge(s) dropped and 0 preference values declared'),
       ),
     ).toBe(true);
   });
@@ -219,6 +217,10 @@ describe('solveAspic — untuned warning', () => {
     const result = parse(src);
     if (!result.ok) throw new Error('parse failed');
     const solved = solveAspic(result.ast);
-    expect(solved.warnings.some((w) => w.includes('0 preference values declared'))).toBe(false);
+    expect(
+      solved.warnings.some((w) =>
+        w.includes('non-attack edge(s) dropped and 0 preference values declared'),
+      ),
+    ).toBe(false);
   });
 });
