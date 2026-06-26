@@ -15,17 +15,21 @@ import {
   pickFirst,
   visitAttributeBlock,
   visitFactRef,
+  extractPreference,
 } from './visitor.js';
 
 export function visitArgument(cst: CstChildren): Argument {
   const conclSub = pickFirst(cst['conclusion'] as CstNode[]) as CstChildren;
   const premiseSubs = (cst['premise'] as CstNode[]) ?? [];
   const attrSub = pickFirst(cst['attributeBlock'] as CstNode[]);
+  const attributes = attrSub ? visitAttributeBlock(attrSub as CstChildren) : undefined;
+  const preference = extractPreference(attributes);
   return {
     kind: 'Argument',
     conclusion: visitConclusion(conclSub),
     premises: premiseSubs.map((p) => visitPremise(p as CstChildren)),
-    ...(attrSub ? { attributes: visitAttributeBlock(attrSub as CstChildren) } : {}),
+    ...(attributes ? { attributes } : {}),
+    ...(preference !== undefined ? { preference } : {}),
     loc: locFromTokens(collectAllTokens(cst)),
   };
 }

@@ -164,9 +164,12 @@ function visitStatement(cst: CstChildren): Element {
 }
 
 function visitFactStatement(cst: CstChildren): FactStatement {
+  const fact = visitFact(pickFirst(cst['fact'] as CstNode[]) as CstChildren);
+  const preference = extractPreference(fact.attributes);
   return {
     kind: 'FactStatement',
-    fact: visitFact(pickFirst(cst['fact'] as CstNode[]) as CstChildren),
+    fact,
+    ...(preference !== undefined ? { preference } : {}),
     loc: locFromTokens(collectAllTokens(cst)),
   };
 }
@@ -310,6 +313,17 @@ export function visitAttributeBlock(cst: CstChildren): AttributeBlock {
     entries[key] = makeValueNode(valSub as CstChildren);
   }
   return { kind: 'AttributeBlock', entries, loc: locFromTokens(collectAllTokens(cst)) };
+}
+
+// Read the `preference` attribute from an AttributeBlock. Returns the
+// numeric value when present and a NumberValue; otherwise undefined.
+// Defaulting to `undefined` (not `0`) lets the solver distinguish
+// "not set" from "explicitly 0" if it ever needs to.
+export function extractPreference(attributes: AttributeBlock | undefined): number | undefined {
+  if (!attributes) return undefined;
+  const v = attributes.entries['preference'];
+  if (v && v.kind === 'NumberValue') return v.value;
+  return undefined;
 }
 
 // ----- Public entry -----

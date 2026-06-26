@@ -101,6 +101,7 @@ export type ListItem = {
 export type FactStatement = {
   kind: 'FactStatement';
   fact: Fact;
+  preference?: number;
   loc: SourceLocation;
 };
 
@@ -156,6 +157,7 @@ export type Argument = {
   conclusion: Conclusion;
   premises: Premise[];
   attributes?: AttributeBlock;
+  preference?: number;
   loc: SourceLocation;
 };
 

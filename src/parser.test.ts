@@ -309,3 +309,45 @@ describe('smoke', () => {
     expect(msg).toMatch(/^test\.argdown:1:\d+: /);
   });
 });
+
+describe('preference attribute', () => {
+  it('extracts preference: <number> from a FactStatement into the new field', () => {
+    const src = '[#a] A fact { preference: 0.5 }';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed: ' + result.errors[0]?.message);
+    const el = result.ast.elements[0];
+    if (!el) throw new Error('no element');
+    if (el.kind !== 'FactStatement') throw new Error('expected FactStatement');
+    expect(el.preference).toBe(0.5);
+  });
+
+  it('extracts preference: <number> from an Argument into the new field', () => {
+    const src = '([#thesis]) -> [#a]. { preference: 0.7 }';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed: ' + result.errors[0]?.message);
+    const el = result.ast.elements[0];
+    if (!el) throw new Error('no element');
+    if (el.kind !== 'Argument') throw new Error('expected Argument');
+    expect(el.preference).toBe(0.7);
+  });
+
+  it('leaves preference undefined when the attribute is absent', () => {
+    const src = '[#a] A fact';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const el = result.ast.elements[0];
+    if (!el) throw new Error('no element');
+    if (el.kind !== 'FactStatement') throw new Error('expected FactStatement');
+    expect(el.preference).toBeUndefined();
+  });
+
+  it('leaves preference undefined when the value is not a number', () => {
+    const src = '[#a] A fact { preference: "high" }';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const el = result.ast.elements[0];
+    if (!el) throw new Error('no element');
+    if (el.kind !== 'FactStatement') throw new Error('expected FactStatement');
+    expect(el.preference).toBeUndefined();
+  });
+});
