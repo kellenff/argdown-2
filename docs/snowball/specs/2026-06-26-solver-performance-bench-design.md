@@ -96,12 +96,12 @@ The bench file is an **executable module**, not a test file — it runs as a sta
 | `solve:<fixture>` | `solve(cachedAst)` | Cached (parsed once at startup) | Isolates solver algorithmic cost |
 | `solve-bipolar:<fixture>` | `solveBipolar(cachedAst)` | Cached | Isolates bipolar algorithmic cost (aux-node expansion) |
 | `parse-solve:<fixture>` | `parse(src) + solve(ast)` | Fresh per iteration | Mirrors CLI one-shot shape (`argdown-mermaid --solve`) |
-| `parse-solve-bipolar:<fixture>` | `parse(src) + solveBipolar(ast)` | Fresh per iteration | Mirrors a hypothetical `--solve-bipolar` CLI flag |
+| `parse-solve-bipolar:<fixture>` | `parse(src) + solveBipolar(ast)` | Fresh per iteration | Mirrors `argdown-mermaid --solve --semantics=bipolar` CLI usage |
 
 **Cached-AST vs fresh-AST rationale:**
 
 - **Cached-AST tasks** isolate solver cost from parser cost. They answer "how fast does the solver run on a real document?" — the editor-tooling question (an LSP server caches the AST across keystrokes; only `solve()` reruns on document change).
-- **Fresh-AST tasks** mirror CLI one-shot usage. They answer "what does the user pay for `parse | solve`?" — the one-shot CLI question. A parser regression surfaces here too; that's a feature, not a bug, since it catches pipeline-level regressions.
+- **Fresh-AST tasks** mirror CLI one-shot usage. They answer "what does the user pay for `argdown-mermaid --solve`?" — the one-shot CLI question. Both end-to-end tasks are real CLI paths today: `parse-solve` mirrors `--solve` (defaults to Dung) and `parse-solve-bipolar` mirrors `--solve --semantics=bipolar` (bipolar dispatch wired in `src/cli.ts:57`). A parser regression surfaces here too; that's a feature, not a bug, since it catches pipeline-level regressions.
 
 **Why two solvers × two AST states = 4 task types:** the user picked "both solvers, plus parse+solve end-to-end" (one scope decision) and "both end-to-end tasks" (a second decision). The 4-task matrix is the conjunction of those choices; collapsing to 2 would lose information.
 
@@ -145,14 +145,14 @@ export type FixtureName = (typeof FIXTURES)[number][0];
 export const TASK_TYPES = ['solve', 'solve-bipolar', 'parse-solve', 'parse-solve-bipolar'] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 
-const TASK_BODY = (task: TaskType, source: string) => {
+function makeTaskBody(task: TaskType, source: string, cachedAst: Document): () => void {
   switch (task) {
-    case 'solve':               return (ast: Document) => solve(ast);
-    case 'solve-bipolar':       return (ast: Document) => solveBipolar(ast);
+    case 'solve':               return () => solve(cachedAst);
+    case 'solve-bipolar':       return () => solveBipolar(cachedAst);
     case 'parse-solve':         return () => { const r = parse(source); if (r.ok) solve(r.ast); };
     case 'parse-solve-bipolar': return () => { const r = parse(source); if (r.ok) solveBipolar(r.ast); };
   }
-};
+}
 ```
 
 `TASK_BODY` is a factory returning a thunk parameterized by AST state. Cached-AST tasks ignore `source`; end-to-end tasks ignore `ast`.
@@ -183,11 +183,10 @@ const peakHeapMB = new Map<string, number>(); // keyed by task name
 for (const taskType of TASK_TYPES) {
   for (const [name, source, ast] of loaded) {
     const taskName = `${taskType}:${name}`;
-    const body = TASK_BODY(taskType, source);
+    const body = makeTaskBody(taskType, source, ast);
     bench.add(taskName, () => {
       const before = process.memoryUsage().heapUsed;
-      if (taskType === 'solve' || taskType === 'solve-bipolar') body(ast);
-      else body(); // parse-solve / parse-solve-bipolar
+      body();
       const after = process.memoryUsage().heapUsed;
       const delta = (after - before) / 1024 / 1024;
       const current = peakHeapMB.get(taskName) ?? 0;
