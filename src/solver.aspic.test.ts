@@ -243,14 +243,37 @@ describe('solveAspic — edge cases', () => {
     expect(argKeys.length).toBe(2);
   });
 
-  it('disjunction in premise position is treated as opaque (first atom only)', () => {
-    const src = '([#thesis]) -> ([#a] | [#b]).';
+  it('disjunction in premise position is keyed on the first atom only (undermine first atom → arg OUT)', () => {
+    const src = [
+      '[#a] A { preference: 0 }',
+      '[#b] B { preference: 0 }',
+      '[#x] Attacker { preference: 1 }',
+      '([#thesis]) -> ([#a] | [#b]).',
+      '[#x] -.- [#a].',
+    ].join('\n');
     const result = parse(src);
     if (!result.ok) throw new Error('parse failed');
     const solved = solveAspic(result.ast);
-    // No crash, the argument is keyed under one arg:L:C key.
     const argKeys = [...solved.labels.keys()].filter((k) => k.startsWith('arg:'));
-    expect(argKeys.length).toBeGreaterThanOrEqual(1);
+    // First atom is what `buildPremiseIndex` keys — undermining it defeats the arg.
+    expect(solved.labels.get(argKeys[0]!)).toBe('out');
+  });
+
+  it('disjunction in premise position ignores the second atom (undermine second atom → arg IN)', () => {
+    const src = [
+      '[#a] A { preference: 0 }',
+      '[#b] B { preference: 0 }',
+      '[#x] Attacker { preference: 1 }',
+      '([#thesis]) -> ([#a] | [#b]).',
+      '[#x] -.- [#b].',
+    ].join('\n');
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    const argKeys = [...solved.labels.keys()].filter((k) => k.startsWith('arg:'));
+    // Second atom is NOT in `buildPremiseIndex`; the undermine targets it as
+    // a non-premise, so the arg is not defeated (falls through to `'in'`).
+    expect(solved.labels.get(argKeys[0]!)).toBe('in');
   });
 
   it('dangling edge emits a warning and does not crash', () => {
@@ -260,23 +283,6 @@ describe('solveAspic — edge cases', () => {
     expect(() => solveAspic(result.ast)).not.toThrow();
     const solved = solveAspic(result.ast);
     expect(solved.warnings.some((w) => w.includes('dangling'))).toBe(true);
-  });
-
-  it('self-defeat-shape: an arg whose premise is rebutted by a less-preferred fact is keyed but undecided', () => {
-    // Corrected: argument attribute blocks need `.` before `{` (the parser
-    // would otherwise require the period right after the premise list).
-    // attacker `a` (pref 0 default) < target `thesis` (pref 0.5) → no defeat,
-    // so the argument is in `rawAttacks.target` but not in `defeats` → UNDEC.
-    // This is the only thing we can pin here; a true self-defeat (`A --x A`
-    // with equal preference) needs the public parser to accept argument-
-    // endpoint relations, which it doesn't.
-    const src = '([#thesis]) -> [#a]. { preference: 0.5 }\n[#a] --x [#thesis].';
-    const result = parse(src);
-    if (!result.ok) throw new Error('parse failed');
-    const solved = solveAspic(result.ast);
-    const argKeys = [...solved.labels.keys()].filter((k) => k.startsWith('arg:'));
-    expect(argKeys.length).toBe(1);
-    expect(solved.labels.get('thesis')).toBe('undec');
   });
 
   it('three-cycle of rebuttals on conclusion refs (all preference 0) leaves the cycle UNDEC', () => {
