@@ -118,3 +118,106 @@ describe('public API', () => {
     expect(publicSolveBipolar).toBe(solveBipolar);
   });
 });
+
+describe('solveBipolar — auxiliary stripping', () => {
+  it('does not surface auxiliary nodes in the labels map', () => {
+    const src = '[#a].\n[#b].\n[#a] --> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveBipolar(result.ast);
+    for (const key of solved.labels.keys()) {
+      expect(key.startsWith('sup:')).toBe(false);
+    }
+  });
+});
+
+describe('solveBipolar — dangling edges', () => {
+  it('emits a warning for a dangling support edge', () => {
+    // Hand-build: a fact `a` plus a support edge to a non-existent `ghost`.
+    const doc = {
+      kind: 'Document' as const,
+      elements: [
+        {
+          kind: 'FactStatement' as const,
+          fact: {
+            kind: 'Fact' as const,
+            ref: {
+              kind: 'FactRef' as const,
+              head: {
+                kind: 'IdentifierHead' as const,
+                identifier: 'a',
+                loc: {
+                  start: { line: 1, column: 2, offset: 1 },
+                  end: { line: 1, column: 4, offset: 3 },
+                },
+              },
+              loc: {
+                start: { line: 1, column: 1, offset: 0 },
+                end: { line: 1, column: 5, offset: 4 },
+              },
+            },
+            loc: {
+              start: { line: 1, column: 1, offset: 0 },
+              end: { line: 1, column: 5, offset: 4 },
+            },
+          },
+          loc: {
+            start: { line: 1, column: 1, offset: 0 },
+            end: { line: 1, column: 5, offset: 4 },
+          },
+        },
+        {
+          kind: 'RelationStatement' as const,
+          relations: [
+            {
+              kind: 'Relation' as const,
+              from: {
+                kind: 'FactRef' as const,
+                head: {
+                  kind: 'IdentifierHead' as const,
+                  identifier: 'a',
+                  loc: {
+                    start: { line: 2, column: 2, offset: 7 },
+                    end: { line: 2, column: 4, offset: 9 },
+                  },
+                },
+                loc: {
+                  start: { line: 2, column: 1, offset: 6 },
+                  end: { line: 2, column: 5, offset: 10 },
+                },
+              },
+              arrow: 'support' as const,
+              to: {
+                kind: 'FactRef' as const,
+                head: {
+                  kind: 'IdentifierHead' as const,
+                  identifier: 'ghost',
+                  loc: {
+                    start: { line: 2, column: 11, offset: 16 },
+                    end: { line: 2, column: 17, offset: 22 },
+                  },
+                },
+                loc: {
+                  start: { line: 2, column: 10, offset: 15 },
+                  end: { line: 2, column: 18, offset: 23 },
+                },
+              },
+              loc: {
+                start: { line: 2, column: 1, offset: 6 },
+                end: { line: 2, column: 18, offset: 23 },
+              },
+            },
+          ],
+          loc: {
+            start: { line: 2, column: 1, offset: 6 },
+            end: { line: 2, column: 18, offset: 23 },
+          },
+        },
+      ],
+      loc: { start: { line: 1, column: 1, offset: 0 }, end: { line: 2, column: 18, offset: 23 } },
+    };
+    const solved = solveBipolar(doc);
+    expect(solved.warnings.some((w) => w.includes('dangling support edge'))).toBe(true);
+    expect(solved.labels.has('ghost')).toBe(false);
+  });
+});
