@@ -252,9 +252,9 @@ class <id4> undec
 
 Key → Mermaid id mapping:
 
-- Fact keys are used directly: `'co2'` → `co2` (matches existing mermaid node naming).
-- Argument keys `arg:L:C` → `arg_L_C` (Mermaid ids disallow `:`; underscores are the safe replacement, matches the existing arg-node rendering convention).
-- Keys not present in `document.elements` (defensive) → skipped with a stderr warning emitted by the caller, not the renderer.
+- Fact keys (`IdentifierHead.identifier`, `'title:' + TitleHead.text`) are used directly. They match the keys `renderMermaid` produces internally (`headToId` in `src/mermaid.ts`).
+- Argument keys (`arg:L:C`) are **computed but not rendered** in v1. The existing Mermaid renderer does not declare a per-argument node — arguments are inlined as edges to the conclusion head (`src/mermaid.ts` lines around the `case 'Argument':` branch). Adding per-argument nodes would change the visual output of every argument-bearing diagram and break existing snapshots; that's a separate cycle. The labels map's `arg:L:C` entries are silently skipped by the Mermaid renderer (consistent with the unknown-key rule below).
+- Keys not present in `document.elements` or not matching a rendered node id (defensive) → silently skipped. The renderer is pure string output and does not warn; callers that want to audit label coverage do so via `solve()`'s `warnings[]`.
 
 Sort class assignments by id within each label group (deterministic output).
 
