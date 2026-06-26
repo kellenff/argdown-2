@@ -82,4 +82,59 @@ describe('solve', () => {
       expect(solved.labels.has('a')).toBe(true);
     });
   });
+
+  describe('edge extraction', () => {
+    it('drops support edges and counts them', () => {
+      const src = '[#a].\n[#b].\n[#a] --> [#b].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.dropped.support).toBe(1);
+    });
+
+    it('counts each non-attack arrow kind separately', () => {
+      const src = [
+        '[#a].',
+        '[#b].',
+        '[#c].',
+        '[#d].',
+        '[#e].',
+        '[#f].',
+        '[#a] --> [#b].',
+        '[#a] -.-  [#c].',
+        '[#a] -.-> [#d].',
+        '[#a] ~>   [#e].',
+        '[#a] ?>   [#f].',
+      ].join('\n');
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.dropped.support).toBe(1);
+      expect(solved.dropped.undermine).toBe(1);
+      expect(solved.dropped.undercut).toBe(1);
+      expect(solved.dropped.concession).toBe(1);
+      expect(solved.dropped.qualification).toBe(1);
+    });
+
+    it('attaches attack edges between fact nodes without dropping', () => {
+      const src = '[#a].\n[#b].\n[#a] --x [#b].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.dropped.support).toBe(0);
+      // Both nodes still keyed.
+      expect(solved.labels.has('a')).toBe(true);
+      expect(solved.labels.has('b')).toBe(true);
+    });
+
+    it('unfolds multi-endpoint attacks into one edge per pair', () => {
+      const src = '[#a].\n[#b].\n[#c].\n[#a], [#b] --x [#c].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      // After labeling (Task 6), `a` and `b` are IN, `c` is OUT.
+      // This task only asserts that no edge is dropped.
+      expect(solved.dropped.support).toBe(0);
+    });
+  });
 });
