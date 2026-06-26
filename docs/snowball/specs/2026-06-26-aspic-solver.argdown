@@ -1,0 +1,60 @@
+# ASPIC+ solver approach selection
+
+// Three approaches for adding ASPIC+ to argdown-2. The current solvers
+// (solve = Method 1 Dung, solveBipolar = Method 2 Cayrol/Lagasquie-Schiex
+// deductive support) were both authored against the same v1 contract:
+// SolveResult = { labels, warnings } with a pure-attack / support-edge
+// reduction. ASPIC+ is the third rung of the Method 1/2/3 ladder
+// (grounded-Dung-solver-design.md §11).
+
+## Options under consideration
+
+[Approach A]: Standard ASPIC+, one-level argument construction, `preference:` grammar attribute.
+  + <Canonical ASPIC+>: The standard Modgil & Prakken 2014 dispute derivation. The literature, the textbooks, and the prior designs in this repo all reference this exact formulation.
+  + <Architecture fit>: One Argument AST node = one constructed argument. Reuses the existing `arg:L:C` synthetic key as the constructed-argument ID. No parallel node space.
+  + <Reuses label()>: The same grounded fixpoint runs unchanged on the defeat map. No new algorithm to validate, no new mutants to write tests for.
+  + <Grammar change is local>: Adding `preference: <number>` to the existing attribute block grammar is one line in the BNF. The attribute block already accepts arbitrary `key: value` pairs.
+  + <Backward compatible>: SolveResult gets an optional `defeats?` field. Existing two solvers return undefined. Mermaid renderer signature unchanged.
+  - <Preferences require user setup>: All-defaults (preference 0 everywhere) means all attacks are tied, so all defeats fail. ASPIC+ only "works" once users set preferences. Real risk that v1 looks broken on untuned documents.
+  - <Single-variant commitment>: Ships the standard variant only; extended and restricted would be follow-up cycles.
+
+[Approach B]: Recursive ASPIC+, one-level plus recursive sub-argument expansion.
+  + <Full ASPIC+>: Sub-arguments in premise lists are expanded into their own premises. Closest to the academic definition.
+  + <Deeper reasoning chains>: An argument like `([#thesis]) -> ([#sub]) -> [#p1], [#p2]` resolves to a tree of constructed arguments, allowing undercut of the outer to propagate to the inner.
+  - <Argument explosion>: Deeply nested documents multiply the argument count. Worst case is exponential; expected case is bad enough.
+  - <Constructed-argument naming>: Need a parallel key space (`constructed:premise1,premise2->conclusion`) because the existing `arg:L:C` keys only cover explicit `Argument` AST nodes.
+  - <Defeats map grows>: The `defeats` map for nested chains is harder to interpret — constructed arguments don't have a stable user-facing identity.
+  - <Bigger cycle>: ~25% more code than A. Same grammar change, same tests, plus recursive expansion tests.
+
+[Approach C]: Extended ASPIC+, one-level, all attacks defeat when preference favors.
+  + <More aggressive>: A rebut or undermine with strict preference is a defeat, no extra "always" rule. The literature variant.
+  - <Algorithm-only change>: Same code footprint as A; the difference is a single conditional in the defeat-derivation step. Not worth a separate approach — if the user wants this, it can be a `--semantics=aspic-extended` flag added later.
+  - <No correctness gain over A>: Both A and C use the same architecture; the only difference is whether undercut is "always wins" or "wins with preference." A's choice is the standard.
+
+## Cross-cutting considerations
+
+<Method 1/2/3 ladder completion>: The two prior design specs (grounded Dung, bipolar reduction) both call out Method 3 (ASPIC+) as "the explicit next rung." A, B, and C all complete the ladder; this consideration doesn't break the tie.
+  +> [Approach A]
+  +> [Approach B]
+  +> [Approach C]
+
+<YAGNI per project ADR>: The codebase ADR says "future richer arrow semantics (bipolar support, ASPIC+ undercut/undermine distinction) can layer on top without breaking the v1 contract." Layering on top favors A. B's recursive expansion is exactly the kind of speculative depth the ADR warns against.
+  +> [Approach A]
+  - [Approach B]
+
+<Grammar change cost>: All three approaches require adding `preference: <number>` to the grammar and the AST. The cost is identical across A, B, C.
+  +> [Approach A]
+  +> [Approach B]
+  +> [Approach C]
+
+<Defeats surface>: A and B both expose the `defeats?: Map<argKey, argKey[]>` field on SolveResult. C is a refinement of A, not an alternative. The optional field is the unifying contract.
+  +> [Approach A]
+  +> [Approach B]
+
+## Recommended
+
+[Recommended]: Approach A — Standard ASPIC+, one-level argument construction, with the `preference:` grammar attribute.
+  <+ <Canonical and minimal>: The standard Modgil & Prakken 2014 dispute derivation in its textbook form. No recursive expansion, no aggressive variant, no extended semantics. The smallest cycle that delivers a real ASPIC+ and completes the Method 1/2/3 ladder.
+  <+ <Architecture fit>: One Argument AST node = one constructed argument. Reuses the existing `arg:L:C` synthetic key. The `label()` fixpoint runs unchanged. The new code is the defeat-derivation step, not a new algorithm.
+  <+ <Extensible>: Extended ASPIC+ (Approach C) and recursive construction (Approach B) can be added later as `--semantics=aspic-extended` and a separate `solveAspicRecursive()` if users need them. A doesn't paint into a corner.
+  <+ <Matches the user's selection>: User explicitly chose "with preferences" (option B in the preferences question), which corresponds to Approach A. B and C were not selected.
