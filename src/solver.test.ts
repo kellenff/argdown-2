@@ -236,4 +236,58 @@ describe('solve', () => {
       expect(solved.labels.get('arg:1:1')).toBe('in');
     });
   });
+
+  describe('grounded labeling — cycles and diamond', () => {
+    it('labels self-attacks OUT', () => {
+      const src = '[#a].\n[#a] --x [#a].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.labels.get('a')).toBe('out');
+    });
+
+    it('labels mutual attacks UNDEC', () => {
+      const src = '[#a].\n[#b].\n[#a] --x [#b].\n[#b] --x [#a].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.labels.get('a')).toBe('undec');
+      expect(solved.labels.get('b')).toBe('undec');
+    });
+
+    it('labels three-cycle UNDEC', () => {
+      const src = [
+        '[#a].', '[#b].', '[#c].',
+        '[#a] --x [#b].',
+        '[#b] --x [#c].',
+        '[#c] --x [#a].',
+      ].join('\n');
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.labels.get('a')).toBe('undec');
+      expect(solved.labels.get('b')).toBe('undec');
+      expect(solved.labels.get('c')).toBe('undec');
+    });
+
+    it('labels the diamond topology correctly', () => {
+      // a attacks b and c; d attacks b and c.
+      // a is unattacked → IN. d is attacked by a → OUT.
+      // b and c are attacked by a (IN) and d (OUT) → IN (some attacker OUT).
+      const src = [
+        '[#a].', '[#b].', '[#c].', '[#d].',
+        '[#a] --x [#b].',
+        '[#a] --x [#c].',
+        '[#d] --x [#b].',
+        '[#d] --x [#c].',
+      ].join('\n');
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.labels.get('a')).toBe('in');
+      expect(solved.labels.get('d')).toBe('out');
+      expect(solved.labels.get('b')).toBe('in');
+      expect(solved.labels.get('c')).toBe('in');
+    });
+  });
 });
