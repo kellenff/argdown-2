@@ -207,13 +207,40 @@ export function solveBipolar(document: Document): SolveResult {
     }
   }
 
-  // Pass 2: walk relations, attach attacks. Support edges handled in Task 4.
+  // Helper for support-edge reduction (B → s → A).
+  function addSupport(fromKey: string, toKey: string): void {
+    const auxKey = `sup:${fromKey}->${toKey}`;
+    // B → s
+    const sAttackers = attacks.get(auxKey) ?? [];
+    sAttackers.push(toKey);
+    attacks.set(auxKey, sAttackers);
+    // s → A
+    const aAttackers = attacks.get(fromKey) ?? [];
+    aAttackers.push(auxKey);
+    attacks.set(fromKey, aAttackers);
+  }
+
+  // Pass 2: walk relations, attach attacks and supports.
   for (const el of document.elements) {
     if (el.kind !== 'RelationStatement') continue;
     const rs = el as RelationStatement;
     for (const rel of rs.relations) {
-      if (rel.arrow === 'support' || rel.arrow === 'equivalence') {
-        continue; // Task 4 and Task 5
+      if (rel.arrow === 'support') {
+        const fromKey = endpointKey(rel.from, argByNode);
+        const toKey = endpointKey(rel.to, argByNode);
+        if (!labels.has(toKey)) {
+          warnings.push(`dangling support edge: ${fromKey} --> ${toKey}`);
+          continue;
+        }
+        if (!labels.has(fromKey)) {
+          labels.set(fromKey, 'undec');
+        }
+        addSupport(fromKey, toKey);
+        continue;
+      }
+      if (rel.arrow === 'equivalence') {
+        // Task 5
+        continue;
       }
       const fromKey = endpointKey(rel.from, argByNode);
       const toKey = endpointKey(rel.to, argByNode);
@@ -230,5 +257,10 @@ export function solveBipolar(document: Document): SolveResult {
     }
   }
 
-  return { labels: label(attacks), warnings };
+  // Run fixpoint on the augmented graph, then strip auxiliaries from the output.
+  const fullLabels = label(attacks);
+  for (const key of [...fullLabels.keys()]) {
+    if (key.startsWith('sup:')) fullLabels.delete(key);
+  }
+  return { labels: fullLabels, warnings };
 }

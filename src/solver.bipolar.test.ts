@@ -59,6 +59,41 @@ describe('solveBipolar — attack edges', () => {
   });
 });
 
+describe('solveBipolar — support edges', () => {
+  it('labels A=in, B=in for a single support A --> B', () => {
+    const src = '[#a].\n[#b].\n[#a] --> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveBipolar(result.ast);
+    expect(solved.labels.get('a')).toBe('in');
+    expect(solved.labels.get('b')).toBe('in');
+  });
+
+  it('labels A=in, B=in for A --> B with X --x A (aux promotes A)', () => {
+    // The auxiliary `sup:a->b` is OUT (because B is IN and s is attacked only by B).
+    // A's attackers are [sup:a->b=OUT, x=IN]; the fixpoint's `someOut → IN` rule
+    // promotes A. Net: X=in, A=in, B=in. (Diverges from Method 1 where A=out.)
+    const src = '[#a].\n[#b].\n[#x].\n[#a] --> [#b].\n[#x] --x [#a].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveBipolar(result.ast);
+    expect(solved.labels.get('x')).toBe('in');
+    expect(solved.labels.get('a')).toBe('in');
+    expect(solved.labels.get('b')).toBe('in');
+  });
+
+  it('labels A=out, B=out for A --> B with X --x B', () => {
+    // B's defeat propagates to its supporter A via the auxiliary chain.
+    const src = '[#a].\n[#b].\n[#x].\n[#a] --> [#b].\n[#x] --x [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveBipolar(result.ast);
+    expect(solved.labels.get('x')).toBe('in');
+    expect(solved.labels.get('a')).toBe('out');
+    expect(solved.labels.get('b')).toBe('out');
+  });
+});
+
 describe('public API', () => {
   it('re-exports solveBipolar from index.ts', () => {
     expect(publicSolveBipolar).toBe(solveBipolar);
