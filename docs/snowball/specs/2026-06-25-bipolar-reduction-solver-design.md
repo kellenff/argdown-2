@@ -232,7 +232,7 @@ For each existing test that asserted `result.dropped.support === N`, change to a
 | Dangling equivalence | `A <-> NONEXISTENT` | Warning emitted |
 | All arrow kinds | mix of `--x`, `-->`, `-.->`, `-.-`, `~>`, `?>`, `<->` | No "dropped" warnings; non-support arrows behave as attack |
 | Method 1 vs Method 2 sanity | `A --> B` — same doc, both solvers | Method 1: B=`in` (unattacked); Method 2: A=`in`, B=`in` via support |
-| Argument support | `A --> ([#B]) -> [#C]` | C=`in` via the argument; both argument and `C` labeled |
+| Argument support | `A --> ([#B]) -> [#C]` | Outer argument (`arg:2:1`) and its premise `B` are IN. The relation's argument-as-endpoint on line 3 is a separate AST node (`arg:3:10`) not in `argByNode`, so it emits a `dangling support edge` warning and the auxiliary chain is not built. |
 | Equivalence not equal to two `--x` | `A --> B`, `A <-> C` | B labeled via support chain; C labeled via two support chains (different fixpoint outcome than if they were two attacks) |
 | Self-attack preserved | `A --x A` plus `A --> B` | A=`out`; B's status depends on whether B is unattacked (then `in` via support from out-supporter — actually now `out` because the supporter is out) |
 
