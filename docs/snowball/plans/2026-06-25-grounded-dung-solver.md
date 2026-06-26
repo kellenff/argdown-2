@@ -195,7 +195,7 @@ export type SolveResult = {
 function factKey(stmt: FactStatement): string {
   const head = stmt.fact.ref.head;
   if (head.kind === 'IdentifierHead') return head.identifier;
-  return 'title:' + head.text;
+  return 'title:' + head.title;
 }
 
 export function solve(document: Document): SolveResult {
@@ -323,7 +323,7 @@ export type SolveResult = {
 function factKey(stmt: FactStatement): string {
   const head = stmt.fact.ref.head;
   if (head.kind === 'IdentifierHead') return head.identifier;
-  return 'title:' + head.text;
+  return 'title:' + head.title;
 }
 
 function argKey(arg: Argument): string {
@@ -486,7 +486,7 @@ export type SolveResult = {
 function factKeyFromRef(ref: FactRef): string {
   const head = ref.head;
   if (head.kind === 'IdentifierHead') return head.identifier;
-  return 'title:' + head.text;
+  return 'title:' + head.title;
 }
 
 function factKey(stmt: FactStatement): string {
@@ -665,7 +665,7 @@ export type SolveResult = {
 function factKeyFromRef(ref: FactRef): string {
   const head = ref.head;
   if (head.kind === 'IdentifierHead') return head.identifier;
-  return 'title:' + head.text;
+  return 'title:' + head.title;
 }
 
 function factKey(stmt: FactStatement): string {
@@ -855,7 +855,7 @@ export type SolveResult = {
 function factKeyFromRef(ref: FactRef): string {
   const head = ref.head;
   if (head.kind === 'IdentifierHead') return head.identifier;
-  return 'title:' + head.text;
+  return 'title:' + head.title;
 }
 
 function factKey(stmt: FactStatement): string {
