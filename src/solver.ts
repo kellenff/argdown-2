@@ -21,33 +21,33 @@ export type SolveResult = {
   warnings: string[];
 };
 
-function factKeyFromRef(ref: FactRef): string {
+export function factKeyFromRef(ref: FactRef): string {
   const head = ref.head;
   if (head.kind === 'IdentifierHead') return head.identifier;
   return 'title:' + head.title;
 }
 
-function factKey(stmt: FactStatement): string {
+export function factKey(stmt: FactStatement): string {
   return factKeyFromRef(stmt.fact.ref);
 }
 
-function argKey(arg: Argument): string {
+export function argKey(arg: Argument): string {
   return `arg:${arg.loc.start.line}:${arg.loc.start.column}`;
 }
 
-function conclusionRefKey(c: Conclusion): string | undefined {
+export function conclusionRefKey(c: Conclusion): string | undefined {
   if (c.kind === 'atom') return factKeyFromRef(c.value);
   return undefined;
 }
 
-function endpointKey(ep: RelationEndpoint, argByNode: Map<Argument, string>): string {
+export function endpointKey(ep: RelationEndpoint, argByNode: Map<Argument, string>): string {
   if (ep.kind === 'FactRef') return factKeyFromRef(ep);
   const known = argByNode.get(ep);
   if (known !== undefined) return known;
   return argKey(ep as Argument);
 }
 
-function label(attacks: Map<string, string[]>): Map<string, Label> {
+export function label(attacks: Map<string, string[]>): Map<string, Label> {
   const labels = new Map<string, Label>();
 
   // Initialize: every targeted node starts UNDEC unless it has no attackers
@@ -275,8 +275,4 @@ export function solveBipolar(document: Document): SolveResult {
     if (!key.startsWith('sup:')) out.set(key, value);
   }
   return { labels: out, warnings };
-}
-
-export function solveAspic(document: Document): SolveResult {
-  return { labels: new Map(), warnings: [] };
 }
