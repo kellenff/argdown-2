@@ -158,3 +158,67 @@ describe('solveAspic — undermine (-.-)', () => {
     expect(solved.labels.get(argKeys[0]!)).toBe('out');
   });
 });
+
+describe('solveAspic — non-attack arrows', () => {
+  it('drops support edges with a warning', () => {
+    const src = '[#a] A fact.\n[#b] B fact.\n[#a] --> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    expect(solved.warnings.some((w) => w.includes('dropped support'))).toBe(true);
+    // a, b are unattacked → in
+    expect(solved.labels.get('a')).toBe('in');
+    expect(solved.labels.get('b')).toBe('in');
+  });
+
+  it('drops equivalence edges with a warning', () => {
+    const src = '[#a] A fact.\n[#b] B fact.\n[#a] <-> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    expect(solved.warnings.some((w) => w.includes('dropped equivalence'))).toBe(true);
+  });
+
+  it('drops concession edges with a warning', () => {
+    const src = '[#a] A fact.\n[#b] B fact.\n[#a] ~> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    expect(solved.warnings.some((w) => w.includes('dropped concession'))).toBe(true);
+  });
+
+  it('drops qualification edges with a warning', () => {
+    const src = '[#a] A fact.\n[#b] B fact.\n[#a] ?> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    expect(solved.warnings.some((w) => w.includes('dropped qualification'))).toBe(true);
+  });
+});
+
+describe('solveAspic — untuned warning', () => {
+  it('emits the untuned warning when non-attack arrows exist and no preferences are declared', () => {
+    const src = '[#a] A fact.\n[#b] B fact.\n[#a] --> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    expect(
+      solved.warnings.some(
+        (w) =>
+          w.includes('0 preference values declared') ||
+          w.includes('rebut/undermine will not produce defeats'),
+      ),
+    ).toBe(true);
+  });
+
+  it('does NOT emit the untuned warning when at least one preference is declared', () => {
+    // Corrected: facts use no period before `{ preference: ... }`. The parser
+    // terminates the claim at the period, so `[#a] A fact. { ... }` would
+    // attach the attribute block to nothing.
+    const src = '[#a] A fact { preference: 0.5 }\n[#b] B fact.\n[#a] --> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    expect(solved.warnings.some((w) => w.includes('0 preference values declared'))).toBe(false);
+  });
+});
