@@ -48,11 +48,6 @@ async function main(): Promise<void> {
     for (const v of ['in', 'out', 'undec'] as const) {
       lines.push(`${v.toUpperCase()} (${groups[v].length}): ${groups[v].join(', ')}`);
     }
-    const d = solved.dropped;
-    lines.push(
-      `Dropped:   ${d.support} support, ${d.undercut} undercut, ${d.undermine} undermine, ` +
-        `${d.concession} concession, ${d.qualification} qualification, ${d.equivalence} equivalence`,
-    );
     process.stdout.write(lines.join('\n') + '\n');
     for (const w of solved.warnings) {
       process.stderr.write(`warning: ${w}\n`);

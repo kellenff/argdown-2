@@ -17,14 +17,6 @@ export type Label = 'in' | 'out' | 'undec';
 
 export type SolveResult = {
   labels: Map<string, Label>;
-  dropped: {
-    support: number;
-    undercut: number;
-    undermine: number;
-    concession: number;
-    qualification: number;
-    equivalence: number;
-  };
   warnings: string[];
 };
 
@@ -169,10 +161,6 @@ export function solve(document: Document): SolveResult {
     }
   }
 
-  const finalLabels = label(attacks);
-  // Final labels: every addressable claim (including sources that aren't targets).
-  // The `label` function already populated both targets and sources.
-
   const totalDropped =
     dropped.support +
     dropped.undercut +
@@ -182,12 +170,12 @@ export function solve(document: Document): SolveResult {
     dropped.equivalence;
   if (totalDropped > 0) {
     warnings.push(
-      `Method 1 (grounded Dung) dropped ${totalDropped} non-attack edge(s): ` +
+      `solve(): dropped ${totalDropped} non-attack edge(s): ` +
         `support=${dropped.support}, undercut=${dropped.undercut}, ` +
         `undermine=${dropped.undermine}, concession=${dropped.concession}, ` +
         `qualification=${dropped.qualification}, equivalence=${dropped.equivalence}`,
     );
   }
 
-  return { labels: finalLabels, dropped, warnings };
+  return { labels: label(attacks), warnings };
 }

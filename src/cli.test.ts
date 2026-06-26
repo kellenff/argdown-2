@@ -23,7 +23,7 @@ function runCli(
 }
 
 describe('CLI --solve', () => {
-  it('prints IN/OUT/UNDEC summary and dropped counts', () => {
+  it('prints IN/OUT/UNDEC summary without the dropped line', () => {
     const dir = mkdtempSync(join(tmpdir(), 'argdown-cli-'));
     const file = join(dir, 'doc.argdown');
     writeFileSync(file, '[#a].\n[#b].\n[#a] --x [#b].\n');
@@ -31,7 +31,7 @@ describe('CLI --solve', () => {
     expect(out.status).toBe(0);
     expect(out.stdout).toContain('IN');
     expect(out.stdout).toContain('OUT');
-    expect(out.stdout).toContain('Dropped:');
+    expect(out.stdout).not.toContain('Dropped:');
     expect(out.stdout).toContain('a');
     expect(out.stdout).toContain('b');
   });

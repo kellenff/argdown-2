@@ -10,7 +10,6 @@ describe('solve', () => {
     const solved = solve(result.ast);
     expect(solved.labels.size).toBe(0);
     expect(solved.warnings).toEqual([]);
-    expect(solved.dropped.support).toBe(0);
   });
 
   it('exports the public types', () => {
@@ -89,7 +88,7 @@ describe('solve', () => {
       const result = parse(src);
       if (!result.ok) throw new Error('parse failed');
       const solved = solve(result.ast);
-      expect(solved.dropped.support).toBe(1);
+      expect(solved.warnings.some((w) => w.includes('support=1'))).toBe(true);
     });
 
     it('counts each non-attack arrow kind separately', () => {
@@ -109,11 +108,11 @@ describe('solve', () => {
       const result = parse(src);
       if (!result.ok) throw new Error('parse failed');
       const solved = solve(result.ast);
-      expect(solved.dropped.support).toBe(1);
-      expect(solved.dropped.undermine).toBe(1);
-      expect(solved.dropped.undercut).toBe(1);
-      expect(solved.dropped.concession).toBe(1);
-      expect(solved.dropped.qualification).toBe(1);
+      expect(solved.warnings.some((w) => w.includes('support=1'))).toBe(true);
+      expect(solved.warnings.some((w) => w.includes('undermine=1'))).toBe(true);
+      expect(solved.warnings.some((w) => w.includes('undercut=1'))).toBe(true);
+      expect(solved.warnings.some((w) => w.includes('concession=1'))).toBe(true);
+      expect(solved.warnings.some((w) => w.includes('qualification=1'))).toBe(true);
     });
 
     it('attaches attack edges between fact nodes without dropping', () => {
@@ -121,7 +120,7 @@ describe('solve', () => {
       const result = parse(src);
       if (!result.ok) throw new Error('parse failed');
       const solved = solve(result.ast);
-      expect(solved.dropped.support).toBe(0);
+      expect(solved.warnings).toEqual([]);
       // Both nodes still keyed.
       expect(solved.labels.has('a')).toBe(true);
       expect(solved.labels.has('b')).toBe(true);
@@ -134,7 +133,7 @@ describe('solve', () => {
       const solved = solve(result.ast);
       // After labeling (Task 6), `a` and `b` are IN, `c` is OUT.
       // This task only asserts that no edge is dropped.
-      expect(solved.dropped.support).toBe(0);
+      expect(solved.warnings).toEqual([]);
     });
   });
 
@@ -345,14 +344,6 @@ describe('public API', () => {
     const label: PublicLabel = 'in';
     const result: PublicSolveResult = {
       labels: new Map([['x', label]]),
-      dropped: {
-        support: 0,
-        undercut: 0,
-        undermine: 0,
-        concession: 0,
-        qualification: 0,
-        equivalence: 0,
-      },
       warnings: [],
     };
     expect(result.labels.get('x')).toBe('in');
