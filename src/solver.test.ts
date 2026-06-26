@@ -137,4 +137,82 @@ describe('solve', () => {
       expect(solved.dropped.support).toBe(0);
     });
   });
+
+  describe('attack attachment', () => {
+    it('labels the target OUT for a single fact→fact attack', () => {
+      const src = '[#a].\n[#b].\n[#a] --x [#b].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      // Task 6 will fix the unattacked case; here we only assert that `b` is OUT.
+      expect(solved.labels.get('b')).toBe('out');
+    });
+
+    it('attaches attacks from fact to argument node', () => {
+      const src = '[#a].\n([#b]) -> [#c].\n[#a] --x ([#b]) -> [#c].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      // The argument node on line 2 is targeted by `a`. After Task 6,
+      // unattacked `a` is IN, so the argument becomes OUT.
+      expect(solved.labels.get('arg:2:1')).toBe('out');
+    });
+
+    it('emits a dangling-attack warning when the target is not a known node', () => {
+      // Hand-build the AST: a fact `a` plus an attack on a non-existent `ghost`.
+      const doc = {
+        kind: 'Document' as const,
+        elements: [
+          {
+            kind: 'FactStatement' as const,
+            fact: {
+              kind: 'Fact' as const,
+              ref: {
+                kind: 'FactRef' as const,
+                head: {
+                  kind: 'IdentifierHead' as const,
+                  identifier: 'a',
+                  loc: { start: { line: 1, column: 2, offset: 1 }, end: { line: 1, column: 4, offset: 3 } },
+                },
+                loc: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 5, offset: 4 } },
+              },
+              loc: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 5, offset: 4 } },
+            },
+            loc: { start: { line: 1, column: 1, offset: 0 }, end: { line: 1, column: 5, offset: 4 } },
+          },
+          {
+            kind: 'RelationStatement' as const,
+            relations: [{
+              kind: 'Relation' as const,
+              from: {
+                kind: 'FactRef' as const,
+                head: {
+                  kind: 'IdentifierHead' as const,
+                  identifier: 'a',
+                  loc: { start: { line: 2, column: 2, offset: 7 }, end: { line: 2, column: 4, offset: 9 } },
+                },
+                loc: { start: { line: 2, column: 1, offset: 6 }, end: { line: 2, column: 5, offset: 10 } },
+              },
+              arrow: 'attack' as const,
+              to: {
+                kind: 'FactRef' as const,
+                head: {
+                  kind: 'IdentifierHead' as const,
+                  identifier: 'ghost',
+                  loc: { start: { line: 2, column: 11, offset: 16 }, end: { line: 2, column: 17, offset: 22 } },
+                },
+                loc: { start: { line: 2, column: 10, offset: 15 }, end: { line: 2, column: 18, offset: 23 } },
+              },
+              loc: { start: { line: 2, column: 1, offset: 6 }, end: { line: 2, column: 18, offset: 23 } },
+            }],
+            loc: { start: { line: 2, column: 1, offset: 6 }, end: { line: 2, column: 18, offset: 23 } },
+          },
+        ],
+        loc: { start: { line: 1, column: 1, offset: 0 }, end: { line: 2, column: 18, offset: 23 } },
+      };
+      const solved = solve(doc);
+      expect(solved.warnings.some(w => w.includes('dangling attack edge'))).toBe(true);
+      expect(solved.labels.has('ghost')).toBe(false);
+    });
+  });
 });
