@@ -18,40 +18,69 @@ import {
 
 // One raw attack edge. For attack/undercut, `target` is `rel.to`.
 // For undermine, `target` is the containing argument (premiseIndex expansion)
-// and `undermineTarget` is the premise key used for the preference check.
-type RawAttack = {
-  attacker: string;
-  arrow: 'attack' | 'undercut' | 'undermine';
-  undermineTarget?: string;
-};
+// and `attack.undermineTarget` is the premise key used for the preference check.
+type RawAttack =
+  | { arrow: 'attack'; attacker: string }
+  | { arrow: 'undercut'; attacker: string }
+  | { arrow: 'undermine'; attacker: string; undermineTarget: string };
 
 type RawAttackEntry = { target: string; attack: RawAttack };
 
 export function solveAspic(document: Document): SolveResult {
   const labels = new Map<string, Label>();
+  const argByNode = new Map<Argument, string>();
+  const preferences = new Map<string, number>();
   const warnings: string[] = [];
 
-  // Pass 1: key all addressable nodes; read preference per node.
-  const argByNode = new Map<Argument, string>();
+  keyNodes(document, labels, argByNode, preferences, warnings);
+  const premiseIndex = buildPremiseIndex(document, argByNode);
+  const rawAttacks: RawAttackEntry[] = [];
+  classifyRelations(document, labels, argByNode, premiseIndex, rawAttacks, warnings);
+  const defeats = deriveDefeats(rawAttacks, preferences);
+  emitUntunedWarning(
+    warnings,
+    preferences,
+    warnings.some((w) => w.startsWith('solveAspic(): dropped ')),
+  );
+  const finalLabels = labelWithWeakAttacks(labels, rawAttacks, defeats);
+
+  return { labels: finalLabels, defeats, warnings };
+}
+
+// Pass 1 + 1b: key all addressable nodes and read per-node preference in one walk.
+function keyNodes(
+  document: Document,
+  labels: Map<string, Label>,
+  argByNode: Map<Argument, string>,
+  preferences: Map<string, number>,
+  warnings: string[],
+): void {
   for (const el of document.elements) {
     if (el.kind === 'FactStatement') {
       const key = factKey(el);
       if (labels.has(key)) warnings.push('duplicate fact id: ' + key);
       labels.set(key, 'undec');
+      if (el.preference !== undefined) preferences.set(key, el.preference);
     } else if (el.kind === 'Argument') {
       const key = argKey(el);
       if (labels.has(key)) warnings.push('duplicate argument location: ' + key);
       labels.set(key, 'undec');
       argByNode.set(el, key);
+      if (el.preference !== undefined) preferences.set(key, el.preference);
       const conclKey = conclusionRefKey(el.conclusion);
       if (conclKey !== undefined && !labels.has(conclKey)) {
         labels.set(conclKey, 'undec');
       }
     }
   }
+}
 
-  // Pass 2: build a premise index (premise key → arg keys that use it as a premise).
-  // Load-bearing in Pass 3: undermine expands via this index.
+// Pass 2: build a premise index (premise key → arg keys that use it as a premise).
+// Load-bearing in Pass 3: undermine expands via this index.
+function buildPremiseIndex(
+  document: Document,
+  argByNode: Map<Argument, string>,
+): Map<string, string[]> {
   const premiseIndex = new Map<string, string[]>();
   for (const el of document.elements) {
     if (el.kind !== 'Argument') continue;
@@ -72,11 +101,19 @@ export function solveAspic(document: Document): SolveResult {
       premiseIndex.set(pKey, list);
     }
   }
+  return premiseIndex;
+}
 
-  // Pass 3: classify relations into defeat candidates; build raw attack list.
-  // Undermine expands: A -.- P → one RawAttack per argument using P as a premise.
-  const rawAttacks: RawAttackEntry[] = [];
-  const attackTargets = new Set<string>();
+// Pass 3: classify relations into defeat candidates; build raw attack list.
+// Undermine expands: A -.- P → one RawAttack per argument using P as a premise.
+function classifyRelations(
+  document: Document,
+  labels: Map<string, Label>,
+  argByNode: Map<Argument, string>,
+  premiseIndex: Map<string, string[]>,
+  rawAttacks: RawAttackEntry[],
+  warnings: string[],
+): void {
   for (const el of document.elements) {
     if (el.kind !== 'RelationStatement') continue;
     for (const rel of el.relations) {
@@ -85,44 +122,12 @@ export function solveAspic(document: Document): SolveResult {
 
       switch (rel.arrow) {
         case 'attack':
-        case 'undercut': {
-          const toKey = endpointKey(rel.to, argByNode);
-          if (!labels.has(toKey)) {
-            warnings.push(`dangling ${rel.arrow} edge: ${fromKey} ${rel.arrow} ${toKey}`);
-            continue;
-          }
-          rawAttacks.push({ target: toKey, attack: { attacker: fromKey, arrow: rel.arrow } });
-          attackTargets.add(toKey);
+        case 'undercut':
+          classifyAttack(rel.arrow, fromKey, rel.to, argByNode, labels, rawAttacks, warnings);
           break;
-        }
-        case 'undermine': {
-          const premiseKey = endpointKey(rel.to, argByNode);
-          if (!labels.has(premiseKey)) {
-            warnings.push(`dangling undermine edge: ${fromKey} -.- ${premiseKey}`);
-            continue;
-          }
-          const containing = premiseIndex.get(premiseKey) ?? [];
-          if (containing.length === 0) {
-            warnings.push(
-              `solveAspic(): undermine edge targets premise that no argument uses: ${fromKey} -.- ${premiseKey}`,
-            );
-            // Fallback: defeat the premise directly. Preference compares against the premise.
-            rawAttacks.push({
-              target: premiseKey,
-              attack: { attacker: fromKey, arrow: 'undermine', undermineTarget: premiseKey },
-            });
-            attackTargets.add(premiseKey);
-          } else {
-            for (const argKeyStr of containing) {
-              rawAttacks.push({
-                target: argKeyStr,
-                attack: { attacker: fromKey, arrow: 'undermine', undermineTarget: premiseKey },
-              });
-              attackTargets.add(argKeyStr);
-            }
-          }
+        case 'undermine':
+          classifyUndermine(fromKey, rel.to, argByNode, labels, premiseIndex, rawAttacks, warnings);
           break;
-        }
         // support, equivalence, concession, qualification → drop with warning
         default:
           warnings.push(
@@ -132,20 +137,65 @@ export function solveAspic(document: Document): SolveResult {
       }
     }
   }
+}
 
-  // Pass 4: derive defeats (standard Modgil & Prakken 2014 dispute derivation).
-  // Read preference from the AST nodes via a side-channel map.
-  const preference = new Map<string, number>();
-  for (const el of document.elements) {
-    if (el.kind === 'FactStatement') {
-      if (el.preference !== undefined) preference.set(factKey(el), el.preference);
-    } else if (el.kind === 'Argument') {
-      if (el.preference !== undefined) preference.set(argKey(el), el.preference);
-    }
+function classifyAttack(
+  arrow: 'attack' | 'undercut',
+  fromKey: string,
+  to: import('./ast.js').RelationEndpoint,
+  argByNode: Map<Argument, string>,
+  labels: Map<string, Label>,
+  rawAttacks: RawAttackEntry[],
+  warnings: string[],
+): void {
+  const toKey = endpointKey(to, argByNode);
+  if (!labels.has(toKey)) {
+    warnings.push(`dangling ${arrow} edge: ${fromKey} ${arrow} ${toKey}`);
+    return;
   }
-  const prefOf = (k: string): number => preference.get(k) ?? 0;
-  const hasPreferenceDeclared = preference.size > 0;
+  rawAttacks.push({ target: toKey, attack: { arrow, attacker: fromKey } });
+}
 
+function classifyUndermine(
+  fromKey: string,
+  to: import('./ast.js').RelationEndpoint,
+  argByNode: Map<Argument, string>,
+  labels: Map<string, Label>,
+  premiseIndex: Map<string, string[]>,
+  rawAttacks: RawAttackEntry[],
+  warnings: string[],
+): void {
+  const premiseKey = endpointKey(to, argByNode);
+  if (!labels.has(premiseKey)) {
+    warnings.push(`dangling undermine edge: ${fromKey} -.- ${premiseKey}`);
+    return;
+  }
+  const containing = premiseIndex.get(premiseKey) ?? [];
+  if (containing.length === 0) {
+    warnings.push(
+      `solveAspic(): undermine edge targets premise that no argument uses: ${fromKey} -.- ${premiseKey}`,
+    );
+    // Fallback: defeat the premise directly. Preference compares against the premise.
+    rawAttacks.push({
+      target: premiseKey,
+      attack: { arrow: 'undermine', attacker: fromKey, undermineTarget: premiseKey },
+    });
+    return;
+  }
+  for (const argKeyStr of containing) {
+    rawAttacks.push({
+      target: argKeyStr,
+      attack: { arrow: 'undermine', attacker: fromKey, undermineTarget: premiseKey },
+    });
+  }
+}
+
+// Pass 4: derive defeats (standard Modgil & Prakken 2014 dispute derivation).
+function deriveDefeats(
+  rawAttacks: RawAttackEntry[],
+  preferences: Map<string, number>,
+): Map<string, string[]> {
+  const prefOf = (k: string): number => preferences.get(k) ?? 0;
   const defeats = new Map<string, string[]>();
   for (const { target, attack } of rawAttacks) {
     let isDefeat = false;
@@ -155,7 +205,7 @@ export function solveAspic(document: Document): SolveResult {
       isDefeat = prefOf(attack.attacker) > prefOf(target);
     } else {
       // undermine: compare attacker preference against the PREMISE preference.
-      isDefeat = prefOf(attack.attacker) > prefOf(attack.undermineTarget ?? target);
+      isDefeat = prefOf(attack.attacker) > prefOf(attack.undermineTarget);
     }
     if (isDefeat) {
       const list = defeats.get(target) ?? [];
@@ -163,27 +213,42 @@ export function solveAspic(document: Document): SolveResult {
       defeats.set(target, list);
     }
   }
+  return defeats;
+}
 
-  // Pass 5: untuned-documents warning.
-  const nonAttackDropped = warnings.some((w) => w.startsWith('solveAspic(): dropped '));
-  if (nonAttackDropped && !hasPreferenceDeclared) {
+// Pass 5: untuned-documents warning.
+function emitUntunedWarning(
+  warnings: string[],
+  preferences: Map<string, number>,
+  hasNonAttackDrops: boolean,
+): void {
+  if (hasNonAttackDrops && preferences.size === 0) {
     warnings.push(
       'solveAspic(): non-attack edge(s) dropped and 0 preference values declared; ' +
         'rebut/undermine will not produce defeats until preference is set.',
     );
   }
+}
 
-  // Pass 6: ASPIC+-specific labeling.
-  //   - unattacked nodes → IN
-  //   - nodes attacked only by weak attacks (attack not strong enough to defeat) → UNDEC
-  //   - nodes with at least one actual defeat → standard Dung fixpoint on `defeats`
-  const out = new Map<string, Label>();
-  for (const k of labels.keys()) out.set(k, 'in');
-  for (const target of attackTargets) if (!out.has(target)) out.set(target, 'in');
-  for (const target of attackTargets) {
+// Pass 6: ASPIC+-specific labeling.
+//   - unattacked nodes → IN
+//   - nodes attacked only by weak attacks (attack not strong enough to defeat) → UNDEC
+//   - nodes with at least one actual defeat → standard Dung fixpoint on `defeats`
+function labelWithWeakAttacks(
+  labels: Map<string, Label>,
+  rawAttacks: RawAttackEntry[],
+  defeats: Map<string, string[]>,
+): Map<string, Label> {
+  // Run label() on the defeat map: gives Dung fixpoint for defeated targets,
+  // 'in' for sources of defeats that aren't themselves defeated.
+  const out = label(defeats);
+  // Default: every keyed node not yet labeled → IN (unattacked).
+  for (const k of labels.keys()) {
+    if (!out.has(k)) out.set(k, 'in');
+  }
+  // Weak attacks (attacked but not defeated) → UNDEC.
+  for (const { target } of rawAttacks) {
     if (!defeats.has(target)) out.set(target, 'undec');
   }
-  for (const [k, v] of label(defeats)) out.set(k, v);
-
-  return { labels: out, defeats, warnings };
+  return out;
 }
