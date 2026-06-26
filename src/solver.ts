@@ -17,6 +17,7 @@ export type Label = 'in' | 'out' | 'undec';
 
 export type SolveResult = {
   labels: Map<string, Label>;
+  defeats?: Map<string, string[]>; // only solveAspic populates
   warnings: string[];
 };
 
@@ -274,4 +275,8 @@ export function solveBipolar(document: Document): SolveResult {
     if (!key.startsWith('sup:')) out.set(key, value);
   }
   return { labels: out, warnings };
+}
+
+export function solveAspic(document: Document): SolveResult {
+  return { labels: new Map(), warnings: [] };
 }
