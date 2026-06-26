@@ -11,6 +11,7 @@ import type {
   Premise,
   RelationEndpoint,
 } from './ast.js';
+import type { Label } from './solver.js';
 
 const ARROW_GLYPH: Record<Arrow, string> = {
   support: '-->',
@@ -36,8 +37,10 @@ function headLabel(head: FactHead): string {
 
 // Content-keyed dedupe: each parse produces a fresh FactHead object, so
 // reference-equality on the AST node would treat two `[#co2]` as different.
+// Keys match the solver's fact-key shape (bare identifier for IdentifierHead,
+// `title:` prefix for TitleHead).
 function headKey(head: FactHead): string {
-  return head.kind === 'IdentifierHead' ? `id:${head.identifier}` : `title:${head.title}`;
+  return head.kind === 'IdentifierHead' ? head.identifier : `title:${head.title}`;
 }
 
 function escapeLabel(s: string): string {
@@ -71,7 +74,7 @@ function endpointHead(ep: RelationEndpoint): FactHead {
   return conclusionHead(ep.conclusion);
 }
 
-export function renderMermaid(doc: Document): string {
+export function renderMermaid(doc: Document, labels?: Map<string, Label>): string {
   const headToId = new Map<string, string>();
   const disjToId = new Map<string, string>();
   const usedIds = new Set<string>();
@@ -164,6 +167,29 @@ export function renderMermaid(doc: Document): string {
 
   if (nodes.length === 0) {
     return 'flowchart TD\n    empty["(no statements)"]\n';
+  }
+
+  // When labels are provided, append classDef blocks and per-node class
+  // assignments. Argument keys (`arg:L:C`) are skipped — the existing renderer
+  // doesn't declare per-argument nodes; adding them would change the visual
+  // output of every argument-bearing diagram. Keys that don't match a rendered
+  // node id are also skipped (defensive).
+  if (labels && labels.size > 0) {
+    const groups: Record<Label, string[]> = { in: [], out: [], undec: [] };
+    for (const [k, v] of labels) {
+      if (k.startsWith('arg:')) continue;
+      if (!headToId.has(k)) continue;
+      groups[v].push(headToId.get(k)!);
+    }
+    for (const v of ['in', 'out', 'undec'] as const) groups[v].sort();
+    nodes.push('classDef in    fill:#d4f4dd,stroke:#1a7f37,color:#1a7f37');
+    nodes.push('classDef out   fill:#ffe0e0,stroke:#cf222e,color:#cf222e');
+    nodes.push('classDef undec fill:#f0f0f0,stroke:#999,color:#666');
+    for (const v of ['in', 'out', 'undec'] as const) {
+      if (groups[v].length > 0) {
+        nodes.push(`class ${groups[v].join(',')} ${v}`);
+      }
+    }
   }
 
   return ['flowchart TD', ...nodes, ...edges, ''].join('\n');

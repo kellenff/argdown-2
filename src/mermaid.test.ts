@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 
 import { parse } from './parser.js';
 import { renderMermaid } from './mermaid.js';
+import { solve } from './solver.js';
 
 function parseOk(source: string) {
   const r = parse(source);
@@ -76,5 +77,37 @@ describe('renderMermaid', () => {
     expect(out).toContain('A["A"]');
     expect(out).toContain('B -->|support| A');
     expect(out).toContain('C -->|support| A');
+  });
+});
+
+describe('renderMermaid with labels', () => {
+  it('still produces output for documents without labels arg', () => {
+    const result = parse('[#a].\n[#b].\n[#a] --> [#b].');
+    if (!result.ok) throw new Error('parse failed');
+    const out = renderMermaid(result.ast);
+    expect(out).toContain('flowchart');
+    expect(out).not.toContain('classDef');
+  });
+
+  it('appends classDef and class lines when labels are provided', () => {
+    const src = '[#a].\n[#b].\n[#a] --x [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solve(result.ast);
+    const out = renderMermaid(result.ast, solved.labels);
+    expect(out).toContain('classDef in');
+    expect(out).toContain('classDef out');
+    expect(out).toContain('classDef undec');
+    expect(out).toMatch(/class\s+\S+\s+in/);
+    expect(out).toMatch(/class\s+\S+\s+out/);
+  });
+
+  it('silently skips arg:L:C keys (argument labels are not rendered in v1)', () => {
+    const src = '([#a]) -> [#b].\n[#c] --x ([#a]) -> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solve(result.ast);
+    const out = renderMermaid(result.ast, solved.labels);
+    expect(out).not.toContain('arg_');
   });
 });
