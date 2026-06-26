@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from './parser.js';
 import { solveAspic } from './solver-aspic.js';
 import { solveAspic as publicSolveAspic } from './index.js';
+import { solveBipolar } from './solver.js';
 
 describe('solveAspic', () => {
   it('is re-exported from index.ts', () => {
@@ -222,5 +223,106 @@ describe('solveAspic — untuned warning', () => {
         w.includes('non-attack edge(s) dropped and 0 preference values declared'),
       ),
     ).toBe(false);
+  });
+});
+
+describe('solveAspic — edge cases', () => {
+  it('two top-level arguments are both keyed (sub-arg premise nesting does not round-trip via the public parser)', () => {
+    // The plan's source `'([#thesis]) -> ([#inner]).'` does not parse: nested-
+    // argument premises require their own arrow (`([#A]) -> ([#B]) -> [#C]`),
+    // which only the unit-level `parseArgument` produces. The public `parse()`
+    // rejects the bare `([#inner])` premise with "Argument requires at least
+    // one premise". What we can pin here is the count of arg-keyed nodes when
+    // two top-level Arguments are present — the load-bearing property of the
+    // `keyNodes` pass.
+    const src = '([#inner]) -> [#y].\n([#thesis]) -> [#z].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    const argKeys = [...solved.labels.keys()].filter((k) => k.startsWith('arg:'));
+    expect(argKeys.length).toBe(2);
+  });
+
+  it('disjunction in premise position is treated as opaque (first atom only)', () => {
+    const src = '([#thesis]) -> ([#a] | [#b]).';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    // No crash, the argument is keyed under one arg:L:C key.
+    const argKeys = [...solved.labels.keys()].filter((k) => k.startsWith('arg:'));
+    expect(argKeys.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('dangling edge emits a warning and does not crash', () => {
+    const src = '[#a] A fact.\n[#a] --x [#nonexistent].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    expect(() => solveAspic(result.ast)).not.toThrow();
+    const solved = solveAspic(result.ast);
+    expect(solved.warnings.some((w) => w.includes('dangling'))).toBe(true);
+  });
+
+  it('self-defeat-shape: an arg whose premise is rebutted by a less-preferred fact is keyed but undecided', () => {
+    // Corrected: argument attribute blocks need `.` before `{` (the parser
+    // would otherwise require the period right after the premise list).
+    // attacker `a` (pref 0 default) < target `thesis` (pref 0.5) → no defeat,
+    // so the argument is in `rawAttacks.target` but not in `defeats` → UNDEC.
+    // This is the only thing we can pin here; a true self-defeat (`A --x A`
+    // with equal preference) needs the public parser to accept argument-
+    // endpoint relations, which it doesn't.
+    const src = '([#thesis]) -> [#a]. { preference: 0.5 }\n[#a] --x [#thesis].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    const argKeys = [...solved.labels.keys()].filter((k) => k.startsWith('arg:'));
+    expect(argKeys.length).toBe(1);
+    expect(solved.labels.get('thesis')).toBe('undec');
+  });
+
+  it('three-cycle of rebuttals on conclusion refs (all preference 0) leaves the cycle UNDEC', () => {
+    // The argument head (in parens) is the conclusion; the bare factRef
+    // after `->` is the premise. So `([#a]) -> [#x]` has conclusion `a`
+    // and premise `x`. Public-parser relations only accept FactRef
+    // endpoints (`[#X]`), not Argument endpoints (`([#X])`), so the cycle
+    // targets conclusion refs (`a`, `b`, `c`) rather than argument
+    // locations (`arg:L:C`). With all preferences 0, no rebuts succeed
+    // → the attacked conclusion refs are UNDEC; the argument locations
+    // are not targeted, so they fall through to IN.
+    const src = [
+      '([#a]) -> [#x].',
+      '([#b]) -> [#y].',
+      '([#c]) -> [#z].',
+      '[#a] --x [#b].',
+      '[#b] --x [#c].',
+      '[#c] --x [#a].',
+    ].join('\n');
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const solved = solveAspic(result.ast);
+    expect(solved.labels.get('a')).toBe('undec');
+    expect(solved.labels.get('b')).toBe('undec');
+    expect(solved.labels.get('c')).toBe('undec');
+    const argKeys = [...solved.labels.keys()].filter((k) => k.startsWith('arg:'));
+    expect(argKeys.length).toBe(3);
+    for (const k of argKeys) {
+      expect(solved.labels.get(k)).toBe('in');
+    }
+  });
+
+  it('M2 vs M3 sanity: bipolar labels A,B as in; ASPIC+ also labels A,B as in (support is dropped)', () => {
+    // Sanity check that the two solvers behave consistently on this minimal
+    // case. The more interesting divergence — bipolar propagating support
+    // through a non-trivial graph while ASPIC+ drops it — is covered in
+    // the bipolar and non-attack test blocks.
+    const src = '[#a] A fact.\n[#b] B fact.\n[#a] --> [#b].';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const bipolar = solveBipolar(result.ast);
+    expect(bipolar.labels.get('a')).toBe('in');
+    expect(bipolar.labels.get('b')).toBe('in');
+    const aspic = solveAspic(result.ast);
+    // ASPIC+ drops support, so no defeats — A and B are unattacked.
+    expect(aspic.labels.get('a')).toBe('in');
+    expect(aspic.labels.get('b')).toBe('in');
   });
 });
