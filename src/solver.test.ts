@@ -21,4 +21,33 @@ describe('solve', () => {
     });
     expect(solved.labels instanceof Map).toBe(true);
   });
+
+  describe('node keying (facts)', () => {
+    it('keys IdentifierHead facts by the bare identifier', () => {
+      const src = '[#co2].\n[#impacts].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.labels.has('co2')).toBe(true);
+      expect(solved.labels.has('impacts')).toBe(true);
+      // Unattacked facts are IN (Task 6 will assert the value; this task only asserts presence).
+    });
+
+    it('keys TitleHead facts with the title: prefix', () => {
+      const src = '[A Bracketed Title].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.labels.has('title:A Bracketed Title')).toBe(true);
+    });
+
+    it('emits a warning on duplicate IdentifierHead ids and overwrites', () => {
+      const src = '[#co2] first.\n[#co2] second.';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      expect(solved.warnings.some(w => w.includes('duplicate fact id: co2'))).toBe(true);
+      expect(solved.labels.has('co2')).toBe(true);
+    });
+  });
 });
