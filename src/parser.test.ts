@@ -350,4 +350,14 @@ describe('preference attribute', () => {
     if (el.kind !== 'FactStatement') throw new Error('expected FactStatement');
     expect(el.preference).toBeUndefined();
   });
+
+  it('treats preference: 0 as the number 0, not undefined', () => {
+    const src = '[#a] A fact { preference: 0 }';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const el = result.ast.elements[0];
+    if (!el) throw new Error('no element');
+    if (el.kind !== 'FactStatement') throw new Error('expected FactStatement');
+    expect(el.preference).toBe(0);
+  });
 });
