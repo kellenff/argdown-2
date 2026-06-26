@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 
 import { parse, formatError } from './parser.js';
 import { renderMermaid } from './mermaid.js';
-import { solve, type Label } from './solver.js';
+import { solve, solveBipolar, type Label } from './solver.js';
 
 function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -25,8 +25,23 @@ function readStdin(): Promise<string> {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const solveMode = argv.includes('--solve');
-  const positional = argv.filter((a) => a !== '--solve');
+  const semanticsIdx = argv.findIndex((a) => a.startsWith('--semantics='));
+  const semantics =
+    semanticsIdx >= 0 ? (argv[semanticsIdx] as string).slice('--semantics='.length) : undefined;
+  const positional = argv.filter((a) => a !== '--solve' && !a.startsWith('--semantics='));
   const filename = positional[0];
+
+  if (semantics !== undefined && !solveMode) {
+    process.stderr.write('argdown-mermaid: --semantics requires --solve\n');
+    process.exit(1);
+  }
+  if (semantics !== undefined && semantics !== 'dung' && semantics !== 'bipolar') {
+    process.stderr.write(
+      `argdown-mermaid: --semantics must be one of: dung, bipolar (got "${semantics}")\n`,
+    );
+    process.exit(1);
+  }
+
   const source = filename ? readFileSync(filename, 'utf8') : await readStdin();
 
   const result = parse(source, filename ? { filename } : {});
@@ -39,7 +54,7 @@ async function main(): Promise<void> {
   }
 
   if (solveMode) {
-    const solved = solve(result.ast);
+    const solved = semantics === 'bipolar' ? solveBipolar(result.ast) : solve(result.ast);
     const groups: Record<Label, string[]> = { in: [], out: [], undec: [] };
     for (const [k, v] of solved.labels) groups[v].push(k);
     for (const v of ['in', 'out', 'undec'] as const) groups[v].sort();
