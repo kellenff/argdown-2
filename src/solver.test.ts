@@ -50,4 +50,36 @@ describe('solve', () => {
       expect(solved.labels.has('co2')).toBe(true);
     });
   });
+
+  describe('node keying (arguments)', () => {
+    it('keys arguments by arg:L:C using loc.start', () => {
+      const src = '([#a]) -> [#b].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      // First character of `([#a]) -> [#b].` is column 1 of line 1.
+      expect(solved.labels.has('arg:1:1')).toBe(true);
+    });
+
+    it('keeps two arguments with the same conclusion as distinct nodes', () => {
+      const src = '([#a]) -> [#b].\n([#c]) -> [#b].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      // Both arguments appear, with distinct keys.
+      const argKeys = [...solved.labels.keys()].filter(k => k.startsWith('arg:'));
+      expect(argKeys.length).toBe(2);
+      expect(new Set(argKeys).size).toBe(2);
+    });
+
+    it('also keys the conclusions of arguments when those conclusions are atoms', () => {
+      const src = '([#a]) -> [#b].';
+      const result = parse(src);
+      if (!result.ok) throw new Error('parse failed');
+      const solved = solve(result.ast);
+      // For `([#a]) -> [#b]`, the conclusion is `a` and the premise is `b`.
+      // The conclusion atom gets keyed separately from the arg node.
+      expect(solved.labels.has('a')).toBe(true);
+    });
+  });
 });
