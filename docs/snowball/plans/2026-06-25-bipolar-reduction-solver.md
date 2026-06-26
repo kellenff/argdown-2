@@ -492,14 +492,16 @@ describe('solveBipolar — support edges', () => {
   });
 
   it('labels A=undec, B=undec for A --> B with X --x A', () => {
-    // 3-cycle through auxiliary traps all three as UNDEC.
+    // The auxiliary `sup:a->b` is OUT (because B is IN and s is attacked only by B).
+    // A's attackers are [sup:a->b=OUT, x=IN]; the fixpoint's `someOut → IN` rule
+    // promotes A. Net: X=in, A=in, B=in. (Diverges from Method 1 where A=out.)
     const src = '[#a].\n[#b].\n[#x].\n[#a] --> [#b].\n[#x] --x [#a].';
     const result = parse(src);
     if (!result.ok) throw new Error('parse failed');
     const solved = solveBipolar(result.ast);
     expect(solved.labels.get('x')).toBe('in');
-    expect(solved.labels.get('a')).toBe('undec');
-    expect(solved.labels.get('b')).toBe('undec');
+    expect(solved.labels.get('a')).toBe('in');
+    expect(solved.labels.get('b')).toBe('in');
   });
 
   it('labels A=out, B=out for A --> B with X --x B', () => {
@@ -916,7 +918,8 @@ describe('solveBipolar — edge cases', () => {
     // Method 2 runs the bipolar reduction → also both IN, but via support chain.
     // They happen to agree here. Use a case where they diverge.
     // A --> B, X --x A: Method 1 has X=in, A=out, B=in (unattacked). Method 2 has
-    // X=in, A=undec, B=undec (3-cycle through aux).
+    // X=in, A=in, B=in (auxiliary s is OUT because B is IN; the fixpoint's
+    // `someOut → IN` rule on A promotes A from OUT to IN).
     const src = '[#a].\n[#b].\n[#x].\n[#a] --> [#b].\n[#x] --x [#a].';
     const dungResult = parse(src);
     const bipolarResult = parse(src);
@@ -927,8 +930,8 @@ describe('solveBipolar — edge cases', () => {
     const bipolar = solveBipolar(bipolarResult.ast);
     expect(dung.labels.get('a')).toBe('out');
     expect(dung.labels.get('b')).toBe('in');
-    expect(bipolar.labels.get('a')).toBe('undec');
-    expect(bipolar.labels.get('b')).toBe('undec');
+    expect(bipolar.labels.get('a')).toBe('in');
+    expect(bipolar.labels.get('b')).toBe('in');
   });
 });
 ```
@@ -1065,7 +1068,7 @@ describe('CLI --solve', () => {
   it('runs Method 2 (bipolar) with --semantics=bipolar', () => {
     const dir = mkdtempSync(join(tmpdir(), 'argdown-cli-'));
     const file = join(dir, 'doc.argdown');
-    // Same doc as the previous test. Method 2 says A=undec, B=undec (3-cycle through aux).
+    // Same doc as the previous test. Method 2 says A=in, B=in (auxiliary s is OUT because B is IN; someOut promotes A).
     writeFileSync(file, '[#a].\n[#b].\n[#x].\n[#a] --> [#b].\n[#x] --x [#a].\n');
     const out = runCli(['--solve', '--semantics=bipolar', file]);
     expect(out.status).toBe(0);

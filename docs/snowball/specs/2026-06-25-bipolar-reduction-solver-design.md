@@ -222,7 +222,7 @@ For each existing test that asserted `result.dropped.support === N`, change to a
 | Case | Setup | Expected |
 |---|---|---|
 | Single support | `A --> B` | A=`in`, B=`in` |
-| Support + counter-attack on supporter | `A --> B`, `X --x A` | X=`in`, A=`undec`, B=`undec` (3-cycle through aux traps all UNDEC — diverges from Method 1 where A=`out`, B=`in`) |
+| Support + counter-attack on supporter | `A --> B`, `X --x A` | X=`in`, A=`in`, B=`in` (auxiliary is OUT because B is IN, so the fixpoint's `someOut → IN` rule promotes A — diverges from Method 1 where A=`out`, B=`in`) |
 | Support + attack on supported | `A --> B`, `X --x B` | X=`in`, A=`out`, B=`out` (B out propagates to A via support chain — diverges from Method 1 where A=`in`) |
 | Mutual support | `A --> B`, `B --> A` | A=`undec`, B=`undec` |
 | Self-support | `A --> A` | A=`undec` |
