@@ -263,12 +263,12 @@ Tests for the three algorithms independent of any reduction. Cases:
 | Empty graph | `map = {}` | 0 extensions for all three semantics |
 | Single source | `map = {A: []}` | 1 extension `{A}` for all three |
 | Single attacker | `map = {A: [B]}` | 1 extension `{B}` for all three (A is attacked) |
-| 2-cycle | `A → B, B → A` | preferred: 2 (`{A}`, `{B}`); stable: 0; complete: 2 (`{A}`, `{B}`) |
-| 3-cycle | `A → B → C → A` | preferred: 3 (`{A}`, `{B}`, `{C}`); stable: 0; complete: 4 (∅, `{A}`, `{B}`, `{C}`) |
+| 2-cycle | `A → B, B → A` | preferred: 2 (`{A}`, `{B}`); stable: 0; complete: 3 (∅, `{A}`, `{B}`) |
+| 3-cycle | `A → B → C → A` | preferred: 3 (`{A}`, `{B}`, `{C}`); stable: 0; complete: 1 (∅) |
 | Self-attack | `A → A` | preferred: 0; stable: 0; complete: 1 (∅) |
-| Unattached source `A` | map `{A: []}` | preferred: 1 (`{A}`); stable: 1 (`{A}`); complete: 2 (∅, `{A}`) |
+| Unattached source `A` | map `{A: []}` | preferred: 1 (`{A}`); stable: 1 (`{A}`); complete: 1 (`{A}`) |
 
-**Convention:** ∅ is always included in `findCompleteExtensions` results when it is admissible (which is always) and closed under defense closure (which is always true — defenseClosure(∅) = ∅). Consumers who want non-empty extensions can filter them out client-side. This convention is what makes the cross-validation invariant `∩ complete = grounded` work for empty-grounded cases (3-cycle, self-attack, etc.).
+**Convention:** complete extensions are subsets `S ⊆ args` such that `S` is admissible AND closed under defense closure (`defenseClosure(S) === S`). By Dung's theorem (Dung 1995 §3), `∩ complete = grounded`, which is why the cross-validation invariant holds for all graphs — including unattached-source cases (grounded = `{A}`, ∩ complete = `{A}`) and 3-cycle/self-attack cases (grounded = ∅, ∩ complete = ∅).
 | Empty stable (odd cycle) | `A → B → A` | stable: `[]` (valid empty result) |
 | Cross-validation | `findComplete(map).reduce(intersect) === label(map).filter('in')` | invariants hold for all 7 parser fixtures |
 | Strip aux | bipolar input, `sup:` keys present in map | output extensions contain no `sup:` keys |
@@ -284,7 +284,7 @@ Each file covers one semantics across all four reductions. Most cases are shared
 
 - `solvePreferred`: 3-cycle `[#A] --x [#B]. [#B] --x [#C]. [#C] --x [#A].` → 3 preferred extensions `{A}, {B}, {C}`.
 - `solveStable`: same 3-cycle → 0 stable extensions (odd cycle).
-- `solveComplete`: same 3-cycle → 4 complete extensions `∅, {A}, {B}, {C}` (∅ included per the convention above).
+- `solveComplete`: same 3-cycle → 1 complete extension `∅` (the 3-cycle has only ∅ as a closed-under-defense-closure admissible set).
 - `solvePreferredBipolar`: `[#A] --> [#B]. [#C] --x [#A].` → 1 preferred extension `{B, C}` (aux stripped).
 - `solveStableBipolar`: same input → 1 stable extension `{B, C}` (aux stripped; C is unattacked source, B is supported by C via bipolar — both IN).
 - `solveCompleteBipolar`: same input → 1 complete extension `{B, C}`.
