@@ -187,6 +187,32 @@ Flags:
   A's defeat propagates to B (the opposite direction of bipolar's
   deductive reduction). Pairs with `--solve`.
 
+### Multi-Extension Semantics
+
+For each of the four edge reductions, `argdown-2` ships three multi-extension semantics: preferred (maximal admissible sets), stable (admissible sets whose complement is fully attacked), and complete (admissible sets closed under defense). The 12 new `--semantics` values:
+
+- `--semantics=preferred` (Dung)
+- `--semantics=preferred-bipolar`, `preferred-aspic`, `preferred-evidential`
+- `--semantics=stable`, `stable-bipolar`, `stable-aspic`, `stable-evidential`
+- `--semantics=complete`, `complete-bipolar`, `complete-aspic`, `complete-evidential`
+
+Output is a numbered list of extensions, each printed as the lex-sorted in-arg keys:
+
+```
+Extension 1: A, B, D
+Extension 2: A, C, E
+```
+
+Programmatic API: 12 exported functions in the main module — see `solvePreferred`, `solveStable`, `solveComplete`, and their `<Reduction>`-suffixed siblings.
+
+**Cross-validation invariant (Dung's theorem):** for any document, the intersection of all complete extensions equals the grounded extension. `solve(doc).labels.filter(l === 'in') === solveComplete(doc).extensions.reduce(intersect)`.
+
+**Complexity (documented, not enforced):** preferred is Σ₂ᵖ-complete (worst-case O(3^(N/3)) extensions). Stable is NP-complete (worst-case O(2^N · N)). Complete is in P but worst-case O(2^N · N). For graphs larger than ~20 nodes, multi-extension can be slow — prefer the grounded solver for large documents.
+
+**ASPIC+ multi-extension:** operates Dung's preferred/stable/complete fixpoint on the ASPIC+ defeat map (consistent with how ASPIC+ grounded uses Dung's fixpoint on the defeat graph).
+
+**Mermaid:** not supported for multi-extension semantics. The CLI emits a stderr warning and falls back to the extension-list output.
+
 **Example — same input, opposite labels:**
 
 ```argdown
