@@ -104,7 +104,7 @@ The `./ast` subpath exists so type-only consumers don't pull Chevrotain into the
 import type { Document, FactStatement, Argument } from '@casualtheorics/argdown-2/ast';
 ```
 
-**Solver API:** the package ships two grounded-extension solvers, each taking a parsed `Document` and returning a label map.
+**Solver API:** the package ships three grounded-extension solvers, each taking a parsed `Document` and returning a label map.
 
 ```ts
 import { solve, solveBipolar, renderMermaid } from '@casualtheorics/argdown-2';
@@ -151,7 +151,7 @@ and ignored by `solve()` and `solveBipolar()`. Default value is `0`.
 
 ```argdown
 [#a] A fact { preference: 0.8 }
-([#thesis]) -> [#a], [#b] { preference: 0.6 }
+([#thesis]) -> [#a], [#b]. { preference: 0.6 }
 ```
 
 **CLI:**
