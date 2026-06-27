@@ -93,21 +93,18 @@ export function findPreferredExtensions(map: Map<string, string[]>): Set<string>
   const results: Set<string>[] = [];
   const skipMasks = new Set<number>();
 
-  // Iterate subsets large-to-small. Once we find a conflict-free S, mark all
-  // subsets of S as skipped (they cannot be maximal). The design spec
-  // (multi-extension-solver-design §"Semantics") treats preferred as
-  // "maximal conflict-free subsets, excluding ∅" — a 3-cycle has preferred
-  // {A}, {B}, {C} (each maximal conflict-free), even though none of the
-  // singletons is self-defending under standard Dung. ∅ is filtered as the
-  // empty set is trivially conflict-free but never maximal in non-empty
-  // inputs.
-  for (let mask = (1 << n) - 1; mask > 0; mask--) {
+  // Textbook Dung: S is preferred iff S is a maximal admissible set. Iterate
+  // subsets large-to-small; once we find an admissible S, mark all subsets
+  // of S as skipped (any subset is non-maximal by definition of preferred).
+  // The empty set is admissible vacuously and must be considered: for a
+  // 3-cycle the only preferred extension is ∅ (no singleton is self-defending).
+  for (let mask = (1 << n) - 1; mask >= 0; mask--) {
     if (skipMasks.has(mask)) continue;
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (mask & (1 << i)) subset.add(args[i]!);
     }
-    if (isConflictFree(subset, map)) {
+    if (isAdmissible(subset, map)) {
       results.push(stripAux(subset));
       // Mark all subsets of `mask` as skipped.
       let sub = mask;

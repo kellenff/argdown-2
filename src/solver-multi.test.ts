@@ -105,8 +105,8 @@ describe('stripAux', () => {
 });
 
 describe('findPreferredExtensions', () => {
-  it('returns empty array for empty map', () => {
-    expect(findPreferredExtensions(new Map())).toEqual([]);
+  it('returns 1 preferred (∅) for empty map', () => {
+    expect(findPreferredExtensions(new Map())).toEqual([new Set()]);
   });
 
   it('returns [{A}] for unattacked source A', () => {
@@ -116,26 +116,32 @@ describe('findPreferredExtensions', () => {
     expect([...result[0]!]).toEqual(['A']);
   });
 
-  it('returns 3 preferred for 3-cycle A->B->C->A', () => {
-    const map = new Map<string, string[]>([['A', ['B']], ['B', ['C']], ['C', ['A']]]);
+  it('returns 1 preferred for 3-cycle A->B->C->A (textbook Dung: only ∅ is admissible)', () => {
+    // A → B → C → A: A attacks B (so B's attackers = [A]), B attacks C
+    // (so C's attackers = [B]), C attacks A (so A's attackers = [C]).
+    // {A} is NOT admissible: A is attacked by C; for A to be defended, {A}
+    // needs a member attacking C, but A only attacks B. Same for {B} and
+    // {C}. Only ∅ is admissible. Preferred = [∅].
+    const map = new Map<string, string[]>([['A', ['C']], ['B', ['A']], ['C', ['B']]]);
     const result = findPreferredExtensions(map);
-    expect(result.length).toBe(3);
-    const sorted = result.map((s) => [...s].sort());
-    expect(sorted).toContainEqual(['A']);
-    expect(sorted).toContainEqual(['B']);
-    expect(sorted).toContainEqual(['C']);
+    expect(result.length).toBe(1);
+    expect(result[0]!.size).toBe(0);
   });
 
   it('returns 2 preferred for 2-cycle A<->B', () => {
+    // A <-> B means A attacks B (B's attackers = [A]) AND B attacks A (A's attackers = [B]).
     const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
     const result = findPreferredExtensions(map);
     expect(result.length).toBe(2);
   });
 
-  it('returns empty for self-attacking A->A (no admissible)', () => {
+  it('returns 1 preferred for self-attacking A->A (only ∅ is admissible)', () => {
+    // A -> A means A attacks itself, so {A} is not conflict-free.
+    // Only ∅ is admissible. Preferred for self-attack is [∅] (1 result, the empty set).
     const map = new Map<string, string[]>([['A', ['A']]]);
-    // {A} is not conflict-free; only ∅ is admissible but it's not maximal.
-    expect(findPreferredExtensions(map)).toEqual([]);
+    const result = findPreferredExtensions(map);
+    expect(result.length).toBe(1);
+    expect(result[0]!.size).toBe(0);
   });
 
   it('strips aux keys from each extension', () => {
