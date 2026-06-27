@@ -34,9 +34,11 @@ export function defenseClosure(set: Set<string>, map: Map<string, string[]>): Se
     for (const a of map.keys()) {
       if (closure.has(a)) continue;
       const attackers = attackersOf(map, a);
-      // Unattacked arguments are not "defended" — they enter closure trivially
-      // and would otherwise pollute downstream multi-extension output.
-      if (attackers.length === 0) continue;
+      // Unattacked arguments are defended vacuously — the universal quantifier
+      // "every attacker is counter-attacked by some member of S" is trivially
+      // satisfied when the attackers list is empty (Dung 1995 §3; Baroni,
+      // Caminada, Giacomin 2018). They MUST enter the closure to preserve the
+      // cross-validation invariant ∩ complete = grounded.
       const defended = attackers.every((b) => {
         const bAttackers = attackersOf(map, b);
         return bAttackers.some((c) => closure.has(c));

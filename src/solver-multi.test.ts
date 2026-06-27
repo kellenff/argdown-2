@@ -53,10 +53,11 @@ describe('defenseClosure', () => {
   it('returns empty set for empty input', () => {
     expect(defenseClosure(new Set(), new Map()).size).toBe(0);
   });
-  it('does not add unattacked args (no defender)', () => {
-    // A is unattacked; {B} does not defend A.
+  it('adds unattacked args vacuously (defended trivially)', () => {
+    // A is unattacked; {B} does not explicitly defend A, but A is defended
+    // vacuously (no attackers → universal quantifier is trivially satisfied).
     const result = defenseClosure(new Set(['B']), new Map([['A', []], ['B', []]]));
-    expect([...result].sort()).toEqual(['B']);
+    expect([...result].sort()).toEqual(['A', 'B']);
   });
   it('adds an arg whose attackers are all defeated by the set', () => {
     // A attacks B, B attacks C. {A} defends C (B is attacked by A).
