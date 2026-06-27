@@ -44,3 +44,31 @@ describe('solvePreferred (dung reduction)', () => {
     expect(warnings.some((w) => w.includes('support='))).toBe(true);
   });
 });
+
+import { solvePreferredBipolar, solvePreferredEvidential } from './solver.js';
+
+describe('solvePreferredBipolar', () => {
+  it('returns 1 preferred with sup keys stripped', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#A] --> [#B].\n[#C] --x [#A].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { extensions } = solvePreferredBipolar(ast);
+    expect(extensions.length).toBeGreaterThan(0);
+    const ext = [...extensions[0]!];
+    expect(ext).toContain('B');
+    expect(ext).toContain('C');
+    expect(ext.some((k) => k.startsWith('sup:'))).toBe(false);
+  });
+});
+
+describe('solvePreferredEvidential', () => {
+  it('returns 1 preferred with nec keys stripped', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#A] --> [#B].\n[#C] --x [#A].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { extensions } = solvePreferredEvidential(ast);
+    expect(extensions.length).toBeGreaterThan(0);
+    const ext = [...extensions[0]!];
+    expect(ext.some((k) => k.startsWith('nec:'))).toBe(false);
+  });
+});

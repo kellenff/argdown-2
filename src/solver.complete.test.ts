@@ -31,3 +31,31 @@ describe('solveComplete (dung reduction)', () => {
     expect(extensions.length).toBe(3);
   });
 });
+
+import { solveCompleteBipolar, solveCompleteEvidential } from './solver.js';
+
+describe('solveCompleteBipolar', () => {
+  it('strips sup keys from extensions', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#A] --> [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { extensions } = solveCompleteBipolar(ast);
+    expect(extensions.length).toBeGreaterThan(0);
+    for (const ext of extensions) {
+      expect([...ext].some((k) => k.startsWith('sup:'))).toBe(false);
+    }
+  });
+});
+
+describe('solveCompleteEvidential', () => {
+  it('strips nec keys from extensions', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#A] --> [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { extensions } = solveCompleteEvidential(ast);
+    expect(extensions.length).toBeGreaterThan(0);
+    for (const ext of extensions) {
+      expect([...ext].some((k) => k.startsWith('nec:'))).toBe(false);
+    }
+  });
+});

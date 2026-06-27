@@ -32,3 +32,27 @@ describe('solveStable (dung reduction)', () => {
     expect([...extensions[0]!]).toEqual(['A']);
   });
 });
+
+import { solveStableBipolar, solveStableEvidential } from './solver.js';
+
+describe('solveStableBipolar', () => {
+  it('returns 1 stable with sup keys stripped', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#C] z.\n[#A] --> [#B].\n[#C] --x [#A].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { extensions } = solveStableBipolar(ast);
+    expect(extensions.length).toBeGreaterThan(0);
+    expect([...extensions[0]!].some((k) => k.startsWith('sup:'))).toBe(false);
+  });
+});
+
+describe('solveStableEvidential', () => {
+  it('returns 1 stable with nec keys stripped', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#C] z.\n[#A] --> [#B].\n[#C] --x [#A].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { extensions } = solveStableEvidential(ast);
+    expect(extensions.length).toBeGreaterThan(0);
+    expect([...extensions[0]!].some((k) => k.startsWith('nec:'))).toBe(false);
+  });
+});

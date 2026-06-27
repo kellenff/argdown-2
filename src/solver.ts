@@ -402,3 +402,27 @@ export function solveStable(document: Document): MultiSolveResult {
 export function solveComplete(document: Document): MultiSolveResult {
   return solveMulti(document, 'dung', findCompleteExtensions);
 }
+
+export function solvePreferredBipolar(document: Document): MultiSolveResult {
+  return solveMulti(document, 'bipolar', findPreferredExtensions);
+}
+
+export function solvePreferredEvidential(document: Document): MultiSolveResult {
+  return solveMulti(document, 'evidential', findPreferredExtensions);
+}
+
+export function solveStableBipolar(document: Document): MultiSolveResult {
+  return solveMulti(document, 'bipolar', findStableExtensions);
+}
+
+export function solveStableEvidential(document: Document): MultiSolveResult {
+  return solveMulti(document, 'evidential', findStableExtensions);
+}
+
+export function solveCompleteBipolar(document: Document): MultiSolveResult {
+  return solveMulti(document, 'bipolar', findCompleteExtensions);
+}
+
+export function solveCompleteEvidential(document: Document): MultiSolveResult {
+  return solveMulti(document, 'evidential', findCompleteExtensions);
+}
