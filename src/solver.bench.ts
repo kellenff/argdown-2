@@ -7,8 +7,26 @@ import { Bench } from 'tinybench';
 import { readFile, writeFile } from 'node:fs/promises';
 import { argv, exit } from 'node:process';
 import { parse } from './parser.js';
-import { solve, solveBipolar, solveEvidential } from './solver.js';
-import { solveAspic } from './solver-aspic.js';
+import {
+  solve,
+  solveBipolar,
+  solveEvidential,
+  solvePreferred,
+  solvePreferredBipolar,
+  solvePreferredEvidential,
+  solveStable,
+  solveStableBipolar,
+  solveStableEvidential,
+  solveComplete,
+  solveCompleteBipolar,
+  solveCompleteEvidential,
+} from './solver.js';
+import {
+  solveAspic,
+  solvePreferredAspic,
+  solveStableAspic,
+  solveCompleteAspic,
+} from './solver-aspic.js';
 import type { Document } from './ast.js';
 
 export const FIXTURES = [
@@ -28,10 +46,34 @@ export const TASK_TYPES = [
   'solve-bipolar',
   'solve-aspic',
   'solve-evidential',
+  'solve-preferred',
+  'solve-preferred-bipolar',
+  'solve-preferred-aspic',
+  'solve-preferred-evidential',
+  'solve-stable',
+  'solve-stable-bipolar',
+  'solve-stable-aspic',
+  'solve-stable-evidential',
+  'solve-complete',
+  'solve-complete-bipolar',
+  'solve-complete-aspic',
+  'solve-complete-evidential',
   'parse-solve',
   'parse-solve-bipolar',
   'parse-solve-aspic',
   'parse-solve-evidential',
+  'parse-solve-preferred',
+  'parse-solve-preferred-bipolar',
+  'parse-solve-preferred-aspic',
+  'parse-solve-preferred-evidential',
+  'parse-solve-stable',
+  'parse-solve-stable-bipolar',
+  'parse-solve-stable-aspic',
+  'parse-solve-stable-evidential',
+  'parse-solve-complete',
+  'parse-solve-complete-bipolar',
+  'parse-solve-complete-aspic',
+  'parse-solve-complete-evidential',
 ] as const;
 
 export type TaskType = (typeof TASK_TYPES)[number];
@@ -89,6 +131,114 @@ function makeTaskBody(task: TaskType, source: string, cachedAst: Document): () =
       return () => {
         const r = parse(source);
         if (r.ok) solveEvidential(r.ast);
+      };
+    case 'solve-preferred':
+      return () => {
+        solvePreferred(cachedAst);
+      };
+    case 'solve-preferred-bipolar':
+      return () => {
+        solvePreferredBipolar(cachedAst);
+      };
+    case 'solve-preferred-aspic':
+      return () => {
+        solvePreferredAspic(cachedAst);
+      };
+    case 'solve-preferred-evidential':
+      return () => {
+        solvePreferredEvidential(cachedAst);
+      };
+    case 'solve-stable':
+      return () => {
+        solveStable(cachedAst);
+      };
+    case 'solve-stable-bipolar':
+      return () => {
+        solveStableBipolar(cachedAst);
+      };
+    case 'solve-stable-aspic':
+      return () => {
+        solveStableAspic(cachedAst);
+      };
+    case 'solve-stable-evidential':
+      return () => {
+        solveStableEvidential(cachedAst);
+      };
+    case 'solve-complete':
+      return () => {
+        solveComplete(cachedAst);
+      };
+    case 'solve-complete-bipolar':
+      return () => {
+        solveCompleteBipolar(cachedAst);
+      };
+    case 'solve-complete-aspic':
+      return () => {
+        solveCompleteAspic(cachedAst);
+      };
+    case 'solve-complete-evidential':
+      return () => {
+        solveCompleteEvidential(cachedAst);
+      };
+    case 'parse-solve-preferred':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solvePreferred(r.ast);
+      };
+    case 'parse-solve-preferred-bipolar':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solvePreferredBipolar(r.ast);
+      };
+    case 'parse-solve-preferred-aspic':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solvePreferredAspic(r.ast);
+      };
+    case 'parse-solve-preferred-evidential':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solvePreferredEvidential(r.ast);
+      };
+    case 'parse-solve-stable':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solveStable(r.ast);
+      };
+    case 'parse-solve-stable-bipolar':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solveStableBipolar(r.ast);
+      };
+    case 'parse-solve-stable-aspic':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solveStableAspic(r.ast);
+      };
+    case 'parse-solve-stable-evidential':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solveStableEvidential(r.ast);
+      };
+    case 'parse-solve-complete':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solveComplete(r.ast);
+      };
+    case 'parse-solve-complete-bipolar':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solveCompleteBipolar(r.ast);
+      };
+    case 'parse-solve-complete-aspic':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solveCompleteAspic(r.ast);
+      };
+    case 'parse-solve-complete-evidential':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solveCompleteEvidential(r.ast);
       };
   }
 }
