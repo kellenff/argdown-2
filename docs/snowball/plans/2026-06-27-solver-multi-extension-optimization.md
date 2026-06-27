@@ -367,17 +367,16 @@ describe('findGroundedExtension', () => {
   });
 
   it('handles a graph with defended node outside a 3-cycle', () => {
-    // A → B → C → A (cycle), D attacks B (no one attacks D).
-    // Expected: D in grounded (D's attackers = ∅, vacuously defended).
-    //          B → out (attacked by D, D in grounded).
-    //          A → out (attacked by B, B out → A counter-attacked).
-    //          C → out (attacked by A, A out → C counter-attacked).
+    // Map convention: map.get(arg) = [args that ATTACK arg] (incoming edges).
+    // 3-cycle A, B, C: A's attackers=[B], B's attackers=[C], C's attackers=[A].
+    // D is unattacked (D's attackers = ∅, vacuously defended).
+    // Expected: D in grounded. A, B, C cyclic SCC → undec.
     // Result: {D}.
     const map = new Map<string, string[]>([
       ['A', ['B']],
       ['B', ['C']],
       ['C', ['A']],
-      ['D', ['B']],
+      ['D', []],
     ]);
     expect(findGroundedExtension(map)).toEqual(new Set(['D']));
   });

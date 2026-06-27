@@ -59,7 +59,7 @@ type Scc = { id: number; members: Set<string>; cyclic: boolean };
 ```
 
 - `cyclic = true` iff the SCC contains any attack cycle (i.e., a path a → b → … → a within the SCC).
-- Order: SCCs returned in reverse topological order — every attacker SCC comes before its attackee SCC when processed in array order.
+- Order: SCCs returned in **topological order of the attack graph** — when processed in array order, every attacker's SCC comes before its attackee's SCC. (Equivalent: classical Tarjan sinks-first completion order. Under this codebase's "attackers-of" map convention — `map.get(arg) = [args that attack arg]` — this means the deepest unattacked attacker comes first. The plan uses this terminology: "attacker SCC first.")
 
 **Updated finders** (signatures unchanged):
 
