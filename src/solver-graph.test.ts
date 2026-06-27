@@ -53,3 +53,66 @@ describe('buildArgumentGraph (dung reduction)', () => {
     expect(warnings.some((w) => w.startsWith('duplicate fact id'))).toBe(true);
   });
 });
+
+describe('buildArgumentGraph (bipolar reduction)', () => {
+  it('reduces --> to sup:auxiliary with B->sup, sup->A', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#A] --> [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { map } = buildArgumentGraph(ast, 'bipolar');
+    // The sup:A->B auxiliary is attacked by B; A is attacked by the auxiliary.
+    const auxKey = 'sup:A->B';
+    expect(map.get(auxKey)).toEqual(['B']);
+    expect(map.get('A')).toEqual([auxKey]);
+  });
+
+  it('reduces <-> to two deductive supports', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#A] <-> [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { map } = buildArgumentGraph(ast, 'bipolar');
+    expect(map.get('sup:A->B')).toEqual(['B']);
+    expect(map.get('sup:B->A')).toEqual(['A']);
+  });
+
+  it('collapses --x, -.->, ~>, ?> to plain attack', () => {
+    const result = parse(
+      '[#A] x.\n[#B] y.\n[#A] --x [#B].\n[#A] -.-> [#B].\n[#A] ~> [#B].\n[#A] ?> [#B].\n',
+    );
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { map, warnings } = buildArgumentGraph(ast, 'bipolar');
+    // B is attacked by A multiple times.
+    expect(map.get('B')?.filter((x) => x === 'A').length).toBeGreaterThanOrEqual(2);
+    expect(warnings.some((w) => w.includes('dangling'))).toBe(false);
+  });
+});
+
+describe('buildArgumentGraph (evidential reduction)', () => {
+  it('reduces --> to nec:auxiliary with A->nec, nec->B', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#A] --> [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { map } = buildArgumentGraph(ast, 'evidential');
+    const auxKey = 'nec:A->B';
+    expect(map.get(auxKey)).toEqual(['A']);
+    expect(map.get('B')).toEqual([auxKey]);
+  });
+
+  it('reduces <-> to two necessary supports', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#A] <-> [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { map } = buildArgumentGraph(ast, 'evidential');
+    expect(map.get('nec:A->B')).toEqual(['A']);
+    expect(map.get('nec:B->A')).toEqual(['B']);
+  });
+
+  it('collapses --x, -.->, ~>, ?> to plain attack (same posture as bipolar)', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#A] --x [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { map } = buildArgumentGraph(ast, 'evidential');
+    expect(map.get('B')).toEqual(['A']);
+  });
+});

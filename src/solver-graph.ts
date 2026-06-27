@@ -111,60 +111,94 @@ export function buildArgumentGraph(document: Document, reduction: Reduction): Ar
 }
 
 function applyReduction(rel: Relation, reduction: Reduction, state: PassState): void {
-  const { labels, attacks, argByNode, warnings, dropped } = state;
-  const fromKey = endpointKey(rel.from as RelationEndpoint, argByNode);
-  const toKey = endpointKey(rel.to as RelationEndpoint, argByNode);
+  const { dropped } = state;
+  const fromKey = endpointKey(rel.from as RelationEndpoint, state.argByNode);
+  const toKey = endpointKey(rel.to as RelationEndpoint, state.argByNode);
 
-  switch (reduction) {
-    case 'dung': {
-      if (rel.arrow === 'attack') {
-        attachAttack(fromKey, toKey, 'attack', state);
-        return;
-      }
-      // Other arrows are dropped with a summary warning emitted by the caller.
-      switch (rel.arrow) {
-        case 'support':
-          dropped.support++;
-          return;
-        case 'undercut':
-          dropped.undercut++;
-          return;
-        case 'undermine':
-          dropped.undermine++;
-          return;
-        case 'concession':
-          dropped.concession++;
-          return;
-        case 'qualification':
-          dropped.qualification++;
-          return;
-        case 'equivalence':
-          dropped.equivalence++;
-          return;
-      }
+  if (reduction === 'aspic') return; // handled by buildAspicReduction (Task 4)
+
+  // Support and equivalence are reduction-specific.
+  if (rel.arrow === 'support') {
+    if (reduction === 'bipolar') {
+      addSupport(fromKey, toKey, state);
       return;
     }
-    case 'bipolar':
-    case 'evidential':
-    case 'aspic':
-      // Implemented in Tasks 3 and 4.
+    if (reduction === 'evidential') {
+      addNecessarySupport(fromKey, toKey, state);
       return;
+    }
+    // dung: dropped with summary warning (counted via state.dropped).
+    dropped.support++;
+    return;
   }
+  if (rel.arrow === 'equivalence') {
+    if (reduction === 'bipolar') {
+      addSupport(fromKey, toKey, state);
+      addSupport(toKey, fromKey, state);
+      return;
+    }
+    if (reduction === 'evidential') {
+      addNecessarySupport(fromKey, toKey, state);
+      addNecessarySupport(toKey, fromKey, state);
+      return;
+    }
+    dropped.equivalence++;
+    return;
+  }
+
+  // All other arrows collapse to plain attack.
+  attachAttack(fromKey, toKey, rel.arrow, state);
+}
+
+function addSupport(fromKey: string, toKey: string, state: PassState): void {
+  const auxKey = `sup:${fromKey}->${toKey}`;
+  const sAttackers = state.attacks.get(auxKey) ?? [];
+  sAttackers.push(toKey);
+  state.attacks.set(auxKey, sAttackers);
+  const aAttackers = state.attacks.get(fromKey) ?? [];
+  aAttackers.push(auxKey);
+  state.attacks.set(fromKey, aAttackers);
+}
+
+function addNecessarySupport(fromKey: string, toKey: string, state: PassState): void {
+  const auxKey = `nec:${fromKey}->${toKey}`;
+  const auxAttackers = state.attacks.get(auxKey) ?? [];
+  auxAttackers.push(fromKey);
+  state.attacks.set(auxKey, auxAttackers);
+  const bAttackers = state.attacks.get(toKey) ?? [];
+  bAttackers.push(auxKey);
+  state.attacks.set(toKey, bAttackers);
 }
 
 function attachAttack(fromKey: string, toKey: string, kind: string, state: PassState): void {
-  const { labels, attacks, warnings } = state;
-  if (!labels.has(toKey)) {
-    warnings.push(`dangling ${kind} edge: ${fromKey} ${kind} ${toKey}`);
+  if (!state.labels.has(toKey)) {
+    state.warnings.push(`dangling ${kind} edge: ${fromKey} ${arrowSymbol(kind)} ${toKey}`);
     return;
   }
-  if (!labels.has(fromKey)) {
-    labels.set(fromKey, 'undec');
-    if (!attacks.has(fromKey)) attacks.set(fromKey, []);
+  if (!state.labels.has(fromKey)) {
+    state.labels.set(fromKey, 'undec');
+    if (!state.attacks.has(fromKey)) state.attacks.set(fromKey, []);
   }
-  const list = attacks.get(toKey) ?? [];
+  const list = state.attacks.get(toKey) ?? [];
   list.push(fromKey);
-  attacks.set(toKey, list);
+  state.attacks.set(toKey, list);
+}
+
+function arrowSymbol(kind: string): string {
+  switch (kind) {
+    case 'attack':
+      return '--x';
+    case 'undercut':
+      return '-.->';
+    case 'undermine':
+      return '-.-';
+    case 'concession':
+      return '~>';
+    case 'qualification':
+      return '?>';
+    default:
+      return kind;
+  }
 }
 
 function buildAspicReduction(document: Document): ArgumentGraph {
