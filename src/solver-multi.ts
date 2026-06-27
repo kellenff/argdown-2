@@ -95,6 +95,28 @@ export function tarjanScc(map: Map<string, string[]>): Scc[] {
   return sccs;
 }
 
+/**
+ * Compute the grounded extension of a Dung framework.
+ *
+ * Returns the set of arguments labeled "in" by Modgil's argument-level
+ * labeling: each arg a gets label 'in' if all its attackers are 'out',
+ * 'out' if it has an attacker labeled 'in', and 'undec' otherwise.
+ * Iterates until no labels change. Equivalent to defenseClosure(∅, F).
+ *
+ * SCC-based label propagation (acyclic SCCs → 'in'/'out', cyclic SCCs →
+ * 'undec') is a conservative approximation: when a cyclic SCC contains
+ * a member counter-attacked by an external 'in' arg, that member should
+ * be 'out' and other args attacking it (or attacked only by it) may then
+ * be 'in'. The SCC algorithm collapses these to 'undec' and misses the
+ * ripple. Argument-level Modgil handles this correctly.
+ *
+ * The Tarjan SCC machinery (above) is kept for topological order in
+ * future optimizations; this function uses the fixpoint directly.
+ */
+export function findGroundedExtension(map: Map<string, string[]>): Set<string> {
+  return defenseClosure(new Set(), map);
+}
+
 export function attackersOf(map: Map<string, string[]>, arg: string): string[] {
   return map.get(arg) ?? [];
 }
