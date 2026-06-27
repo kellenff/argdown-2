@@ -82,18 +82,22 @@ export function findPreferredExtensions(map: Map<string, string[]>): Set<string>
   const args = [...map.keys()];
   const n = args.length;
   const results: Set<string>[] = [];
-  const skipMasks = new Set<number>();
+  const skipMasks = new Set<bigint>();
+  const ONE = 1n;
 
   // Textbook Dung: S is preferred iff S is a maximal admissible set. Iterate
   // subsets large-to-small; once we find an admissible S, mark all subsets
   // of S as skipped (any subset is non-maximal by definition of preferred).
   // The empty set is admissible vacuously and must be considered: for a
   // 3-cycle the only preferred extension is ∅ (no singleton is self-defending).
-  for (let mask = (1 << n) - 1; mask >= 0; mask--) {
+  // BigInt masks are required: JS `<<` truncates to 32 bits, so for graphs
+  // with >32 keys `1 << n` would silently produce a small value and the loop
+  // would terminate or wrap incorrectly.
+  for (let mask = (ONE << BigInt(n)) - 1n; mask >= 0n; mask--) {
     if (skipMasks.has(mask)) continue;
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
-      if (mask & (1 << i)) subset.add(args[i]!);
+      if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
     }
     if (isAdmissible(subset, map)) {
       results.push(stripAux(subset));
@@ -101,8 +105,8 @@ export function findPreferredExtensions(map: Map<string, string[]>): Set<string>
       let sub = mask;
       while (true) {
         skipMasks.add(sub);
-        if (sub === 0) break;
-        sub = (sub - 1) & mask;
+        if (sub === 0n) break;
+        sub = (sub - 1n) & mask;
       }
     }
   }
@@ -113,17 +117,18 @@ export function findStableExtensions(map: Map<string, string[]>): Set<string>[] 
   const args = [...map.keys()];
   const n = args.length;
   const results: Set<string>[] = [];
+  const ONE = 1n;
 
   // Iterate all subsets. Textbook Dung: S is stable iff S is admissible AND
   // S attacks every arg not in S. The empty set is excluded by convention:
   // a stable extension must attack all outside arguments, which for an empty
   // framework is vacuously satisfied but yields no semantic content. (Used to
   // include a "no outside attacker on members" clause; that was a deviation
-  // removed in Task 6 follow-up.)
-  for (let mask = 1; mask < 1 << n; mask++) {
+  // removed in Task 6 follow-up.) BigInt masks for graphs >32 keys.
+  for (let mask = 1n; mask < (ONE << BigInt(n)); mask++) {
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
-      if (mask & (1 << i)) subset.add(args[i]!);
+      if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
     }
     if (isStable(subset, map)) {
       results.push(stripAux(subset));
@@ -136,13 +141,14 @@ export function findCompleteExtensions(map: Map<string, string[]>): Set<string>[
   const args = [...map.keys()];
   const n = args.length;
   const results: Set<string>[] = [];
+  const ONE = 1n;
 
   // Iterate all subsets. S is complete iff S is admissible AND closed under
-  // defense closure (defenseClosure(S) === S).
-  for (let mask = 0; mask < 1 << n; mask++) {
+  // defense closure (defenseClosure(S) === S). BigInt masks for graphs >32 keys.
+  for (let mask = 0n; mask < (ONE << BigInt(n)); mask++) {
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
-      if (mask & (1 << i)) subset.add(args[i]!);
+      if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
     }
     if (isClosedUnderDefense(subset, map) && isAdmissible(subset, map)) {
       results.push(stripAux(subset));
