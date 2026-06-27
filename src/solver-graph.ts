@@ -111,24 +111,51 @@ export function buildArgumentGraph(document: Document, reduction: Reduction): Ar
 }
 
 function applyReduction(rel: Relation, reduction: Reduction, state: PassState): void {
-  const { dropped } = state;
   const fromKey = endpointKey(rel.from as RelationEndpoint, state.argByNode);
   const toKey = endpointKey(rel.to as RelationEndpoint, state.argByNode);
 
   if (reduction === 'aspic') return; // handled by buildAspicReduction (Task 4)
 
-  // Support and equivalence are reduction-specific.
+  if (reduction === 'dung') {
+    // Only --x is an attack edge in the Dung reduction; every other arrow is
+    // dropped with per-type counts surfaced in the summary warning (matches
+    // solve() in src/solver.ts).
+    if (rel.arrow === 'attack') {
+      attachAttack(fromKey, toKey, 'attack', state);
+      return;
+    }
+    switch (rel.arrow) {
+      case 'support':
+        state.dropped.support++;
+        return;
+      case 'undercut':
+        state.dropped.undercut++;
+        return;
+      case 'undermine':
+        state.dropped.undermine++;
+        return;
+      case 'concession':
+        state.dropped.concession++;
+        return;
+      case 'qualification':
+        state.dropped.qualification++;
+        return;
+      case 'equivalence':
+        state.dropped.equivalence++;
+        return;
+    }
+    return;
+  }
+
+  // Bipolar and evidential reductions: support/equivalence use auxiliaries;
+  // every other arrow (attack, undercut, undermine, concession, qualification)
+  // collapses to plain attack (matches solveBipolar/solveEvidential in src/solver.ts).
   if (rel.arrow === 'support') {
     if (reduction === 'bipolar') {
       addSupport(fromKey, toKey, state);
       return;
     }
-    if (reduction === 'evidential') {
-      addNecessarySupport(fromKey, toKey, state);
-      return;
-    }
-    // dung: dropped with summary warning (counted via state.dropped).
-    dropped.support++;
+    addNecessarySupport(fromKey, toKey, state);
     return;
   }
   if (rel.arrow === 'equivalence') {
@@ -137,16 +164,11 @@ function applyReduction(rel: Relation, reduction: Reduction, state: PassState): 
       addSupport(toKey, fromKey, state);
       return;
     }
-    if (reduction === 'evidential') {
-      addNecessarySupport(fromKey, toKey, state);
-      addNecessarySupport(toKey, fromKey, state);
-      return;
-    }
-    dropped.equivalence++;
+    addNecessarySupport(fromKey, toKey, state);
+    addNecessarySupport(toKey, fromKey, state);
     return;
   }
 
-  // All other arrows collapse to plain attack.
   attachAttack(fromKey, toKey, rel.arrow, state);
 }
 

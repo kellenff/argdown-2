@@ -52,6 +52,35 @@ describe('buildArgumentGraph (dung reduction)', () => {
     const { warnings } = buildArgumentGraph(ast, 'dung');
     expect(warnings.some((w) => w.startsWith('duplicate fact id'))).toBe(true);
   });
+
+  it('drops undercut/undermine/concession/qualification as plain attacks (not attached)', () => {
+    const result = parse(
+      '[#A] x.\n[#B] y.\n[#C] z.\n[#D] q.\n[#E] r.\n[#F] s.\n' +
+        '[#A] -.-> [#B].\n' + // undercut
+        '[#A] -.- [#C].\n' + // undermine
+        '[#A] ~> [#D].\n' + // concession
+        '[#A] ?> [#E].\n' + // qualification
+        '[#A] --x [#F].\n', // attack
+    );
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { map, warnings } = buildArgumentGraph(ast, 'dung');
+    // Only --x produces an attack edge. Undercut/undermine/concession/qualification
+    // are dropped — B/C/D/E have empty attacker lists (not 'A').
+    expect(map.get('B')).toEqual([]);
+    expect(map.get('C')).toEqual([]);
+    expect(map.get('D')).toEqual([]);
+    expect(map.get('E')).toEqual([]);
+    // F is attacked by A.
+    expect(map.get('F')).toEqual(['A']);
+    // Summary warning mentions all four dropped kinds.
+    const summary = warnings.find((w) => w.includes('dropped'));
+    expect(summary).toBeDefined();
+    expect(summary).toMatch(/undercut=1/);
+    expect(summary).toMatch(/undermine=1/);
+    expect(summary).toMatch(/concession=1/);
+    expect(summary).toMatch(/qualification=1/);
+  });
 });
 
 describe('buildArgumentGraph (bipolar reduction)', () => {
