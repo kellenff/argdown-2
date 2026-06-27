@@ -50,8 +50,8 @@ describe('FIXTURES', () => {
 });
 
 describe('TASK_TYPES', () => {
-  it('has exactly 8 entries', () => {
-    expect(TASK_TYPES).toHaveLength(8);
+  it('has exactly 32 entries', () => {
+    expect(TASK_TYPES).toHaveLength(32);
   });
 
   it('contains the expected task types in order', () => {
@@ -60,10 +60,34 @@ describe('TASK_TYPES', () => {
       'solve-bipolar',
       'solve-aspic',
       'solve-evidential',
+      'solve-preferred',
+      'solve-preferred-bipolar',
+      'solve-preferred-aspic',
+      'solve-preferred-evidential',
+      'solve-stable',
+      'solve-stable-bipolar',
+      'solve-stable-aspic',
+      'solve-stable-evidential',
+      'solve-complete',
+      'solve-complete-bipolar',
+      'solve-complete-aspic',
+      'solve-complete-evidential',
       'parse-solve',
       'parse-solve-bipolar',
       'parse-solve-aspic',
       'parse-solve-evidential',
+      'parse-solve-preferred',
+      'parse-solve-preferred-bipolar',
+      'parse-solve-preferred-aspic',
+      'parse-solve-preferred-evidential',
+      'parse-solve-stable',
+      'parse-solve-stable-bipolar',
+      'parse-solve-stable-aspic',
+      'parse-solve-stable-evidential',
+      'parse-solve-complete',
+      'parse-solve-complete-bipolar',
+      'parse-solve-complete-aspic',
+      'parse-solve-complete-evidential',
     ]);
   });
 
