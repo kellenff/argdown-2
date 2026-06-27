@@ -56,3 +56,16 @@ describe('solveStableEvidential', () => {
     expect([...extensions[0]!].some((k) => k.startsWith('nec:'))).toBe(false);
   });
 });
+
+import { solveStableAspic as solveStableAspicFromAspic } from './solver-aspic.js';
+
+describe('solveStableAspic', () => {
+  it('returns 0 stable for undercut 3-cycle (still no stable)', () => {
+    const result = parse(
+      '[#A] x.\n[#B] y.\n[#C] z.\n[#A] -.-> [#B].\n[#B] -.-> [#C].\n[#C] -.-> [#A].\n',
+    );
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    expect(solveStableAspicFromAspic(ast).extensions).toEqual([]);
+  });
+});

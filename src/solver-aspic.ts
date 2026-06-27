@@ -13,8 +13,14 @@ import {
   factKeyFromRef,
   label,
   type Label,
+  type MultiSolveResult,
   type SolveResult,
 } from './solver.js';
+import {
+  findPreferredExtensions,
+  findStableExtensions,
+  findCompleteExtensions,
+} from './solver-multi.js';
 
 // One raw attack edge. For attack/undercut, `target` is `rel.to`.
 // For undermine, `target` is the containing argument (premiseIndex expansion)
@@ -268,4 +274,25 @@ function labelWithWeakAttacks(
     if (!defeats.has(target)) out.set(target, 'undec');
   }
   return out;
+}
+
+function solveAspicMulti(
+  document: Document,
+  algo: (map: Map<string, string[]>) => Set<string>[],
+): MultiSolveResult {
+  const { map, warnings } = buildAspicDefeatMap(document);
+  const extensions = algo(map);
+  return { extensions, warnings };
+}
+
+export function solvePreferredAspic(document: Document): MultiSolveResult {
+  return solveAspicMulti(document, findPreferredExtensions);
+}
+
+export function solveStableAspic(document: Document): MultiSolveResult {
+  return solveAspicMulti(document, findStableExtensions);
+}
+
+export function solveCompleteAspic(document: Document): MultiSolveResult {
+  return solveAspicMulti(document, findCompleteExtensions);
 }

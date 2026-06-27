@@ -72,3 +72,19 @@ describe('solvePreferredEvidential', () => {
     expect(ext.some((k) => k.startsWith('nec:'))).toBe(false);
   });
 });
+
+import { solvePreferredAspic as solvePreferredAspicFromAspic } from './solver-aspic.js';
+
+describe('solvePreferredAspic', () => {
+  it('returns 1 preferred (∅) for rebut with tied preference', () => {
+    // With tied preferences, the rebut does NOT become a defeat (Modgil &
+    // Prakken 2014 strict preference). Defeat map is empty; ∅ is admissible
+    // and maximal vacuously, so it is the unique preferred extension.
+    const result = parse('[#A] x { preference: 0 }\n[#B] y { preference: 0 }\n[#A] --x [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { extensions } = solvePreferredAspicFromAspic(ast);
+    expect(extensions.length).toBe(1);
+    expect(extensions[0]!.size).toBe(0);
+  });
+});
