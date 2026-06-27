@@ -9,8 +9,27 @@ export { renderMermaid } from './mermaid.js';
 export { stringify } from './stringifier.js';
 export type { StringifyOptions } from './stringifier.js';
 
-export { solve, solveBipolar, solveEvidential } from './solver.js';
+export {
+  solve,
+  solveBipolar,
+  solveEvidential,
+  solvePreferred,
+  solvePreferredBipolar,
+  solvePreferredEvidential,
+  solveStable,
+  solveStableBipolar,
+  solveStableEvidential,
+  solveComplete,
+  solveCompleteBipolar,
+  solveCompleteEvidential,
+  type MultiSolveResult,
+} from './solver.js';
 export { solveAspic } from './solver-aspic.js';
+export {
+  solvePreferredAspic,
+  solveStableAspic,
+  solveCompleteAspic,
+} from './solver-aspic.js';
 export type { SolveResult, Label } from './solver.js';
 
 export type {
