@@ -8,8 +8,20 @@ import { readFileSync } from 'node:fs';
 
 import { parse, formatError } from './parser.js';
 import { renderMermaid } from './mermaid.js';
-import { solve, solveBipolar, solveEvidential, type Label } from './solver.js';
-import { solveAspic } from './solver-aspic.js';
+import {
+  solve, solveBipolar, solveEvidential,
+  solvePreferred, solvePreferredBipolar, solvePreferredEvidential,
+  solveStable, solveStableBipolar, solveStableEvidential,
+  solveComplete, solveCompleteBipolar, solveCompleteEvidential,
+  type MultiSolveResult,
+  type Label,
+} from './solver.js';
+import {
+  solveAspic,
+  solvePreferredAspic,
+  solveStableAspic,
+  solveCompleteAspic,
+} from './solver-aspic.js';
 
 function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -21,6 +33,35 @@ function readStdin(): Promise<string> {
     process.stdin.on('end', () => resolve(data));
     process.stdin.on('error', reject);
   });
+}
+
+const VALID_SEMANTICS = new Set([
+  'dung', 'bipolar', 'aspic', 'evidential',
+  'preferred', 'preferred-bipolar', 'preferred-aspic', 'preferred-evidential',
+  'stable', 'stable-bipolar', 'stable-aspic', 'stable-evidential',
+  'complete', 'complete-bipolar', 'complete-aspic', 'complete-evidential',
+]);
+
+type MultiSemantics =
+  | 'preferred' | 'preferred-bipolar' | 'preferred-aspic' | 'preferred-evidential'
+  | 'stable' | 'stable-bipolar' | 'stable-aspic' | 'stable-evidential'
+  | 'complete' | 'complete-bipolar' | 'complete-aspic' | 'complete-evidential';
+
+function dispatchMulti(semantics: MultiSemantics, ast: import('./ast.js').Document): MultiSolveResult {
+  switch (semantics) {
+    case 'preferred': return solvePreferred(ast);
+    case 'preferred-bipolar': return solvePreferredBipolar(ast);
+    case 'preferred-aspic': return solvePreferredAspic(ast);
+    case 'preferred-evidential': return solvePreferredEvidential(ast);
+    case 'stable': return solveStable(ast);
+    case 'stable-bipolar': return solveStableBipolar(ast);
+    case 'stable-aspic': return solveStableAspic(ast);
+    case 'stable-evidential': return solveStableEvidential(ast);
+    case 'complete': return solveComplete(ast);
+    case 'complete-bipolar': return solveCompleteBipolar(ast);
+    case 'complete-aspic': return solveCompleteAspic(ast);
+    case 'complete-evidential': return solveCompleteEvidential(ast);
+  }
 }
 
 async function main(): Promise<void> {
@@ -36,15 +77,9 @@ async function main(): Promise<void> {
     process.stderr.write('argdown-mermaid: --semantics requires --solve\n');
     process.exit(1);
   }
-  if (
-    semantics !== undefined &&
-    semantics !== 'dung' &&
-    semantics !== 'bipolar' &&
-    semantics !== 'aspic' &&
-    semantics !== 'evidential'
-  ) {
+  if (semantics !== undefined && !VALID_SEMANTICS.has(semantics)) {
     process.stderr.write(
-      `argdown-mermaid: --semantics must be one of: dung, bipolar, aspic, evidential (got "${semantics}")\n`,
+      `argdown-mermaid: --semantics must be one of: ${[...VALID_SEMANTICS].join(', ')} (got "${semantics}")\n`,
     );
     process.exit(1);
   }
@@ -61,6 +96,23 @@ async function main(): Promise<void> {
   }
 
   if (solveMode) {
+    const isMulti = semantics !== undefined && semantics !== 'dung' && semantics !== 'bipolar' && semantics !== 'aspic' && semantics !== 'evidential';
+    if (isMulti) {
+      const solved = dispatchMulti(semantics as MultiSemantics, result.ast);
+      const lines: string[] = [];
+      if (solved.extensions.length === 0) {
+        lines.push('(no extensions)');
+      } else {
+        solved.extensions.forEach((ext, i) => {
+          const sortedKeys = [...ext].sort();
+          lines.push(`Extension ${i + 1}: ${sortedKeys.join(', ') || '(empty set)'}`);
+        });
+      }
+      process.stdout.write(lines.join('\n') + '\n');
+      for (const w of solved.warnings) process.stderr.write(`warning: ${w}\n`);
+      return;
+    }
+    // existing 4-grounded dispatch (unchanged)
     const solved =
       semantics === 'bipolar'
         ? solveBipolar(result.ast)

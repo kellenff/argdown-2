@@ -85,6 +85,73 @@ describe('CLI --solve', () => {
   it('rejects unknown --semantics values', () => {
     const out = runCli(['--solve', '--semantics=foo']);
     expect(out.status).not.toBe(0);
-    expect(out.stderr).toContain('--semantics must be one of: dung, bipolar, aspic');
+    expect(out.stderr).toMatch(/--semantics must be one of/);
+  });
+});
+
+const MULTI_EX_SEMANTICS = [
+  'preferred',
+  'preferred-bipolar',
+  'preferred-aspic',
+  'preferred-evidential',
+  'stable',
+  'stable-bipolar',
+  'stable-aspic',
+  'stable-evidential',
+  'complete',
+  'complete-bipolar',
+  'complete-aspic',
+  'complete-evidential',
+] as const;
+
+describe('CLI multi-extension --semantics', () => {
+  for (const semantics of MULTI_EX_SEMANTICS) {
+    it(`runs --semantics=${semantics} and prints Extension lines`, () => {
+      const dir = mkdtempSync(join(tmpdir(), 'argdown-cli-'));
+      const file = join(dir, 'doc.argdown');
+      // Dung/bipolar/evidential use a 2-cycle (mutual attacks, no preferences
+      // needed): 2 preferred/stable extensions {A}, {B}; 3 complete incl. ∅.
+      // ASPIC+ '--x' attacks require strictly-greater preference to defeat,
+      // so a 2-cycle with --x collapses to a one-sided defeat map and yields
+      // no stable extensions. Use mutual '-.-' (undercut) instead: undercuts
+      // always win, so both directions defeat each other and we get the same
+      // textbook Dung outcome.
+      const src =
+        semantics.endsWith('-aspic')
+          ? '[#A] x.\n[#B] y.\n[#A] -.-> [#B].\n[#B] -.-> [#A].\n'
+          : '[#A] x.\n[#B] y.\n[#A] --x [#B].\n[#B] --x [#A].\n';
+      writeFileSync(file, src);
+      const out = runCli(['--solve', `--semantics=${semantics}`, file]);
+      expect(out.status).toBe(0);
+      // Should print some "Extension N:" lines for preferred, stable, complete.
+      // For bipolar/evidential the 2-cycle produces the same extensions.
+      if (
+        semantics.startsWith('preferred') ||
+        semantics.startsWith('stable') ||
+        semantics.startsWith('complete')
+      ) {
+        expect(out.stdout).toContain('Extension 1:');
+      }
+    });
+  }
+
+  it('rejects --semantics=preferred-garbage (unknown reduction)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'argdown-cli-'));
+    const file = join(dir, 'doc.argdown');
+    writeFileSync(file, '[#a].\n');
+    const out = runCli(['--solve', '--semantics=preferred-garbage', file]);
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toMatch(/--semantics must be one of/);
+  });
+
+  it('prints empty stable result without crashing (3-cycle has 0 stable)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'argdown-cli-'));
+    const file = join(dir, 'doc.argdown');
+    // 3-cycle has 0 stable extensions by textbook Dung.
+    writeFileSync(file, '[#A] x.\n[#B] y.\n[#C] z.\n[#A] --x [#B].\n[#B] --x [#C].\n[#C] --x [#A].\n');
+    const out = runCli(['--solve', '--semantics=stable', file]);
+    expect(out.status).toBe(0);
+    // For empty result, CLI prints "(no extensions)" rather than Extension lines.
+    expect(out.stdout).toContain('(no extensions)');
   });
 });
