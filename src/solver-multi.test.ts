@@ -6,7 +6,9 @@ import {
   isConflictFree,
   isClosedUnderDefense,
   defenseClosure,
+  findCompleteExtensions,
   findPreferredExtensions,
+  findStableExtensions,
   isStable,
   stripAux,
 } from './solver-multi.js';
@@ -155,5 +157,68 @@ describe('findPreferredExtensions', () => {
     for (const ext of result) {
       expect([...ext].some((k) => k.startsWith('sup:'))).toBe(false);
     }
+  });
+});
+
+describe('findStableExtensions', () => {
+  it('returns empty for empty map', () => {
+    expect(findStableExtensions(new Map())).toEqual([]);
+  });
+
+  it('returns 2 stable for 2-cycle A<->B', () => {
+    // {A} and {B} are both admissible and each attacks the other.
+    const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
+    const result = findStableExtensions(map);
+    expect(result.length).toBe(2);
+    const sorted = result.map((s) => [...s].sort());
+    expect(sorted).toContainEqual(['A']);
+    expect(sorted).toContainEqual(['B']);
+  });
+
+  it('returns 0 stable for 3-cycle (odd cycle has no stable)', () => {
+    const map = new Map<string, string[]>([['A', ['C']], ['B', ['A']], ['C', ['B']]]);
+    expect(findStableExtensions(map)).toEqual([]);
+  });
+
+  it('returns [{A}] for unattacked source A', () => {
+    const map = new Map<string, string[]>([['A', []]]);
+    const result = findStableExtensions(map);
+    expect(result.length).toBe(1);
+    expect([...result[0]!]).toEqual(['A']);
+  });
+});
+
+describe('findCompleteExtensions', () => {
+  it('returns 1 (∅) for empty map', () => {
+    const result = findCompleteExtensions(new Map());
+    expect(result.length).toBe(1);
+    expect(result[0]!.size).toBe(0);
+  });
+
+  it('returns 1 ({A}) for unattacked source A (∅ is not closed because defenseClosure(∅) = {A})', () => {
+    const map = new Map<string, string[]>([['A', []]]);
+    const result = findCompleteExtensions(map);
+    expect(result.length).toBe(1);
+    expect([...result[0]!]).toEqual(['A']);
+  });
+
+  it('returns 1 (∅) for 3-cycle', () => {
+    // {A}, {B}, {C} are admissible but defenseClosure({A}) = {A, B, C} ≠ {A}, so not closed.
+    // ∅ is closed (no args added vacuously to closure since attackers are non-empty).
+    const map = new Map<string, string[]>([['A', ['C']], ['B', ['A']], ['C', ['B']]]);
+    const result = findCompleteExtensions(map);
+    expect(result.length).toBe(1);
+    expect(result[0]!.size).toBe(0);
+  });
+
+  it('returns 3 (∅, {A}, {B}) for 2-cycle', () => {
+    // ∅ closed; {A} and {B} each admissible and closed (defenseClosure({A}) = {A}).
+    const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
+    const result = findCompleteExtensions(map);
+    expect(result.length).toBe(3);
+    const sorted = result.map((s) => [...s].sort());
+    expect(sorted).toContainEqual([]);
+    expect(sorted).toContainEqual(['A']);
+    expect(sorted).toContainEqual(['B']);
   });
 });

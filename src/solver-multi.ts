@@ -108,3 +108,45 @@ export function findPreferredExtensions(map: Map<string, string[]>): Set<string>
   }
   return results;
 }
+
+export function findStableExtensions(map: Map<string, string[]>): Set<string>[] {
+  const args = [...map.keys()];
+  const n = args.length;
+  const results: Set<string>[] = [];
+
+  // Iterate all subsets. Textbook Dung: S is stable iff S is admissible AND
+  // S attacks every arg not in S. The empty set is excluded by convention:
+  // a stable extension must attack all outside arguments, which for an empty
+  // framework is vacuously satisfied but yields no semantic content. (Used to
+  // include a "no outside attacker on members" clause; that was a deviation
+  // removed in Task 6 follow-up.)
+  for (let mask = 1; mask < 1 << n; mask++) {
+    const subset = new Set<string>();
+    for (let i = 0; i < n; i++) {
+      if (mask & (1 << i)) subset.add(args[i]!);
+    }
+    if (isStable(subset, map)) {
+      results.push(stripAux(subset));
+    }
+  }
+  return results;
+}
+
+export function findCompleteExtensions(map: Map<string, string[]>): Set<string>[] {
+  const args = [...map.keys()];
+  const n = args.length;
+  const results: Set<string>[] = [];
+
+  // Iterate all subsets. S is complete iff S is admissible AND closed under
+  // defense closure (defenseClosure(S) === S).
+  for (let mask = 0; mask < 1 << n; mask++) {
+    const subset = new Set<string>();
+    for (let i = 0; i < n; i++) {
+      if (mask & (1 << i)) subset.add(args[i]!);
+    }
+    if (isClosedUnderDefense(subset, map) && isAdmissible(subset, map)) {
+      results.push(stripAux(subset));
+    }
+  }
+  return results;
+}
