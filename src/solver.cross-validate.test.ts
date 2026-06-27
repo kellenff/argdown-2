@@ -7,10 +7,11 @@ import { solve, solveComplete } from './solver.js';
 import type { Document } from './ast.js';
 
 const FIXTURES = [
-  'src/parser.fixtures/simple.argdown',
-  'src/parser.fixtures/relations.argdown',
   'src/parser.fixtures/deep-nesting.argdown',
-  'src/parser.fixtures/large-stress.argdown',
+  'src/parser.fixtures/small-relation.argdown',
+  'src/parser.fixtures/small-rule.argdown',
+  'src/parser.fixtures/medium-climate.argdown',
+  'src/parser.fixtures/heavy-relations.argdown',
 ];
 
 describe('cross-validation: grounded = ∩ complete', () => {
