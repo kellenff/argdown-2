@@ -1,9 +1,47 @@
 // src/solver.aspic.test.ts
 import { describe, expect, it } from 'vitest';
 import { parse } from './parser.js';
-import { solveAspic } from './solver-aspic.js';
+import { buildAspicDefeatMap, solveAspic } from './solver-aspic.js';
 import { solveAspic as publicSolveAspic } from './index.js';
 import { solveBipolar } from './solver.js';
+import type { Document } from './ast.js';
+
+describe('buildAspicDefeatMap', () => {
+  it('returns empty map and warnings for empty document', () => {
+    const ast: Document = {
+      kind: 'Document',
+      elements: [],
+      loc: { start: { line: 0, column: 0, offset: 0 }, end: { line: 0, column: 0, offset: 0 } },
+    };
+    const { map, warnings } = buildAspicDefeatMap(ast);
+    expect(map.size).toBe(0);
+    expect(warnings).toEqual([]);
+  });
+
+  it('returns defeat map with rebut between two tied-preference args', () => {
+    // [#A] --x [#B]: tied preference (both 0), so no defeat (rebut tied is not defeat).
+    const result = parse('[#A] x.\n[#B] y.\n[#A] --x [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const { map, warnings } = buildAspicDefeatMap(result.ast);
+    expect(map.get('A')).toBeUndefined(); // no defeat
+    expect(warnings).toEqual([]);
+  });
+
+  it('returns defeat map with undercut (always wins)', () => {
+    // [#A] -.-> [#B]: undercut always defeats regardless of preference.
+    const result = parse('[#A] x.\n[#B] y.\n[#A] -.-> [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const { map } = buildAspicDefeatMap(result.ast);
+    expect(map.get('B')).toEqual(['A']);
+  });
+
+  it('emits duplicate-id warning when same fact id is reused', () => {
+    const result = parse('[#A] x.\n[#A] y.\n');
+    if (!result.ok) throw new Error('parse failed');
+    const { warnings } = buildAspicDefeatMap(result.ast);
+    expect(warnings.some((w) => w.startsWith('duplicate fact id'))).toBe(true);
+  });
+});
 
 describe('solveAspic', () => {
   it('is re-exported from index.ts', () => {

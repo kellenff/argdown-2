@@ -29,6 +29,27 @@ type RawAttackEntry = { target: string; attack: RawAttack };
 export function solveAspic(document: Document): SolveResult {
   const labels = new Map<string, Label>();
   const argByNode = new Map<Argument, string>();
+  const { map: defeats, warnings } = buildAspicDefeatMap(document);
+  // Re-key labels for labelWithWeakAttacks (it expects labels populated by keyNodes).
+  keyNodes(document, labels, argByNode, new Map(), []);
+  const premiseIndex = buildPremiseIndex(document, argByNode);
+  const rawAttacks: RawAttackEntry[] = [];
+  classifyRelations(document, labels, argByNode, premiseIndex, rawAttacks, []);
+  const finalLabels = labelWithWeakAttacks(labels, rawAttacks, defeats);
+
+  return { labels: finalLabels, defeats, warnings };
+}
+
+// Compose the ASPIC+ defeat-derivation passes into one helper that returns
+// the defeat map plus collected warnings. Exposed so downstream multi-extension
+// solvers can build a defeat map without going through the grounded
+// labelWithWeakAttacks step.
+export function buildAspicDefeatMap(document: Document): {
+  map: Map<string, string[]>;
+  warnings: string[];
+} {
+  const labels = new Map<string, Label>();
+  const argByNode = new Map<Argument, string>();
   const preferences = new Map<string, number>();
   const warnings: string[] = [];
 
@@ -36,15 +57,14 @@ export function solveAspic(document: Document): SolveResult {
   const premiseIndex = buildPremiseIndex(document, argByNode);
   const rawAttacks: RawAttackEntry[] = [];
   classifyRelations(document, labels, argByNode, premiseIndex, rawAttacks, warnings);
-  const defeats = deriveDefeats(rawAttacks, preferences);
+  const map = deriveDefeats(rawAttacks, preferences);
   emitUntunedWarning(
     warnings,
     preferences,
     warnings.some((w) => w.startsWith('solveAspic(): dropped ')),
   );
-  const finalLabels = labelWithWeakAttacks(labels, rawAttacks, defeats);
 
-  return { labels: finalLabels, defeats, warnings };
+  return { map, warnings };
 }
 
 // Pass 1 + 1b: key all addressable nodes and read per-node preference in one walk.
