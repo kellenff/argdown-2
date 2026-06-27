@@ -1,4 +1,100 @@
 // src/solver-multi.ts
+export type Scc = { id: number; members: Set<string>; cyclic: boolean };
+
+/**
+ * Iterative Tarjan's strongly-connected-components algorithm.
+ * Returns SCCs in reverse topological order: when processed in array order,
+ * every attacker SCC comes before its attackee SCC.
+ *
+ * Iterative (not recursive) so JS call-stack limits don't bite on deep graphs.
+ */
+export function tarjanScc(map: Map<string, string[]>): Scc[] {
+  let index = 0;
+  const indices = new Map<string, number>();
+  const lowlinks = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const sccs: Scc[] = [];
+  let nextId = 0;
+
+  interface Frame {
+    arg: string;
+    successors: string[];
+    succIdx: number;
+  }
+
+  for (const start of map.keys()) {
+    if (indices.has(start)) continue;
+
+    const workStack: Frame[] = [
+      { arg: start, successors: map.get(start) ?? [], succIdx: 0 },
+    ];
+    indices.set(start, index);
+    lowlinks.set(start, index);
+    index++;
+    stack.push(start);
+    onStack.add(start);
+
+    while (workStack.length > 0) {
+      const frame = workStack[workStack.length - 1]!;
+      const { arg, successors } = frame;
+
+      if (frame.succIdx < successors.length) {
+        const w = successors[frame.succIdx]!;
+        frame.succIdx++;
+        if (!indices.has(w)) {
+          indices.set(w, index);
+          lowlinks.set(w, index);
+          index++;
+          stack.push(w);
+          onStack.add(w);
+          workStack.push({
+            arg: w,
+            successors: map.get(w) ?? [],
+            succIdx: 0,
+          });
+        } else if (onStack.has(w)) {
+          lowlinks.set(frame.arg, Math.min(lowlinks.get(frame.arg)!, indices.get(w)!));
+        }
+      } else {
+        if (lowlinks.get(arg) === indices.get(arg)) {
+          const members = new Set<string>();
+          let popped: string | undefined;
+          do {
+            popped = stack.pop();
+            if (popped === undefined) break;
+            onStack.delete(popped);
+            members.add(popped);
+          } while (popped !== arg);
+
+          let cyclic = false;
+          outer: for (const a of members) {
+            const aAttacks = map.get(a) ?? [];
+            for (const b of aAttacks) {
+              if (members.has(b)) {
+                cyclic = true;
+                break outer;
+              }
+            }
+          }
+
+          sccs.push({ id: nextId++, members, cyclic });
+        }
+        workStack.pop();
+        if (workStack.length > 0) {
+          const parent = workStack[workStack.length - 1]!;
+          lowlinks.set(
+            parent.arg,
+            Math.min(lowlinks.get(parent.arg)!, lowlinks.get(arg)!),
+          );
+        }
+      }
+    }
+  }
+
+  return sccs;
+}
+
 export function attackersOf(map: Map<string, string[]>, arg: string): string[] {
   return map.get(arg) ?? [];
 }
