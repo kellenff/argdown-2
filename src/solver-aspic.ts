@@ -27,14 +27,7 @@ type RawAttack =
 type RawAttackEntry = { target: string; attack: RawAttack };
 
 export function solveAspic(document: Document): SolveResult {
-  const labels = new Map<string, Label>();
-  const argByNode = new Map<Argument, string>();
-  const { map: defeats, warnings } = buildAspicDefeatMap(document);
-  // Re-key labels for labelWithWeakAttacks (it expects labels populated by keyNodes).
-  keyNodes(document, labels, argByNode, new Map(), []);
-  const premiseIndex = buildPremiseIndex(document, argByNode);
-  const rawAttacks: RawAttackEntry[] = [];
-  classifyRelations(document, labels, argByNode, premiseIndex, rawAttacks, []);
+  const { map: defeats, warnings, labels, rawAttacks } = buildAspicDefeatMap(document);
   const finalLabels = labelWithWeakAttacks(labels, rawAttacks, defeats);
 
   return { labels: finalLabels, defeats, warnings };
@@ -43,10 +36,14 @@ export function solveAspic(document: Document): SolveResult {
 // Compose the ASPIC+ defeat-derivation passes into one helper that returns
 // the defeat map plus collected warnings. Exposed so downstream multi-extension
 // solvers can build a defeat map without going through the grounded
-// labelWithWeakAttacks step.
+// labelWithWeakAttacks step. Also returns `labels` and `rawAttacks` so callers
+// (e.g. `solveAspic`) can run `labelWithWeakAttacks` without re-walking the
+// pipeline.
 export function buildAspicDefeatMap(document: Document): {
   map: Map<string, string[]>;
   warnings: string[];
+  labels: Map<string, Label>;
+  rawAttacks: RawAttackEntry[];
 } {
   const labels = new Map<string, Label>();
   const argByNode = new Map<Argument, string>();
@@ -64,7 +61,7 @@ export function buildAspicDefeatMap(document: Document): {
     warnings.some((w) => w.startsWith('solveAspic(): dropped ')),
   );
 
-  return { map, warnings };
+  return { map, warnings, labels, rawAttacks };
 }
 
 // Pass 1 + 1b: key all addressable nodes and read per-node preference in one walk.
