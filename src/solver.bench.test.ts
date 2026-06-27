@@ -50,17 +50,24 @@ describe('FIXTURES', () => {
 });
 
 describe('TASK_TYPES', () => {
-  it('has exactly 4 entries', () => {
-    expect(TASK_TYPES).toHaveLength(4);
+  it('has exactly 6 entries', () => {
+    expect(TASK_TYPES).toHaveLength(6);
   });
 
   it('contains the expected task types in order', () => {
     expect([...TASK_TYPES]).toEqual([
       'solve',
       'solve-bipolar',
+      'solve-aspic',
       'parse-solve',
       'parse-solve-bipolar',
+      'parse-solve-aspic',
     ]);
+  });
+
+  it('includes the aspic task types', () => {
+    expect(TASK_TYPES).toContain('solve-aspic');
+    expect(TASK_TYPES).toContain('parse-solve-aspic');
   });
 });
 
@@ -89,7 +96,7 @@ describe('runSolverBench', () => {
     }
   });
 
-  it('captures a peak heap delta per task (28 entries)', async () => {
+  it('captures a peak heap delta per task (42 entries)', async () => {
     const { peakHeapMB } = await runSolverBench(FAST_BENCH);
     expect(peakHeapMB.size).toBe(TASK_TYPES.length * FIXTURES.length);
     for (const taskType of TASK_TYPES) {

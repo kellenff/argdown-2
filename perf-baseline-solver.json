@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-06-26T17:37:44.500Z",
+  "capturedAt": "2026-06-27T02:18:37.188Z",
   "environment": {
     "nodeVersion": "v24.18.0",
     "platform": "darwin",
@@ -11,86 +11,122 @@
       "sizeBytes": 181,
       "tasks": {
         "solve": {
-          "opsPerSec": 638952.2338963017,
-          "marginOfError": 0.470121044203507,
-          "p99Ms": 0.00254199999994853,
-          "peakHeapDeltaMB": 0.04161834716796875
+          "opsPerSec": 639607.6002452096,
+          "marginOfError": 0.19900438065888448,
+          "p99Ms": 0.002459000000044398,
+          "peakHeapDeltaMB": 0.1881866455078125
         },
         "solve-bipolar": {
-          "opsPerSec": 543856.9401754977,
-          "marginOfError": 0.11122185670942109,
-          "p99Ms": 0.0024169999996956903,
-          "peakHeapDeltaMB": 0.1362152099609375
+          "opsPerSec": 539427.5258431718,
+          "marginOfError": 0.12150032767075777,
+          "p99Ms": 0.002500000000509317,
+          "peakHeapDeltaMB": 0.153564453125
+        },
+        "solve-aspic": {
+          "opsPerSec": 555294.4241598316,
+          "marginOfError": 0.21331861617087042,
+          "p99Ms": 0.002375000000029104,
+          "peakHeapDeltaMB": 0.2156982421875
         },
         "parse-solve": {
-          "opsPerSec": 35115.777190383,
-          "marginOfError": 1.8843256833218813,
-          "p99Ms": 0.04900000000088767,
-          "peakHeapDeltaMB": 0.6540069580078125
+          "opsPerSec": 42020.97361082973,
+          "marginOfError": 0.9662111649886719,
+          "p99Ms": 0.040207999998528976,
+          "peakHeapDeltaMB": 0.3707427978515625
         },
         "parse-solve-bipolar": {
-          "opsPerSec": 35938.73549089085,
-          "marginOfError": 1.8511024570225545,
-          "p99Ms": 0.04520799999954761,
-          "peakHeapDeltaMB": 0.046051025390625
+          "opsPerSec": 39479.24120897067,
+          "marginOfError": 1.2097763695764465,
+          "p99Ms": 0.04254099999889149,
+          "peakHeapDeltaMB": 0.05330657958984375
+        },
+        "parse-solve-aspic": {
+          "opsPerSec": 39591.141505678395,
+          "marginOfError": 1.0209425693779828,
+          "p99Ms": 0.03949999999895226,
+          "peakHeapDeltaMB": 0.04460906982421875
         }
       }
     },
     "small-rule": {
-      "sizeBytes": 170,
+      "sizeBytes": 171,
       "tasks": {
         "solve": {
-          "opsPerSec": 350961.42933672667,
-          "marginOfError": 1.1010104813827188,
-          "p99Ms": 0.004540999999790074,
-          "peakHeapDeltaMB": 0.04213714599609375
+          "opsPerSec": 358040.32008143474,
+          "marginOfError": 1.0666438850613218,
+          "p99Ms": 0.0054169999998521234,
+          "peakHeapDeltaMB": 0.121917724609375
         },
         "solve-bipolar": {
-          "opsPerSec": 297114.4527152355,
-          "marginOfError": 0.8000076254115104,
-          "p99Ms": 0.006833999999798834,
-          "peakHeapDeltaMB": 0.12349700927734375
+          "opsPerSec": 287128.2709812957,
+          "marginOfError": 1.5285223888925785,
+          "p99Ms": 0.007000000001426088,
+          "peakHeapDeltaMB": 0.1293792724609375
+        },
+        "solve-aspic": {
+          "opsPerSec": 366921.1406709249,
+          "marginOfError": 0.9462678709282986,
+          "p99Ms": 0.003832999998849118,
+          "peakHeapDeltaMB": 0.2558746337890625
         },
         "parse-solve": {
-          "opsPerSec": 41985.45003257659,
-          "marginOfError": 1.1605810280480735,
-          "p99Ms": 0.04416700000001583,
-          "peakHeapDeltaMB": 0.10956573486328125
+          "opsPerSec": 39948.48961811119,
+          "marginOfError": 1.0341051290195507,
+          "p99Ms": 0.04462499999863212,
+          "peakHeapDeltaMB": 0.29567718505859375
         },
         "parse-solve-bipolar": {
-          "opsPerSec": 41063.76638822071,
-          "marginOfError": 1.0709597801406896,
-          "p99Ms": 0.041874999998981366,
-          "peakHeapDeltaMB": 0.0830535888671875
+          "opsPerSec": 39136.80592057567,
+          "marginOfError": 1.0375362524246983,
+          "p99Ms": 0.040416000003460795,
+          "peakHeapDeltaMB": 0.0832977294921875
+        },
+        "parse-solve-aspic": {
+          "opsPerSec": 42067.83879601348,
+          "marginOfError": 1.0601366185894812,
+          "p99Ms": 0.03762500000448199,
+          "peakHeapDeltaMB": 0.11054229736328125
         }
       }
     },
     "small-relation": {
-      "sizeBytes": 181,
+      "sizeBytes": 182,
       "tasks": {
         "solve": {
-          "opsPerSec": 650745.4013142344,
-          "marginOfError": 0.1113849110819077,
-          "p99Ms": 0.00204200000007404,
-          "peakHeapDeltaMB": 0.3041534423828125
+          "opsPerSec": 618104.3992025356,
+          "marginOfError": 0.904840742758015,
+          "p99Ms": 0.0020839999997406267,
+          "peakHeapDeltaMB": 0.251983642578125
         },
         "solve-bipolar": {
-          "opsPerSec": 548803.1070977004,
-          "marginOfError": 1.082645198544228,
-          "p99Ms": 0.0024580000008427305,
-          "peakHeapDeltaMB": 0.13653564453125
+          "opsPerSec": 564423.7469793648,
+          "marginOfError": 0.3941543991182179,
+          "p99Ms": 0.0031249999992724042,
+          "peakHeapDeltaMB": 0.38266754150390625
+        },
+        "solve-aspic": {
+          "opsPerSec": 479123.7513354541,
+          "marginOfError": 0.91402990591782,
+          "p99Ms": 0.002666000000317581,
+          "peakHeapDeltaMB": 0.03748321533203125
         },
         "parse-solve": {
-          "opsPerSec": 32096.11620136642,
-          "marginOfError": 3.086844857934955,
-          "p99Ms": 0.05075000000215368,
-          "peakHeapDeltaMB": 0.0777130126953125
+          "opsPerSec": 36070.00814691468,
+          "marginOfError": 1.0965372887473857,
+          "p99Ms": 0.04408300000068266,
+          "peakHeapDeltaMB": 0.07265472412109375
         },
         "parse-solve-bipolar": {
-          "opsPerSec": 31489.805078101755,
-          "marginOfError": 2.9031116926113034,
-          "p99Ms": 0.05137500000273576,
-          "peakHeapDeltaMB": 0.0607757568359375
+          "opsPerSec": 37627.337834099264,
+          "marginOfError": 0.806703967174207,
+          "p99Ms": 0.03633299999637529,
+          "peakHeapDeltaMB": 0.06362152099609375
+        },
+        "parse-solve-aspic": {
+          "opsPerSec": 36224.776855353586,
+          "marginOfError": 0.8315472895916186,
+          "p99Ms": 0.038500000002386514,
+          "peakHeapDeltaMB": 0.05889129638671875
         }
       }
     },
@@ -98,28 +134,40 @@
       "sizeBytes": 1656,
       "tasks": {
         "solve": {
-          "opsPerSec": 281190.7148727352,
-          "marginOfError": 0.25656829045792984,
-          "p99Ms": 0.006541999999171821,
-          "peakHeapDeltaMB": 0.26729583740234375
+          "opsPerSec": 290124.9573516568,
+          "marginOfError": 0.24131960415124865,
+          "p99Ms": 0.006207999999787717,
+          "peakHeapDeltaMB": 0.20944976806640625
         },
         "solve-bipolar": {
-          "opsPerSec": 220962.77108252302,
-          "marginOfError": 1.208915479334887,
-          "p99Ms": 0.006708000000799075,
-          "peakHeapDeltaMB": 0.08094024658203125
+          "opsPerSec": 227425.4828342782,
+          "marginOfError": 0.26433039757896065,
+          "p99Ms": 0.006833000001279288,
+          "peakHeapDeltaMB": 0.26448822021484375
+        },
+        "solve-aspic": {
+          "opsPerSec": 245442.48236200094,
+          "marginOfError": 1.0659336527289671,
+          "p99Ms": 0.005165999999007909,
+          "peakHeapDeltaMB": 0.05355072021484375
         },
         "parse-solve": {
-          "opsPerSec": 4594.288542258252,
-          "marginOfError": 2.2027690101329185,
-          "p99Ms": 0.37987499999871943,
-          "peakHeapDeltaMB": 0.5762100219726562
+          "opsPerSec": 5182.869065179204,
+          "marginOfError": 1.1246684725033866,
+          "p99Ms": 0.3233749999999418,
+          "peakHeapDeltaMB": 0.49405670166015625
         },
         "parse-solve-bipolar": {
-          "opsPerSec": 4791.685545634572,
-          "marginOfError": 2.1893101901818537,
-          "p99Ms": 0.33766599999944447,
-          "peakHeapDeltaMB": 0.47528076171875
+          "opsPerSec": 5068.118441341701,
+          "marginOfError": 1.1327051782807096,
+          "p99Ms": 0.294000000001688,
+          "peakHeapDeltaMB": 0.47815704345703125
+        },
+        "parse-solve-aspic": {
+          "opsPerSec": 5038.8295414348195,
+          "marginOfError": 1.0833341732076511,
+          "p99Ms": 0.3257080000039423,
+          "peakHeapDeltaMB": 0.46782684326171875
         }
       }
     },
@@ -127,28 +175,40 @@
       "sizeBytes": 2311,
       "tasks": {
         "solve": {
-          "opsPerSec": 60000.214957182965,
-          "marginOfError": 0.7858597234477807,
-          "p99Ms": 0.029708000000027823,
-          "peakHeapDeltaMB": 0.430023193359375
+          "opsPerSec": 60503.84807483106,
+          "marginOfError": 0.3595618221661444,
+          "p99Ms": 0.0244170000005397,
+          "peakHeapDeltaMB": 0.30255889892578125
         },
         "solve-bipolar": {
-          "opsPerSec": 74972.93665881555,
-          "marginOfError": 0.4777812162853848,
-          "p99Ms": 0.01995800000076997,
-          "peakHeapDeltaMB": 0.09814453125
+          "opsPerSec": 73983.33378008645,
+          "marginOfError": 0.33128434537768126,
+          "p99Ms": 0.020082999999431195,
+          "peakHeapDeltaMB": 0.4654541015625
+        },
+        "solve-aspic": {
+          "opsPerSec": 173522.72652828484,
+          "marginOfError": 0.2208357037481341,
+          "p99Ms": 0.009708000001410255,
+          "peakHeapDeltaMB": 0.011749267578125
         },
         "parse-solve": {
-          "opsPerSec": 1848.1296806189673,
-          "marginOfError": 3.2270456320069876,
-          "p99Ms": 3.2462090000008175,
-          "peakHeapDeltaMB": 1.3299713134765625
+          "opsPerSec": 2017.9724161580705,
+          "marginOfError": 1.162087286995637,
+          "p99Ms": 1.348707999997714,
+          "peakHeapDeltaMB": 1.3299179077148438
         },
         "parse-solve-bipolar": {
-          "opsPerSec": 1804.9978087328705,
-          "marginOfError": 3.244626139086747,
-          "p99Ms": 3.3728329999976268,
-          "peakHeapDeltaMB": 1.26165771484375
+          "opsPerSec": 1955.3920803345584,
+          "marginOfError": 1.4030353691232407,
+          "p99Ms": 1.493040999994264,
+          "peakHeapDeltaMB": 1.2591400146484375
+        },
+        "parse-solve-aspic": {
+          "opsPerSec": 2011.3246132857375,
+          "marginOfError": 1.4094299128525534,
+          "p99Ms": 1.4422090000007302,
+          "peakHeapDeltaMB": 1.2274017333984375
         }
       }
     },
@@ -156,28 +216,40 @@
       "sizeBytes": 1439,
       "tasks": {
         "solve": {
-          "opsPerSec": 547099.6870591104,
-          "marginOfError": 0.21231637655313407,
-          "p99Ms": 0.002457999999933236,
-          "peakHeapDeltaMB": 0.17035675048828125
+          "opsPerSec": 516042.6836655776,
+          "marginOfError": 0.24706558139441556,
+          "p99Ms": 0.002500000000509317,
+          "peakHeapDeltaMB": 0.182586669921875
         },
         "solve-bipolar": {
-          "opsPerSec": 480202.74933438655,
-          "marginOfError": 0.43374470099298335,
-          "p99Ms": 0.002791000000797794,
+          "opsPerSec": 495112.91087938106,
+          "marginOfError": 0.3039731324042632,
+          "p99Ms": 0.0027090000003227033,
           "peakHeapDeltaMB": 0.00275421142578125
         },
+        "solve-aspic": {
+          "opsPerSec": 434456.24491510843,
+          "marginOfError": 0.34539072971125007,
+          "p99Ms": 0.0037910000028205104,
+          "peakHeapDeltaMB": 0.00264739990234375
+        },
         "parse-solve": {
-          "opsPerSec": 7182.992373350772,
-          "marginOfError": 1.5633138040554797,
-          "p99Ms": 0.25729100000171456,
-          "peakHeapDeltaMB": 0.41082763671875
+          "opsPerSec": 7261.588050109916,
+          "marginOfError": 0.8204435366507292,
+          "p99Ms": 0.23029200000019046,
+          "peakHeapDeltaMB": 0.41461944580078125
         },
         "parse-solve-bipolar": {
-          "opsPerSec": 6931.505700465035,
-          "marginOfError": 1.445670836190962,
-          "p99Ms": 0.2625000000007276,
-          "peakHeapDeltaMB": 0.391876220703125
+          "opsPerSec": 7240.649929057096,
+          "marginOfError": 0.6329236769803142,
+          "p99Ms": 0.18100000000413274,
+          "peakHeapDeltaMB": 0.385498046875
+        },
+        "parse-solve-aspic": {
+          "opsPerSec": 7621.319660043438,
+          "marginOfError": 0.6747937688625405,
+          "p99Ms": 0.17604099999880418,
+          "peakHeapDeltaMB": 0.38594818115234375
         }
       }
     },
@@ -185,28 +257,40 @@
       "sizeBytes": 120873,
       "tasks": {
         "solve": {
-          "opsPerSec": 5618.913221504469,
-          "marginOfError": 1.2621064921987204,
-          "p99Ms": 0.356207999999242,
-          "peakHeapDeltaMB": 0.0938262939453125
+          "opsPerSec": 6034.3222430282885,
+          "marginOfError": 1.1691431441095492,
+          "p99Ms": 0.22191699999984849,
+          "peakHeapDeltaMB": 0.09352874755859375
         },
         "solve-bipolar": {
-          "opsPerSec": 1411.6063241702893,
-          "marginOfError": 1.570228872351057,
-          "p99Ms": 1.6999999999989086,
-          "peakHeapDeltaMB": 0.47417449951171875
+          "opsPerSec": 1385.2760685793153,
+          "marginOfError": 1.5410276689571292,
+          "p99Ms": 1.259874999999738,
+          "peakHeapDeltaMB": 0.47344970703125
+        },
+        "solve-aspic": {
+          "opsPerSec": 2994.351965571248,
+          "marginOfError": 1.32877827168726,
+          "p99Ms": 0.6214169999984733,
+          "peakHeapDeltaMB": 0.579925537109375
         },
         "parse-solve": {
-          "opsPerSec": 28.350991544289638,
-          "marginOfError": 4.398970097712552,
-          "p99Ms": 62.509791000000405,
-          "peakHeapDeltaMB": 71.79898071289062
+          "opsPerSec": 32.29543698332801,
+          "marginOfError": 3.190745224542573,
+          "p99Ms": 51.515957999999955,
+          "peakHeapDeltaMB": 40.89544677734375
         },
         "parse-solve-bipolar": {
-          "opsPerSec": 28.479882673819805,
-          "marginOfError": 3.836162070925652,
-          "p99Ms": 53.36687499999971,
-          "peakHeapDeltaMB": 49.80714416503906
+          "opsPerSec": 31.334807244538407,
+          "marginOfError": 2.5059039722065735,
+          "p99Ms": 49.17712500000198,
+          "peakHeapDeltaMB": 36.77690124511719
+        },
+        "parse-solve-aspic": {
+          "opsPerSec": 30.091816083030487,
+          "marginOfError": 3.34504080089962,
+          "p99Ms": 55.5603340000016,
+          "peakHeapDeltaMB": 52.54566192626953
         }
       }
     }

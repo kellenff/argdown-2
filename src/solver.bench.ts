@@ -8,6 +8,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { argv, exit } from 'node:process';
 import { parse } from './parser.js';
 import { solve, solveBipolar } from './solver.js';
+import { solveAspic } from './solver-aspic.js';
 import type { Document } from './ast.js';
 
 export const FIXTURES = [
@@ -22,7 +23,14 @@ export const FIXTURES = [
 
 export type FixtureName = (typeof FIXTURES)[number][0];
 
-export const TASK_TYPES = ['solve', 'solve-bipolar', 'parse-solve', 'parse-solve-bipolar'] as const;
+export const TASK_TYPES = [
+  'solve',
+  'solve-bipolar',
+  'solve-aspic',
+  'parse-solve',
+  'parse-solve-bipolar',
+  'parse-solve-aspic',
+] as const;
 
 export type TaskType = (typeof TASK_TYPES)[number];
 
@@ -61,6 +69,15 @@ function makeTaskBody(task: TaskType, source: string, cachedAst: Document): () =
       return () => {
         const r = parse(source);
         if (r.ok) solveBipolar(r.ast);
+      };
+    case 'solve-aspic':
+      return () => {
+        solveAspic(cachedAst);
+      };
+    case 'parse-solve-aspic':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solveAspic(r.ast);
       };
   }
 }
