@@ -1,0 +1,103 @@
+// src/solver-multi.test.ts
+import { describe, expect, it } from 'vitest';
+import {
+  attackersOf,
+  isAdmissible,
+  isConflictFree,
+  isClosedUnderDefense,
+  defenseClosure,
+  isStable,
+  stripAux,
+} from './solver-multi.js';
+
+describe('attackersOf', () => {
+  it('returns attackers for a known target', () => {
+    const map = new Map<string, string[]>([['B', ['A']]]);
+    expect(attackersOf(map, 'B')).toEqual(['A']);
+  });
+  it('returns empty array for unknown target', () => {
+    const map = new Map<string, string[]>();
+    expect(attackersOf(map, 'X')).toEqual([]);
+  });
+});
+
+describe('isConflictFree', () => {
+  it('returns true for empty set', () => {
+    expect(isConflictFree(new Set(), new Map())).toBe(true);
+  });
+  it('returns true when no internal attacks', () => {
+    expect(isConflictFree(new Set(['A', 'B']), new Map([['A', []], ['B', ['C']]]))).toBe(true);
+  });
+  it('returns false when an internal attack exists', () => {
+    expect(isConflictFree(new Set(['A', 'B']), new Map([['A', ['B']]]))).toBe(false);
+  });
+});
+
+describe('isAdmissible', () => {
+  it('empty set is always admissible', () => {
+    expect(isAdmissible(new Set(), new Map())).toBe(true);
+  });
+  it('A is admissible when unattacked', () => {
+    expect(isAdmissible(new Set(['A']), new Map([['A', []]]))).toBe(true);
+  });
+  it('A is NOT admissible when attacked by B and B is not in set', () => {
+    expect(isAdmissible(new Set(['A']), new Map([['A', ['B']]]))).toBe(false);
+  });
+  it('A IS admissible when attacked by B and A attacks B back', () => {
+    // 2-cycle: A -> B, B -> A. {A} is admissible (A defends itself against B).
+    expect(isAdmissible(new Set(['A']), new Map([['A', ['B']], ['B', ['A']]]))).toBe(true);
+  });
+});
+
+describe('defenseClosure', () => {
+  it('returns empty set for empty input', () => {
+    expect(defenseClosure(new Set(), new Map()).size).toBe(0);
+  });
+  it('does not add unattacked args (no defender)', () => {
+    // A is unattacked; {B} does not defend A.
+    const result = defenseClosure(new Set(['B']), new Map([['A', []], ['B', []]]));
+    expect([...result].sort()).toEqual(['B']);
+  });
+  it('adds an arg whose attackers are all defeated by the set', () => {
+    // A attacks B, B attacks C. {A} defends C (B is attacked by A).
+    const map = new Map<string, string[]>([['A', []], ['B', ['A']], ['C', ['B']]]);
+    const result = defenseClosure(new Set(['A']), map);
+    expect([...result].sort()).toEqual(['A', 'C']);
+  });
+});
+
+describe('isClosedUnderDefense', () => {
+  it('returns true for empty set', () => {
+    expect(isClosedUnderDefense(new Set(), new Map())).toBe(true);
+  });
+  it('returns true for set that contains all it defends', () => {
+    // {A} in the 2-cycle above; A is defended; {A} contains A.
+    const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
+    expect(isClosedUnderDefense(new Set(['A']), map)).toBe(true);
+  });
+});
+
+describe('isStable', () => {
+  it('returns true for unattacked A', () => {
+    expect(isStable(new Set(['A']), new Map([['A', []]]))).toBe(true);
+  });
+  it('returns false for 3-cycle (odd cycle has no stable)', () => {
+    const map = new Map<string, string[]>([['A', ['B']], ['B', ['C']], ['C', ['A']]]);
+    expect(isStable(new Set(['A']), map)).toBe(false);
+  });
+  it('returns false for 2-cycle', () => {
+    const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
+    expect(isStable(new Set(['A']), map)).toBe(false);
+  });
+});
+
+describe('stripAux', () => {
+  it('removes sup: and nec: prefixed keys', () => {
+    const set = new Set(['A', 'sup:A->B', 'nec:B->C', 'B']);
+    expect([...stripAux(set)].sort()).toEqual(['A', 'B']);
+  });
+  it('leaves arg:L:C keys intact', () => {
+    const set = new Set(['A', 'arg:1:1:C']);
+    expect([...stripAux(set)].sort()).toEqual(['A', 'arg:1:1:C']);
+  });
+});
