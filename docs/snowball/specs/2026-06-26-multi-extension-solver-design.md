@@ -260,12 +260,12 @@ Tests for the three algorithms independent of any reduction. Cases:
 
 | Case | Setup | Expected |
 |---|---|---|
-| Empty graph | `map = {}` | 0 extensions for all three semantics |
+| Empty graph | `map = {}` | preferred: 1 (∅ — only subset, admissible vacuously); stable: 0 (∅ attacks no outside, so not stable); complete: 1 (∅ — closed under defense closure trivially) |
 | Single source | `map = {A: []}` | 1 extension `{A}` for all three |
 | Single attacker | `map = {A: [B]}` | 1 extension `{B}` for all three (A is attacked) |
 | 2-cycle | `A → B, B → A` | preferred: 2 (`{A}`, `{B}`); stable: 0; complete: 3 (∅, `{A}`, `{B}`) |
-| 3-cycle | `A → B → C → A` | preferred: 3 (`{A}`, `{B}`, `{C}`); stable: 0; complete: 1 (∅) |
-| Self-attack | `A → A` | preferred: 0; stable: 0; complete: 1 (∅) |
+| 3-cycle | `A → B → C → A` | preferred: 1 (∅ — no singleton is self-defending under standard Dung); stable: 0; complete: 1 (∅) |
+| Self-attack | `A → A` | preferred: 1 (∅ — only ∅ is admissible); stable: 0; complete: 1 (∅) |
 | Unattached source `A` | map `{A: []}` | preferred: 1 (`{A}`); stable: 1 (`{A}`); complete: 1 (`{A}`) |
 
 **Convention:** complete extensions are subsets `S ⊆ args` such that `S` is admissible AND closed under defense closure (`defenseClosure(S) === S`). By Dung's theorem (Dung 1995 §3), `∩ complete = grounded`, which is why the cross-validation invariant holds for all graphs — including unattached-source cases (grounded = `{A}`, ∩ complete = `{A}`) and 3-cycle/self-attack cases (grounded = ∅, ∩ complete = ∅).
