@@ -63,6 +63,19 @@ describe('CLI --solve', () => {
     expect(out.stdout).toMatch(/OUT \(0\):\s*$/m);
   });
 
+  it('runs Method 3 (aspic) with --semantics=aspic', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'argdown-cli-'));
+    const file = join(dir, 'doc.argdown');
+    // Same doc as the bipolar test. Under ASPIC+: support is dropped, so
+    // x attacks a, b is unattacked. a=out, b=in, x=in.
+    writeFileSync(file, '[#a].\n[#b].\n[#x].\n[#a] --> [#b].\n[#x] --x [#a].\n');
+    const out = runCli(['--solve', '--semantics=aspic', file]);
+    expect(out.status).toBe(0);
+    expect(out.stdout).toMatch(/IN \(\d+\):[^]*\bb\b/);
+    expect(out.stdout).toMatch(/IN \(\d+\):[^]*\bx\b/);
+    expect(out.stdout).toMatch(/OUT \(\d+\):[^]*\ba\b/);
+  });
+
   it('rejects --semantics without --solve', () => {
     const out = runCli(['--semantics=bipolar']);
     expect(out.status).not.toBe(0);
@@ -72,6 +85,6 @@ describe('CLI --solve', () => {
   it('rejects unknown --semantics values', () => {
     const out = runCli(['--solve', '--semantics=foo']);
     expect(out.status).not.toBe(0);
-    expect(out.stderr).toContain('--semantics must be one of: dung, bipolar');
+    expect(out.stderr).toContain('--semantics must be one of: dung, bipolar, aspic');
   });
 });
