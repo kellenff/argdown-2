@@ -61,19 +61,10 @@ export function isClosedUnderDefense(set: Set<string>, map: Map<string, string[]
 
 export function isStable(set: Set<string>, map: Map<string, string[]>): boolean {
   if (!isAdmissible(set, map)) return false;
-  // S must attack every argument not in S.
+  // S must attack every argument not in S (textbook Dung).
   for (const a of map.keys()) {
     if (set.has(a)) continue;
     if (!attackersOf(map, a).some((b) => set.has(b))) return false;
-  }
-  // No member of S may be attacked from outside S — i.e. S must be a
-  // closed "island". This departs from textbook Dung stable extensions
-  // (where {A} in a 2-cycle A<->B counts as stable) and is the convention
-  // Tasks 6/7 rely on for output filtering.
-  for (const a of set) {
-    for (const b of attackersOf(map, a)) {
-      if (!set.has(b)) return false;
-    }
   }
   return true;
 }

@@ -87,9 +87,9 @@ describe('isStable', () => {
     const map = new Map<string, string[]>([['A', ['B']], ['B', ['C']], ['C', ['A']]]);
     expect(isStable(new Set(['A']), map)).toBe(false);
   });
-  it('returns false for 2-cycle', () => {
+  it('returns true for {A} in 2-cycle A<->B (textbook Dung: {A} is admissible and attacks B)', () => {
     const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
-    expect(isStable(new Set(['A']), map)).toBe(false);
+    expect(isStable(new Set(['A']), map)).toBe(true);
   });
 });
 
