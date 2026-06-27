@@ -263,7 +263,7 @@ Tests for the three algorithms independent of any reduction. Cases:
 | Empty graph | `map = {}` | preferred: 1 (∅ — only subset, admissible vacuously); stable: 0 (∅ attacks no outside, so not stable); complete: 1 (∅ — closed under defense closure trivially) |
 | Single source | `map = {A: []}` | 1 extension `{A}` for all three |
 | Single attacker | `map = {A: [B]}` | 1 extension `{B}` for all three (A is attacked) |
-| 2-cycle | `A → B, B → A` | preferred: 2 (`{A}`, `{B}`); stable: 0; complete: 3 (∅, `{A}`, `{B}`) |
+| 2-cycle | `A → B, B → A` | preferred: 2 (`{A}`, `{B}`); stable: 2 (`{A}`, `{B}`); complete: 3 (∅, `{A}`, `{B}`) |
 | 3-cycle | `A → B → C → A` | preferred: 1 (∅ — no singleton is self-defending under standard Dung); stable: 0; complete: 1 (∅) |
 | Self-attack | `A → A` | preferred: 1 (∅ — only ∅ is admissible); stable: 0; complete: 1 (∅) |
 | Unattached source `A` | map `{A: []}` | preferred: 1 (`{A}`); stable: 1 (`{A}`); complete: 1 (`{A}`) |
