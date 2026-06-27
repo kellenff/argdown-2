@@ -322,14 +322,16 @@ describe('findGroundedExtension', () => {
     expect(findGroundedExtension(map)).toEqual(new Set(['A']));
   });
 
-  it('returns the sink of a 2-node DAG', () => {
+  it('returns the unattacked source of a 2-node graph', () => {
+    // Map convention: map.get(arg) = list of args that ATTACK arg (incoming edges).
+    // For [[A, [B]], [B, []]]: B attacks A; A attacks no one.
+    // A's attackers = [B]; B's attackers = ∅. B is unattacked → in. A is
+    // attacked by B (in) → out. Result: {B}.
     const map = new Map<string, string[]>([
       ['A', ['B']],
       ['B', []],
     ]);
-    // A attacks B. B has no attackers → in. A is attacked by no one... wait,
-    // A's attackers are ∅, so A is also defended (vacuously). Result: {A, B}.
-    expect(findGroundedExtension(map)).toEqual(new Set(['A', 'B']));
+    expect(findGroundedExtension(map)).toEqual(new Set(['B']));
   });
 
   it('returns nothing for a 2-cycle (no defended members)', () => {
