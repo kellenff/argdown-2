@@ -13,7 +13,7 @@
 //                 (wired in Task 3).
 //   - aspic:      delegates to buildAspicDefeatMap (wired in Task 4).
 
-import type { Argument, Document, RelationStatement } from './ast.js';
+import type { Argument, Document, Relation, RelationEndpoint } from './ast.js';
 import { argKey, conclusionRefKey, endpointKey, factKey } from './solver.js';
 
 export type Reduction = 'dung' | 'bipolar' | 'aspic' | 'evidential';
@@ -23,23 +23,41 @@ export type ArgumentGraph = {
   warnings: string[];
 };
 
+interface PassState {
+  labels: Map<string, 'in' | 'out' | 'undec'>;
+  attacks: Map<string, string[]>;
+  argByNode: Map<Argument, string>;
+  warnings: string[];
+  dropped: {
+    support: number;
+    undercut: number;
+    undermine: number;
+    concession: number;
+    qualification: number;
+    equivalence: number;
+  };
+}
+
 export function buildArgumentGraph(document: Document, reduction: Reduction): ArgumentGraph {
   if (reduction === 'aspic') {
     // Delegate to ASPIC+ helper (Task 4 will wire this).
     return buildAspicReduction(document);
   }
-  const labels = new Map<string, 'in' | 'out' | 'undec'>();
-  const argByNode = new Map<Argument, string>();
-  const attacks = new Map<string, string[]>();
-  const warnings: string[] = [];
-  const dropped = {
-    support: 0,
-    undercut: 0,
-    undermine: 0,
-    concession: 0,
-    qualification: 0,
-    equivalence: 0,
+  const state: PassState = {
+    labels: new Map(),
+    attacks: new Map(),
+    argByNode: new Map(),
+    warnings: [],
+    dropped: {
+      support: 0,
+      undercut: 0,
+      undermine: 0,
+      concession: 0,
+      qualification: 0,
+      equivalence: 0,
+    },
   };
+  const { labels, attacks, argByNode, warnings } = state;
 
   // Pass 1: key addressable nodes.
   for (const el of document.elements) {
@@ -65,13 +83,13 @@ export function buildArgumentGraph(document: Document, reduction: Reduction): Ar
   // Pass 2: walk relations, apply per-reduction arrow handling.
   for (const el of document.elements) {
     if (el.kind !== 'RelationStatement') continue;
-    const rs = el as RelationStatement;
-    for (const rel of rs.relations) {
-      applyReduction(rel, reduction, labels, attacks, argByNode, warnings, dropped);
+    for (const rel of el.relations) {
+      applyReduction(rel, reduction, state);
     }
   }
 
   if (reduction === 'dung') {
+    const { dropped } = state;
     const totalDropped =
       dropped.support +
       dropped.undercut +
@@ -92,29 +110,15 @@ export function buildArgumentGraph(document: Document, reduction: Reduction): Ar
   return { map: attacks, warnings };
 }
 
-function applyReduction(
-  rel: { arrow: string; from: unknown; to: unknown },
-  reduction: Reduction,
-  labels: Map<string, 'in' | 'out' | 'undec'>,
-  attacks: Map<string, string[]>,
-  argByNode: Map<Argument, string>,
-  warnings: string[],
-  dropped: {
-    support: number;
-    undercut: number;
-    undermine: number;
-    concession: number;
-    qualification: number;
-    equivalence: number;
-  },
-): void {
-  const fromKey = endpointKey(rel.from as never, argByNode);
-  const toKey = endpointKey(rel.to as never, argByNode);
+function applyReduction(rel: Relation, reduction: Reduction, state: PassState): void {
+  const { labels, attacks, argByNode, warnings, dropped } = state;
+  const fromKey = endpointKey(rel.from as RelationEndpoint, argByNode);
+  const toKey = endpointKey(rel.to as RelationEndpoint, argByNode);
 
   switch (reduction) {
     case 'dung': {
       if (rel.arrow === 'attack') {
-        attachAttack(fromKey, toKey, 'attack', labels, attacks, warnings);
+        attachAttack(fromKey, toKey, 'attack', state);
         return;
       }
       // Other arrows are dropped with a summary warning emitted by the caller.
@@ -148,14 +152,8 @@ function applyReduction(
   }
 }
 
-function attachAttack(
-  fromKey: string,
-  toKey: string,
-  kind: string,
-  labels: Map<string, 'in' | 'out' | 'undec'>,
-  attacks: Map<string, string[]>,
-  warnings: string[],
-): void {
+function attachAttack(fromKey: string, toKey: string, kind: string, state: PassState): void {
+  const { labels, attacks, warnings } = state;
   if (!labels.has(toKey)) {
     warnings.push(`dangling ${kind} edge: ${fromKey} ${kind} ${toKey}`);
     return;
