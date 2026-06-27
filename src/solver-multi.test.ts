@@ -6,6 +6,7 @@ import {
   isConflictFree,
   isClosedUnderDefense,
   defenseClosure,
+  findPreferredExtensions,
   isStable,
   stripAux,
 } from './solver-multi.js';
@@ -100,5 +101,53 @@ describe('stripAux', () => {
   it('leaves arg:L:C keys intact', () => {
     const set = new Set(['A', 'arg:1:1:C']);
     expect([...stripAux(set)].sort()).toEqual(['A', 'arg:1:1:C']);
+  });
+});
+
+describe('findPreferredExtensions', () => {
+  it('returns empty array for empty map', () => {
+    expect(findPreferredExtensions(new Map())).toEqual([]);
+  });
+
+  it('returns [{A}] for unattacked source A', () => {
+    const map = new Map<string, string[]>([['A', []]]);
+    const result = findPreferredExtensions(map);
+    expect(result.length).toBe(1);
+    expect([...result[0]!]).toEqual(['A']);
+  });
+
+  it('returns 3 preferred for 3-cycle A->B->C->A', () => {
+    const map = new Map<string, string[]>([['A', ['B']], ['B', ['C']], ['C', ['A']]]);
+    const result = findPreferredExtensions(map);
+    expect(result.length).toBe(3);
+    const sorted = result.map((s) => [...s].sort());
+    expect(sorted).toContainEqual(['A']);
+    expect(sorted).toContainEqual(['B']);
+    expect(sorted).toContainEqual(['C']);
+  });
+
+  it('returns 2 preferred for 2-cycle A<->B', () => {
+    const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
+    const result = findPreferredExtensions(map);
+    expect(result.length).toBe(2);
+  });
+
+  it('returns empty for self-attacking A->A (no admissible)', () => {
+    const map = new Map<string, string[]>([['A', ['A']]]);
+    // {A} is not conflict-free; only ∅ is admissible but it's not maximal.
+    expect(findPreferredExtensions(map)).toEqual([]);
+  });
+
+  it('strips aux keys from each extension', () => {
+    const map = new Map<string, string[]>([
+      ['A', []],
+      ['sup:A->B', ['B']],
+      ['B', ['sup:A->B']],
+    ]);
+    const result = findPreferredExtensions(map);
+    expect(result.length).toBeGreaterThan(0);
+    for (const ext of result) {
+      expect([...ext].some((k) => k.startsWith('sup:'))).toBe(false);
+    }
   });
 });
