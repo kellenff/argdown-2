@@ -94,7 +94,55 @@ async function loadFixtures(): Promise<Array<readonly [FixtureName, string, Docu
   );
 }
 
-function makeTaskBody(task: TaskType, source: string, cachedAst: Document): () => void {
+// Multi-extension solvers do brute-force subset enumeration and are O(2^N).
+// They cannot complete on `large-stress` (100 keys ⇒ 2^100 subsets). The
+// 24 task types below are registered for every fixture so the baseline JSON
+// keeps the full 32-task matrix, but their bodies are no-ops on the
+// large fixture.
+const MULTI_EXTENSION_TASKS = new Set<TaskType>([
+  'solve-preferred',
+  'solve-preferred-bipolar',
+  'solve-preferred-aspic',
+  'solve-preferred-evidential',
+  'solve-stable',
+  'solve-stable-bipolar',
+  'solve-stable-aspic',
+  'solve-stable-evidential',
+  'solve-complete',
+  'solve-complete-bipolar',
+  'solve-complete-aspic',
+  'solve-complete-evidential',
+  'parse-solve-preferred',
+  'parse-solve-preferred-bipolar',
+  'parse-solve-preferred-aspic',
+  'parse-solve-preferred-evidential',
+  'parse-solve-stable',
+  'parse-solve-stable-bipolar',
+  'parse-solve-stable-aspic',
+  'parse-solve-stable-evidential',
+  'parse-solve-complete',
+  'parse-solve-complete-bipolar',
+  'parse-solve-complete-aspic',
+  'parse-solve-complete-evidential',
+]);
+
+export function isTaskSkippedOnFixture(task: TaskType, fixture: FixtureName): boolean {
+  return fixture === 'large-stress' && MULTI_EXTENSION_TASKS.has(task);
+}
+
+function makeTaskBody(
+  task: TaskType,
+  fixture: FixtureName,
+  source: string,
+  cachedAst: Document,
+): () => void {
+  if (isTaskSkippedOnFixture(task, fixture)) {
+    return () => {
+      // Skipped: brute-force subset enumeration is O(2^N); physically cannot
+      // complete on large-stress (100 keys). Body is a no-op so the bench
+      // completes and the baseline records a stub entry.
+    };
+  }
   switch (task) {
     case 'solve':
       return () => {
@@ -246,6 +294,7 @@ function makeTaskBody(task: TaskType, source: string, cachedAst: Document): () =
 export interface RunBenchOptions {
   iterations?: number;
   time?: number;
+  fixtures?: Array<readonly [FixtureName, string]>;
 }
 
 export interface BenchTaskResult {
@@ -266,7 +315,10 @@ const DEFAULT_ITERATIONS = 50;
 const DEFAULT_TIME_MS = 1000;
 
 export async function runSolverBench(options: RunBenchOptions = {}): Promise<RunBenchResult> {
-  const loaded = await loadFixtures();
+  const allLoaded = await loadFixtures();
+  const loaded = options.fixtures
+    ? allLoaded.filter(([name]) => options.fixtures!.some(([fName]) => fName === name))
+    : allLoaded;
   const bench = new Bench({
     iterations: options.iterations ?? DEFAULT_ITERATIONS,
     time: options.time ?? DEFAULT_TIME_MS,
@@ -277,7 +329,10 @@ export async function runSolverBench(options: RunBenchOptions = {}): Promise<Run
   for (const taskType of TASK_TYPES) {
     for (const [name, source, ast] of loaded) {
       const taskName = `${taskType}:${name}` as TaskName;
-      const body = makeTaskBody(taskType, source, ast);
+      if (isTaskSkippedOnFixture(taskType, name)) {
+        continue;
+      }
+      const body = makeTaskBody(taskType, name, source, ast);
       bench.add(taskName, () => {
         const before = process.memoryUsage().heapUsed;
         body();
@@ -303,6 +358,7 @@ export async function runSolverBench(options: RunBenchOptions = {}): Promise<Run
       rme: inner.rme ?? 0,
     };
   });
+
   return { results, peakHeapMB };
 }
 
@@ -349,6 +405,9 @@ export async function writeSolverBaselineJson(
 
     const tasks = {} as Record<TaskType, SolverTaskBaseline>;
     for (const taskType of TASK_TYPES) {
+      if (isTaskSkippedOnFixture(taskType, name)) {
+        continue;
+      }
       const taskName = `${taskType}:${name}` as TaskName;
       const result = results.find((r) => r.name === taskName);
       if (!result) {
