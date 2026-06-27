@@ -33,13 +33,6 @@ describe('cross-validation: grounded = ∩ complete', () => {
       const complete = solveComplete(ast);
       let intersect = new Set<string>();
       if (complete.extensions.length === 0) {
-        // No complete extensions found — either the framework is empty (then
-        // grounded must also be ∅ by Dung's theorem) or the brute-force solver
-        // could not iterate the full subset space (graphs > 32 nodes overflow
-        // the 32-bit mask; see README "Complexity" caveat). Skip the invariant
-        // check for the overflow case — the cross-validation invariant itself
-        // is sound; only the multi-extension solver is incomplete at scale.
-        if (groundedIn.size > 0) return;
         expect(groundedIn.size).toBe(0);
         return;
       }
