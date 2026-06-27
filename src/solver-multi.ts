@@ -3,8 +3,9 @@ export type Scc = { id: number; members: Set<string>; cyclic: boolean };
 
 /**
  * Iterative Tarjan's strongly-connected-components algorithm.
- * Returns SCCs in reverse topological order: when processed in array order,
- * every attacker SCC comes before its attackee SCC.
+ * Returns SCCs in topological order: when processed in array order, every
+ * attacker SCC comes before its attackee SCC (required by Task 2's Modgil
+ * labeling walk).
  *
  * Iterative (not recursive) so JS call-stack limits don't bite on deep graphs.
  */
@@ -92,7 +93,11 @@ export function tarjanScc(map: Map<string, string[]>): Scc[] {
     }
   }
 
-  return sccs;
+  // Tarjan's natural output is reverse topological (sinks-first). The spec
+  // requires the opposite: every attacker SCC before its attackee SCC, so the
+  // Modgil labeling walk in Task 2 sees attackers labeled first. Reverse here
+  // so callers can rely on array order = topological order.
+  return sccs.reverse();
 }
 
 export function attackersOf(map: Map<string, string[]>, arg: string): string[] {
