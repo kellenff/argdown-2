@@ -50,8 +50,8 @@ describe('FIXTURES', () => {
 });
 
 describe('TASK_TYPES', () => {
-  it('has exactly 6 entries', () => {
-    expect(TASK_TYPES).toHaveLength(6);
+  it('has exactly 8 entries', () => {
+    expect(TASK_TYPES).toHaveLength(8);
   });
 
   it('contains the expected task types in order', () => {
@@ -59,15 +59,22 @@ describe('TASK_TYPES', () => {
       'solve',
       'solve-bipolar',
       'solve-aspic',
+      'solve-evidential',
       'parse-solve',
       'parse-solve-bipolar',
       'parse-solve-aspic',
+      'parse-solve-evidential',
     ]);
   });
 
   it('includes the aspic task types', () => {
     expect(TASK_TYPES).toContain('solve-aspic');
     expect(TASK_TYPES).toContain('parse-solve-aspic');
+  });
+
+  it('includes the evidential task types', () => {
+    expect(TASK_TYPES).toContain('solve-evidential');
+    expect(TASK_TYPES).toContain('parse-solve-evidential');
   });
 });
 
@@ -96,7 +103,7 @@ describe('runSolverBench', () => {
     }
   });
 
-  it('captures a peak heap delta per task (42 entries)', async () => {
+  it('captures a peak heap delta per task (56 entries)', async () => {
     const { peakHeapMB } = await runSolverBench(FAST_BENCH);
     expect(peakHeapMB.size).toBe(TASK_TYPES.length * FIXTURES.length);
     for (const taskType of TASK_TYPES) {

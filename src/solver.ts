@@ -276,3 +276,100 @@ export function solveBipolar(document: Document): SolveResult {
   }
   return { labels: out, warnings };
 }
+
+export function solveEvidential(document: Document): SolveResult {
+  const labels = new Map<string, Label>();
+  const warnings: string[] = [];
+
+  // Pass 1: key addressable nodes.
+  const argByNode = new Map<Argument, string>();
+  const attacks = new Map<string, string[]>();
+  for (const el of document.elements) {
+    if (el.kind === 'FactStatement') {
+      const key = factKey(el);
+      if (labels.has(key)) warnings.push('duplicate fact id: ' + key);
+      labels.set(key, 'undec');
+      if (!attacks.has(key)) attacks.set(key, []);
+    } else if (el.kind === 'Argument') {
+      const key = argKey(el);
+      if (labels.has(key)) warnings.push('duplicate argument location: ' + key);
+      labels.set(key, 'undec');
+      argByNode.set(el, key);
+      if (!attacks.has(key)) attacks.set(key, []);
+      const conclKey = conclusionRefKey(el.conclusion);
+      if (conclKey !== undefined && !labels.has(conclKey)) {
+        labels.set(conclKey, 'undec');
+        if (!attacks.has(conclKey)) attacks.set(conclKey, []);
+      }
+    }
+  }
+
+  // Necessary-support reduction: A --> B adds auxiliary `nec:A->B` with
+  // attacks `A → nec` and `nec → B`. A's defeat propagates to B.
+  function addNecessarySupport(fromKey: string, toKey: string): void {
+    const auxKey = `nec:${fromKey}->${toKey}`;
+    // A → aux
+    const auxAttackers = attacks.get(auxKey) ?? [];
+    auxAttackers.push(fromKey);
+    attacks.set(auxKey, auxAttackers);
+    // aux → B
+    const bAttackers = attacks.get(toKey) ?? [];
+    bAttackers.push(auxKey);
+    attacks.set(toKey, bAttackers);
+  }
+
+  // Pass 2: walk relations, classify.
+  for (const el of document.elements) {
+    if (el.kind !== 'RelationStatement') continue;
+    const rs = el as RelationStatement;
+    for (const rel of rs.relations) {
+      if (rel.arrow === 'support') {
+        const fromKey = endpointKey(rel.from, argByNode);
+        const toKey = endpointKey(rel.to, argByNode);
+        if (!labels.has(toKey)) {
+          warnings.push(`dangling support edge: ${fromKey} --> ${toKey}`);
+          continue;
+        }
+        if (!labels.has(fromKey)) {
+          labels.set(fromKey, 'undec');
+        }
+        addNecessarySupport(fromKey, toKey);
+        continue;
+      }
+      if (rel.arrow === 'equivalence') {
+        const fromKey = endpointKey(rel.from, argByNode);
+        const toKey = endpointKey(rel.to, argByNode);
+        if (!labels.has(toKey)) {
+          warnings.push(`dangling equivalence edge: ${fromKey} <-> ${toKey}`);
+          continue;
+        }
+        if (!labels.has(fromKey)) {
+          labels.set(fromKey, 'undec');
+        }
+        addNecessarySupport(fromKey, toKey);
+        addNecessarySupport(toKey, fromKey);
+        continue;
+      }
+      const fromKey = endpointKey(rel.from, argByNode);
+      const toKey = endpointKey(rel.to, argByNode);
+      if (!labels.has(toKey)) {
+        warnings.push(`dangling attack edge: ${fromKey} --x ${toKey}`);
+        continue;
+      }
+      if (!labels.has(fromKey)) {
+        labels.set(fromKey, 'undec');
+      }
+      const list = attacks.get(toKey) ?? [];
+      list.push(fromKey);
+      attacks.set(toKey, list);
+    }
+  }
+
+  // Pass 3: label, then strip `nec:`-prefixed auxiliaries from the output.
+  const fullLabels = label(attacks);
+  const out = new Map<string, Label>();
+  for (const [key, value] of fullLabels) {
+    if (!key.startsWith('nec:')) out.set(key, value);
+  }
+  return { labels: out, warnings };
+}

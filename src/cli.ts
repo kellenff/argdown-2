@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 
 import { parse, formatError } from './parser.js';
 import { renderMermaid } from './mermaid.js';
-import { solve, solveBipolar, type Label } from './solver.js';
+import { solve, solveBipolar, solveEvidential, type Label } from './solver.js';
 import { solveAspic } from './solver-aspic.js';
 
 function readStdin(): Promise<string> {
@@ -40,10 +40,11 @@ async function main(): Promise<void> {
     semantics !== undefined &&
     semantics !== 'dung' &&
     semantics !== 'bipolar' &&
-    semantics !== 'aspic'
+    semantics !== 'aspic' &&
+    semantics !== 'evidential'
   ) {
     process.stderr.write(
-      `argdown-mermaid: --semantics must be one of: dung, bipolar, aspic (got "${semantics}")\n`,
+      `argdown-mermaid: --semantics must be one of: dung, bipolar, aspic, evidential (got "${semantics}")\n`,
     );
     process.exit(1);
   }
@@ -65,7 +66,9 @@ async function main(): Promise<void> {
         ? solveBipolar(result.ast)
         : semantics === 'aspic'
           ? solveAspic(result.ast)
-          : solve(result.ast);
+          : semantics === 'evidential'
+            ? solveEvidential(result.ast)
+            : solve(result.ast);
     const groups: Record<Label, string[]> = { in: [], out: [], undec: [] };
     for (const [k, v] of solved.labels) groups[v].push(k);
     for (const v of ['in', 'out', 'undec'] as const) groups[v].sort();

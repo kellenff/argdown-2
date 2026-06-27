@@ -7,7 +7,7 @@ import { Bench } from 'tinybench';
 import { readFile, writeFile } from 'node:fs/promises';
 import { argv, exit } from 'node:process';
 import { parse } from './parser.js';
-import { solve, solveBipolar } from './solver.js';
+import { solve, solveBipolar, solveEvidential } from './solver.js';
 import { solveAspic } from './solver-aspic.js';
 import type { Document } from './ast.js';
 
@@ -27,9 +27,11 @@ export const TASK_TYPES = [
   'solve',
   'solve-bipolar',
   'solve-aspic',
+  'solve-evidential',
   'parse-solve',
   'parse-solve-bipolar',
   'parse-solve-aspic',
+  'parse-solve-evidential',
 ] as const;
 
 export type TaskType = (typeof TASK_TYPES)[number];
@@ -78,6 +80,15 @@ function makeTaskBody(task: TaskType, source: string, cachedAst: Document): () =
       return () => {
         const r = parse(source);
         if (r.ok) solveAspic(r.ast);
+      };
+    case 'solve-evidential':
+      return () => {
+        solveEvidential(cachedAst);
+      };
+    case 'parse-solve-evidential':
+      return () => {
+        const r = parse(source);
+        if (r.ok) solveEvidential(r.ast);
       };
   }
 }

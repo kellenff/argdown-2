@@ -104,10 +104,10 @@ The `./ast` subpath exists so type-only consumers don't pull Chevrotain into the
 import type { Document, FactStatement, Argument } from '@casualtheorics/argdown-2/ast';
 ```
 
-**Solver API:** the package ships three grounded-extension solvers, each taking a parsed `Document` and returning a label map.
+**Solver API:** the package ships four grounded-extension solvers, each taking a parsed `Document` and returning a label map.
 
 ```ts
-import { solve, solveBipolar, renderMermaid } from '@casualtheorics/argdown-2';
+import { solve, solveBipolar, solveAspic, solveEvidential, renderMermaid } from '@casualtheorics/argdown-2';
 
 // Method 1: Dung's grounded extension on a pure-attack reduction.
 const dung = solve(parsed.ast);
@@ -115,9 +115,16 @@ const dung = solve(parsed.ast);
 // Method 2: Cayrol & Lagasquie-Schiex deductive-support reduction.
 const bipolar = solveBipolar(parsed.ast);
 
-// Both return { labels: Map<string, 'in' | 'out' | 'undec'>, warnings: string[] }.
+// Method 3: ASPIC+ structured argumentation with preferences.
+const aspic = solveAspic(parsed.ast);
+
+// Method 4: Cayrol & Lagasquie-Schiex necessary-support reduction.
+const evidential = solveEvidential(parsed.ast);
+
+// All return { labels: Map<string, 'in' | 'out' | 'undec'>, warnings: string[] }.
+// solveAspic additionally populates `defeats?: Map<string, string[]>`.
 // The labels map flows directly into renderMermaid() to color winners/losers.
-const mermaid = renderMermaid(parsed.ast, bipolar.labels);
+const mermaid = renderMermaid(parsed.ast, evidential.labels);
 ```
 
 ### `solveAspic(document): SolveResult`
@@ -169,11 +176,29 @@ echo '[#A] --> [#B]' | npx argdown-mermaid --solve --semantics=bipolar
 Flags:
 
 - `--solve` — run the grounded-extension solver and color the output.
-- `--semantics=aspic` — use the ASPIC+ solver (Method 3 of the Method 1/2/3
+- `--semantics=aspic` — use the ASPIC+ solver (Method 3 of the Method 1/2/3/4
   ladder). Distinguishes rebut (`--x`), undercut (`-.->`), and undermine
   (`-.-`) attacks. Reads the `preference:` attribute to determine which
   attacks become defeats. Standard Modgil & Prakken 2014 dispute
   derivation. Pairs with `--solve`.
+- `--semantics=evidential` — use the necessary-support solver (Method 4 of
+  the Method 1/2/3/4 ladder). Cayrol & Lagasquie-Schiex 2005 §3.3: each
+  `-->` is interpreted as "the supporter is necessary for the supported."
+  A's defeat propagates to B (the opposite direction of bipolar's
+  deductive reduction). Pairs with `--solve`.
+
+**Example — same input, opposite labels:**
+
+```argdown
+[#A] First claim.
+[#B] Second claim.
+[#C] Objection.
+[#A] --> [#B].
+[#C] --x [#A].
+```
+
+- `--semantics=bipolar`: A `in`, B `in`, C `in`. Bipolar propagates B's defeat to A; here nobody defeats B, so nothing propagates and all three are winners.
+- `--semantics=evidential`: A `out`, B `out`, C `in`. C defeats A directly; A's defeat propagates to B.
 
 ---
 
