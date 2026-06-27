@@ -23,6 +23,8 @@ node_modules/
 .serena/
 .snowball/
 docs/snowball/decisions/
+.brainstorm/
+.claude/grfp/
 
 ### JetBrains template
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
