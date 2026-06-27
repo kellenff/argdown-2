@@ -403,58 +403,25 @@ Add to `src/solver-multi.ts` (right after `tarjanScc`):
 
 ```ts
 /**
- * Compute the grounded extension of a Dung framework via SCC decomposition.
- * O(|A|+|R|). Returns the set of "in"-labeled arguments.
+ * Compute the grounded extension of a Dung framework.
+ *
+ * Returns the set of arguments labeled "in" by Modgil's argument-level
+ * labeling: each arg a gets label 'in' if all its attackers are 'out',
+ * 'out' if it has an attacker labeled 'in', and 'undec' otherwise.
+ * Iterates until no labels change. Equivalent to defenseClosure(∅, F).
+ *
+ * SCC-based label propagation (acyclic SCCs → 'in'/'out', cyclic SCCs →
+ * 'undec') is a conservative approximation: when a cyclic SCC contains
+ * a member counter-attacked by an external 'in' arg, that member should
+ * be 'out' and other args attacking it (or attacked only by it) may then
+ * be 'in'. The SCC algorithm collapses these to 'undec' and misses the
+ * ripple. Argument-level Modgil handles this correctly.
+ *
+ * The Tarjan SCC machinery (above) is kept for topological order in
+ * future optimizations; this function uses the fixpoint directly.
  */
 export function findGroundedExtension(map: Map<string, string[]>): Set<string> {
-  const sccs = tarjanScc(map);
-  const sccOf = new Map<string, number>();
-  for (const scc of sccs) {
-    for (const arg of scc.members) {
-      sccOf.set(arg, scc.id);
-    }
-  }
-
-  // Labels per SCC: 'in' | 'out' | 'undec'.
-  const label = new Map<number, 'in' | 'out' | 'undec'>();
-  const grounded = new Set<string>();
-
-  for (const scc of sccs) {
-    if (scc.cyclic) {
-      label.set(scc.id, 'undec');
-      continue;
-    }
-
-    // Acyclic SCC: all members are 'in' iff every attacker's SCC is 'out'.
-    let allIn = true;
-    for (const arg of scc.members) {
-      const attackers = map.get(arg) ?? [];
-      for (const atk of attackers) {
-        const atkSccId = sccOf.get(atk);
-        if (atkSccId === undefined) {
-          // Attacker not in any SCC means map is malformed; treat as out
-          // for safety.
-          if (label.get(atkSccId as number) !== 'out') {
-            allIn = false;
-            break;
-          }
-        } else if (label.get(atkSccId) !== 'out') {
-          allIn = false;
-          break;
-        }
-      }
-      if (!allIn) break;
-    }
-
-    if (allIn) {
-      label.set(scc.id, 'in');
-      for (const arg of scc.members) grounded.add(arg);
-    } else {
-      label.set(scc.id, 'out');
-    }
-  }
-
-  return grounded;
+  return defenseClosure(new Set(), map);
 }
 ```
 

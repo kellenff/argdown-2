@@ -115,15 +115,15 @@ map ──► tarjanScc ──► ordered SCCs
 
 ## Algorithm
 
-### `findGroundedExtension(map)` — O(|A|+|R|)
+### `findGroundedExtension(map)` — O(|A|² × |R|) worst case (argument-level Modgil)
 
-1. Tarjan SCC on the attack graph → SCCs topologically ordered.
-2. Process SCCs in topological order:
-   - **Cyclic SCC** (any self-attack): all args → `undec`. They cannot be defended (attackers include same-SCC members, which are also undec).
-   - **Acyclic SCC** (no self-attack): args are `in` iff every attacker's SCC is already labeled `out`.
-3. Return the set of `in`-labeled args = G.
+Implemented as `defenseClosure(new Set(), map)` — Modgil's argument-level labeling fixpoint. Each arg a gets label `'in'` if all its attackers are `'out'`, `'out'` if it has an attacker labeled `'in'`, `'undec'` otherwise. Iterates until no labels change.
 
-This is the Modgil labeling variant. Faster than iterative fixpoint on dense graphs because SCCs are processed once.
+**Why not the SCC-based variant?** A first-pass SCC-based algorithm (process SCCs topologically; cyclic SCCs → `'undec'`, acyclic SCCs → `'in'` iff every attacker's SCC is `'out'`) is conservative: when a cyclic SCC contains a member counter-attacked by an external `'in'` arg, the SCC algorithm labels the whole SCC `'undec'` and misses the ripple that makes acyclic args (attacked only by that member) reachable from the grounded. For example, in a graph with a 13-node cyclic SCC plus a single-arg SCC attacked only by a member of that cycle, the SCC algorithm omits that arg from the grounded; argument-level Modgil correctly includes it. We therefore use `defenseClosure(new Set(), map)` directly.
+
+The Tarjan SCC machinery is preserved (`tarjanScc`, `Scc` type) for future topological-order optimizations of the residue search, but is not used by `findGroundedExtension` itself.
+
+**Complexity:** Argument-level Modgil is `O(|A|² × |R|)` in the worst case (each of `|A|` passes can change `|A|` labels). For practical argdown documents (sparse graphs with a small cyclic residue), this is fast. The original spec claimed `O(|A|+|R|)` via SCC; that complexity class is achievable only by the broken SCC algorithm above.
 
 ### `residueOf(map, G)`
 
