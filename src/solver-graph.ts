@@ -15,6 +15,7 @@
 
 import type { Argument, Document, Relation, RelationEndpoint } from './ast.js';
 import { argKey, conclusionRefKey, endpointKey, factKey } from './solver.js';
+import { buildAspicDefeatMap } from './solver-aspic.js';
 
 export type Reduction = 'dung' | 'bipolar' | 'aspic' | 'evidential';
 
@@ -224,6 +225,5 @@ function arrowSymbol(kind: string): string {
 }
 
 function buildAspicReduction(document: Document): ArgumentGraph {
-  // Placeholder for Task 4. Will be replaced with an ESM import.
-  throw new Error('aspic reduction not yet wired (Task 4)');
+  return buildAspicDefeatMap(document);
 }

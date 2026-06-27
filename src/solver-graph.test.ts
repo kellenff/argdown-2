@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse } from './parser.js';
 import { buildArgumentGraph } from './solver-graph.js';
+import { buildAspicDefeatMap } from './solver-aspic.js';
 import type { Document } from './ast.js';
 
 describe('buildArgumentGraph (dung reduction)', () => {
@@ -142,6 +143,37 @@ describe('buildArgumentGraph (evidential reduction)', () => {
     if (!result.ok) throw new Error('parse failed');
     const ast = result.ast;
     const { map } = buildArgumentGraph(ast, 'evidential');
+    expect(map.get('B')).toEqual(['A']);
+  });
+});
+
+describe('buildArgumentGraph (aspic reduction)', () => {
+  it('delegates to buildAspicDefeatMap and produces identical map', () => {
+    const src = '[#A] x.\n[#B] y.\n[#A] --x [#B].\n';
+    const result = parse(src);
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const direct = buildAspicDefeatMap(ast);
+    const via = buildArgumentGraph(ast, 'aspic');
+    expect([...via.map.entries()]).toEqual([...direct.map.entries()]);
+    expect(via.warnings).toEqual(direct.warnings);
+  });
+
+  it('undercut always wins regardless of preference', () => {
+    const result = parse('[#A] x.\n[#B] y.\n[#A] -.-> [#B].\n');
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { map } = buildArgumentGraph(ast, 'aspic');
+    expect(map.get('B')).toEqual(['A']);
+  });
+
+  it('rebut requires strict preference to be a defeat', () => {
+    const result = parse(
+      '[#A] x { preference: 1 }\n[#B] y { preference: 0.5 }\n[#A] --x [#B].\n',
+    );
+    if (!result.ok) throw new Error('parse failed');
+    const ast = result.ast;
+    const { map } = buildArgumentGraph(ast, 'aspic');
     expect(map.get('B')).toEqual(['A']);
   });
 });
