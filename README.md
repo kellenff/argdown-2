@@ -120,6 +120,40 @@ const bipolar = solveBipolar(parsed.ast);
 const mermaid = renderMermaid(parsed.ast, bipolar.labels);
 ```
 
+### `solveAspic(document): SolveResult`
+
+Returns the same `SolveResult` shape as `solve()` and `solveBipolar()`,
+plus an optional `defeats?: Map<string, string[]>` field that maps each
+defeated argument key to the list of defeaters. Existing solvers return
+`undefined` for `defeats`. The Mermaid renderer ignores `defeats`; it
+is a programmatic-only field for callers that want to inspect the
+defeat graph.
+
+The ASPIC+ solver drops support (`-->`), equivalence (`<->`),
+concession (`~>`), and qualification (`?>`) edges with a warning. To
+make ASPIC+ do useful work, set `preference:` on the relevant facts
+and arguments; otherwise rebut/undermine will not produce defeats.
+
+**Untuned documents:** if a document has non-attack edges but no
+`preference:` declared anywhere, the solver emits a warning explaining
+that defeats will not derive from rebut/undermine until preferences
+are set. ASPIC+ labels may then look like Dung's labels.
+
+**Strict vs defeasible:** all argdown inference rules are defeasible
+in v1. An undercut always defeats the targeted argument. Strict rules
+(where undercut does not defeat) are a future cycle.
+
+The `preference:` attribute sets a numeric preference on a fact or argument
+for use with the ASPIC+ solver. Higher numbers mean "more preferred."
+An attacker with strictly higher preference than its target produces a
+defeat; tied preferences do not. The attribute is read by `solveAspic()`
+and ignored by `solve()` and `solveBipolar()`. Default value is `0`.
+
+```argdown
+[#a] A fact { preference: 0.8 }
+([#thesis]) -> [#a], [#b] { preference: 0.6 }
+```
+
 **CLI:**
 
 ```bash
@@ -131,6 +165,15 @@ echo '[#A] --> [#B]' | npx argdown-mermaid --solve --semantics=bipolar
 ```
 
 `argdown-mermaid` reads stdin (or a filename argument) and writes a Mermaid `flowchart TD` to stdout. Parse errors go to stderr with non-zero exit.
+
+Flags:
+
+- `--solve` — run the grounded-extension solver and color the output.
+- `--semantics=aspic` — use the ASPIC+ solver (Method 3 of the Method 1/2/3
+  ladder). Distinguishes rebut (`--x`), undercut (`-.->`), and undermine
+  (`-.-`) attacks. Reads the `preference:` attribute to determine which
+  attacks become defeats. Standard Modgil & Prakken 2014 dispute
+  derivation. Pairs with `--solve`.
 
 ---
 
