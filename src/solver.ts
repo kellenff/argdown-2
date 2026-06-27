@@ -12,12 +12,19 @@ import type {
   RelationEndpoint,
   RelationStatement,
 } from './ast.js';
+import { buildArgumentGraph, type Reduction } from './solver-graph.js';
+import { findPreferredExtensions, findStableExtensions, findCompleteExtensions } from './solver-multi.js';
 
 export type Label = 'in' | 'out' | 'undec';
 
 export type SolveResult = {
   labels: Map<string, Label>;
   defeats?: Map<string, string[]>; // only solveAspic populates
+  warnings: string[];
+};
+
+export type MultiSolveResult = {
+  extensions: Set<string>[];
   warnings: string[];
 };
 
@@ -372,4 +379,26 @@ export function solveEvidential(document: Document): SolveResult {
     if (!key.startsWith('nec:')) out.set(key, value);
   }
   return { labels: out, warnings };
+}
+
+function solveMulti(
+  document: Document,
+  reduction: Reduction,
+  algo: (map: Map<string, string[]>) => Set<string>[],
+): MultiSolveResult {
+  const { map, warnings } = buildArgumentGraph(document, reduction);
+  const extensions = algo(map);
+  return { extensions, warnings };
+}
+
+export function solvePreferred(document: Document): MultiSolveResult {
+  return solveMulti(document, 'dung', findPreferredExtensions);
+}
+
+export function solveStable(document: Document): MultiSolveResult {
+  return solveMulti(document, 'dung', findStableExtensions);
+}
+
+export function solveComplete(document: Document): MultiSolveResult {
+  return solveMulti(document, 'dung', findCompleteExtensions);
 }
