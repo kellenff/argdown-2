@@ -67,19 +67,34 @@ type Scc = { id: number; members: Set<string>; cyclic: boolean };
 function findPreferredExtensions(map): Set<string>[] {
   const g = findGroundedExtension(map);
   const { args, subMap } = residueOf(map, g);
-  const ts = searchMaximalAdmissible(subMap);    // existing brute force on residue
-  return ts.map((t) => lift(t, g));              // G ∪ T, then stripAux
+  // Existing brute-force body, inlined, with isAdmissible + subset-pruning.
+  // Search domain is `args` (residue) and predicate is `subMap`.
+  const ts = bruteForceMaximalAdmissible(args, subMap);
+  return ts.map((t) => stripAux(lift(t, g)));   // lift then stripAux (single strip)
 }
 
-function findStableExtensions(map): Set<string>[] { /* symmetric */ }
+function findStableExtensions(map): Set<string>[] {
+  const g = findGroundedExtension(map);
+  const { args, subMap } = residueOf(map, g);
+  const ts = bruteForceStable(args, subMap);
+  return ts.map((t) => stripAux(lift(t, g)));
+}
 
 function findCompleteExtensions(map): Set<string>[] {
   const g = findGroundedExtension(map);
   const { args, subMap } = residueOf(map, g);
-  const ts = searchCompleteExtensions(subMap);   // existing brute force on residue
-  return ts.map((t) => lift(t, g));
+  const ts = bruteForceComplete(args, subMap);
+  return ts.map((t) => stripAux(lift(t, g)));
+}
+
+function lift(t: Set<string>, g: Set<string>): Set<string> {
+  return new Set([...t, ...g]);
 }
 ```
+
+**Internal extraction (rule of three applied):**
+
+The three brute-force loops are now distinct enough (preferred has subset-pruning, complete has closure check, stable has different condition) that we name them — but they are NOT extracted into a shared helper because the bodies diverge beyond what a parameterized helper could share cleanly. The names are local to `solver-multi.ts`. If a future fourth finder appears that genuinely shares structure, extract then.
 
 **Data flow:**
 
@@ -87,8 +102,8 @@ function findCompleteExtensions(map): Set<string>[] {
 map ──► tarjanScc ──► ordered SCCs
                   └► findGroundedExtension ──► G
                                             └► residueOf ──► (args, subMap)
-                                                              └► [existing mask-based search on subMap]
-                                                                 └► lift by G ∪ T
+                                                              └► [bruteForceMaximalAdmissible / bruteForceStable / bruteForceComplete on residue]
+                                                                 └► lift(t, g) = T ∪ G
                                                                     └► stripAux ──► Set<string>[]
 ```
 
@@ -161,8 +176,8 @@ Build a `sccOf: Map<string, number>` lookup once to avoid repeated scanning.
 Each finder:
 1. Calls `findGroundedExtension`.
 2. Calls `residueOf`.
-3. Runs the existing mask-based brute force on `subMap` (renamed `searchMaximalAdmissible`, `searchCompleteExtensions`, etc. internally — or kept inline if simpler).
-4. Maps each result T through `lift(t, g) = new Set([...t, ...g])` and `stripAux`.
+3. Runs the residue-search loop on `(args, subMap)` using the helpers `bruteForceMaximalAdmissible` / `bruteForceStable` / `bruteForceComplete` (per the Architecture pseudocode).
+4. Maps each result T through `lift(t, g) = new Set([...t, ...g])` then `stripAux` once on the lifted set.
 
 **Attacker-lookup cache (constant-factor bonus):**
 - Pre-compute `attackersOfCache: Map<string, string[]>` once per call by inverting `map`. The existing helpers (`isAdmissible`, `defenseClosure`, `isStable`) call `attackersOf` repeatedly during residue search; this cache is a 2–5× speedup on the inner loop.
