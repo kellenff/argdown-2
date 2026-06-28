@@ -1,0 +1,259 @@
+# .github/workflows/ci.yml
+#
+# PR validation. Mirrors the gates in release.yml (lint, format, typecheck,
+# test, build) and adds a dry-run-deploy that exercises the release
+# pipeline end-to-end up to `npm pack` — but does not create a GitHub
+# Release or upload the tarball as an asset. The dry-run is the only place
+# to verify the version-detection / CHANGELOG-extraction / pack pipeline
+# before the actual publish on main.
+#
+# Convention: this file owns PR-time validation. release.yml owns
+# publish-time validation + the actual release. The two share the same
+# Node version, corepack/PnP setup, and gate scripts; if you change one,
+# change the other.
+
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+
+# Cancel outdated PR runs when a new commit is pushed — only the latest
+# commit's results matter for merge gating.
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# Read-only is enough: the dry-run-deploy job inspects files locally,
+# runs npm pack, and uploads the resulting tarball as a *job artifact*
+# (not a release asset). No `contents: write` needed.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: ""
+      - name: Enable corepack
+        run: |
+          corepack enable
+          yarn --version
+      - name: Install dependencies (immutable)
+        run: yarn install --immutable
+      - name: Lint
+        run: yarn lint
+
+  format:
+    name: Format check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: ""
+      - name: Enable corepack
+        run: |
+          corepack enable
+          yarn --version
+      - name: Install dependencies (immutable)
+        run: yarn install --immutable
+      - name: Format check
+        run: yarn format:check
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: ""
+      - name: Enable corepack
+        run: |
+          corepack enable
+          yarn --version
+      - name: Install dependencies (immutable)
+        run: yarn install --immutable
+      - name: Typecheck
+        run: yarn typecheck
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    # Fuzz + cross-validate can run 10+ minutes on cold runners.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: ""
+      - name: Enable corepack
+        run: |
+          corepack enable
+          yarn --version
+      - name: Install dependencies (immutable)
+        run: yarn install --immutable
+      - name: Test
+        run: yarn test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: ""
+      - name: Enable corepack
+        run: |
+          corepack enable
+          yarn --version
+      - name: Install dependencies (immutable)
+        run: yarn install --immutable
+      - name: Build
+        run: yarn build
+
+  # Dry-run the publish pipeline. Same setup as release.yml (mirrors
+  # Node version, corepack, install flags). Runs version detection and
+  # CHANGELOG extraction exactly as release.yml does, then packs the
+  # tarball and uploads it as a job artifact so a maintainer can
+  # download and inspect it from the PR's Checks tab. Does NOT touch
+  # the GitHub Releases API or push to git.
+  dry-run-deploy:
+    name: Dry-run deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: ""
+
+      - name: Enable corepack
+        run: |
+          corepack enable
+          yarn --version
+
+      - name: Install dependencies (immutable)
+        run: yarn install --immutable
+
+      - name: Build (needed for npm pack to find dist/)
+        run: yarn build
+
+      - name: Detect version + emit dry-run summary
+        id: ver
+        run: |
+          set -euo pipefail
+          # On PRs we don't have a "previous" package.json to diff against,
+          # so always report the current version. The PR can't trigger a
+          # release anyway — only push to main can.
+          NEW=$(jq -r '.version' package.json)
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          if printf '%s' "$NEW" | grep -q -- '-'; then
+            IS_PRERELEASE="true"
+            PRERELEASE_LABEL="yes"
+          else
+            IS_PRERELEASE="false"
+            PRERELEASE_LABEL="no"
+          fi
+          echo "is_prerelease=${IS_PRERELEASE}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Dry-run release summary"
+            echo
+            echo "- **Version:** \`${NEW}\`"
+            echo "- **Tag:** \`v${NEW}\`"
+            echo "- **Pre-release:** ${PRERELEASE_LABEL}"
+            echo "- **Tarball would be:** \`casualtheorics-argdown-2-${NEW}.tgz\`"
+            echo "- **Release URL would be:** https://github.com/kellenff/argdown-2/releases/tag/v${NEW}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Extract CHANGELOG.md section
+        id: notes
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Same awk as release.yml — kept in sync manually. If the regex
+          # changes there, change it here too.
+          VERSION_ESC=$(printf '%s' "$VERSION" | sed 's/\./\\./g')
+          awk -v v="$VERSION_ESC" '
+            $0 ~ "^## \\[" v "\\]" { flag=1; next }
+            /^## \[/ && flag { flag=0 }
+            flag
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No CHANGELOG.md section for version ${VERSION}. Add a '## [${VERSION}] - <date>' entry." >&2
+            exit 1
+          fi
+          {
+            echo "notes_path=release-notes.md"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Pack tarball
+        id: pack
+        run: |
+          set -euo pipefail
+          npm pack
+          TARBALL=$(ls -1 *.tgz | head -n1)
+          if [ -z "$TARBALL" ]; then
+            echo "::error::npm pack produced no .tgz" >&2
+            exit 1
+          fi
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect tarball contents
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          set -euo pipefail
+          echo "Tarball contents:"
+          tar -tzf "$TARBALL" | sort
+          echo
+          echo "Required files check:"
+          REQUIRED=("package/package.json" "package/README.md" "package/dist/cli.js")
+          MISSING=0
+          for f in "${REQUIRED[@]}"; do
+            if tar -tzf "$TARBALL" | grep -qx "$f"; then
+              echo "  ✓ $f"
+            else
+              echo "  ✗ $f MISSING"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ "$MISSING" -gt 0 ]; then
+            echo "::error::Tarball is missing $MISSING required file(s)." >&2
+            exit 1
+          fi
+          {
+            echo "### Tarball contents"
+            echo
+            echo '```'
+            tar -tzf "$TARBALL" | sort
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload tarball + release notes as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dry-run-release-${{ steps.ver.outputs.version }}
+          path: |
+            ${{ steps.pack.outputs.tarball }}
+            release-notes.md
+          if-no-files-found: error
+          retention-days: 14

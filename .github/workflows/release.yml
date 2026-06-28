@@ -1,0 +1,226 @@
+# .github/workflows/release.yml
+#
+# On every push to `main`, if `package.json`'s `version` differs from the
+# previous commit, build the project, run the test/lint/typecheck/format
+# gates, pack a tarball, extract the matching section from CHANGELOG.md as
+# release notes, and publish a GitHub Release with the tarball attached.
+#
+# Idempotent on re-run: any existing tag + release at the same version is
+# deleted and recreated, so a partial failure followed by a re-run produces
+# the same end state as a clean run.
+#
+# Skip condition: `package.json` version unchanged from HEAD~1. This is
+# what makes the workflow safe to fire on every push — only version-bump
+# commits trigger a release.
+
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    # Allow manual trigger (e.g. to republish the same tag after editing
+    # release notes). When invoked manually, the version-bump diff is
+    # skipped — `workflow_dispatch` always proceeds.
+    inputs:
+      version:
+        description: "Version to publish (e.g. 0.1.0-alpha1). Defaults to package.json version."
+        required: false
+
+# Don't cancel in-progress runs — queue them so two merges back-to-back
+# both publish, in order.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# `contents: write` is required to create tags, releases, and upload
+# assets. GITHUB_TOKEN is the only credential used.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, test, pack, and publish release
+    runs-on: ubuntu-latest
+    # The full `yarn test` includes the structure-aware fuzz suite
+    # (200 iters × 7 fixtures) and the cross-validate solver suite. Both
+    # can run for 10+ minutes on cold CI runners. 30 min headroom keeps
+    # the release job well below GitHub Actions' hard 6 h cap while
+    # leaving room for transient runner slowness.
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need HEAD~1 to diff package.json version. Without fetch-depth: 2
+          # the diff step will fail with "bad revision 'HEAD~1'".
+          fetch-depth: 2
+          # Yarn 4 PnP keeps .yarn/cache and .yarn/releases committed;
+          # submodules: false is the default but explicit for clarity.
+          submodules: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # Don't try to authenticate to npm from this workflow; we only
+          # publish to GitHub Releases.
+          registry-url: ""
+
+      - name: Enable corepack
+        run: |
+          corepack enable
+          # .yarnrc.yml's `yarnPath: .yarn/releases/yarn-4.17.0.cjs` will
+          # take over once corepack is on; no `corepack prepare` needed
+          # because the binary is committed.
+          corepack --version
+          yarn --version
+
+      - name: Install dependencies (immutable)
+        run: yarn install --immutable
+        # If the lockfile is out of sync with package.json the job fails
+        # here, before tests run. Cheapest catch-all for dependency drift.
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Format check
+        run: yarn format:check
+
+      - name: Typecheck
+        run: yarn typecheck
+
+      - name: Test
+        run: yarn test
+
+      - name: Build
+        run: yarn build
+        # `tsc` populates dist/. The subsequent `npm pack` step relies on
+        # dist/ existing on disk (the `files` field is `["dist"]`, and
+        # npm pack uses the working tree, not git history).
+
+      - name: Detect version bump vs previous commit
+        id: ver
+        env:
+          VERSION_OVERRIDE: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          NEW=$(jq -r '.version' package.json)
+          # On workflow_dispatch with an override, use the override and
+          # skip the diff (the user is explicitly asking for a publish).
+          if [ -n "${VERSION_OVERRIDE:-}" ]; then
+            NEW="$VERSION_OVERRIDE"
+            echo "changed=true (workflow_dispatch override)" >&2
+          else
+            # `git show HEAD~1:package.json` works because fetch-depth: 2.
+            OLD=$(git show HEAD~1:package.json | jq -r '.version' || true)
+            if [ -z "${OLD:-}" ] || [ "$OLD" = "null" ]; then
+              echo "::error::Could not read previous package.json version (HEAD~1 missing?). Use fetch-depth: 2 or push to a non-empty main." >&2
+              exit 1
+            fi
+            if [ "$OLD" = "$NEW" ]; then
+              echo "version unchanged ($OLD → $NEW); skipping release" >&2
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "version=$NEW" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "version bumped: $OLD → $NEW" >&2
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          # Pre-release detection: any semver with a hyphen is pre-release
+          # per semver.org §11. Mark the GitHub release accordingly.
+          if printf '%s' "$NEW" | grep -q -- '-'; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip notice when version unchanged
+        if: steps.ver.outputs.changed != 'true'
+        run: |
+          echo "::notice::package.json version unchanged from HEAD~1; skipping release."
+          # exit 0 — job succeeds, no release produced.
+
+      - name: Extract CHANGELOG.md section for this version
+        id: notes
+        if: steps.ver.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Escape literal dots in the version so awk treats them as
+          # literal characters instead of regex metacharacters.
+          VERSION_ESC=$(printf '%s' "$VERSION" | sed 's/\./\\./g')
+          # Pull the section between "## [<VERSION>]" and the next "## ["
+          # heading. The first match line is consumed by `next`; the
+          # closing match line flips `flag` off.
+          awk -v v="$VERSION_ESC" '
+            $0 ~ "^## \\[" v "\\]" { flag=1; next }
+            /^## \[/ && flag { flag=0 }
+            flag
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No CHANGELOG.md section for version ${VERSION}. Add a '## [${VERSION}] - <date>' entry before bumping package.json." >&2
+            exit 1
+          fi
+          {
+            echo "notes_path=release-notes.md"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Pack tarball
+        id: pack
+        if: steps.ver.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          # `npm pack` reads the `files` field from package.json. Our
+          # package ships `dist` + `package.json` + `README.md`. dist/
+          # exists because the `Build` step ran above.
+          npm pack
+          # npm pack of @casualtheorics/argdown-2@0.1.0-alpha1 produces
+          # `casualtheorics-argdown-2-0.1.0-alpha1.tgz`. Glob for it so
+          # we don't hard-code the version in the path.
+          TARBALL=$(ls -1 *.tgz | head -n1)
+          if [ -z "$TARBALL" ]; then
+            echo "::error::npm pack produced no .tgz" >&2
+            exit 1
+          fi
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+
+      - name: Delete existing tag and release (idempotent re-run)
+        if: steps.ver.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          echo "Ensuring ${TAG} does not already exist (idempotent rerun)..."
+          # `gh release delete --cleanup-tag` also removes the tag, but
+          # the explicit git push is a belt-and-suspenders in case `gh`
+          # is unavailable or has changed its argument shape.
+          git push origin ":refs/tags/${TAG}" 2>/dev/null || true
+          gh release delete "${TAG}" --yes --cleanup-tag 2>/dev/null || true
+
+      - name: Create GitHub Release with tarball asset
+        if: steps.ver.outputs.changed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: argdown-2 v${{ steps.ver.outputs.version }}
+          body_path: ${{ steps.notes.outputs.notes_path }}
+          files: ${{ steps.pack.outputs.tarball }}
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          # Don't generate GitHub's auto-notes; the CHANGELOG section is
+          # the canonical release body.
+          generate_release_notes: false
+          draft: false
+          # Set by the "Detect version bump" step based on whether the
+          # version contains a hyphen (semver pre-release suffix).
+          prerelease: ${{ steps.ver.outputs.is_prerelease == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

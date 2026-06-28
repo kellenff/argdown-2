@@ -201,6 +201,21 @@ describe('consolidated CLI — subcommands', () => {
     expect(out.stdout).toContain('X');
   });
 
+  it('render: reads from stdin when filename is "-"', () => {
+    // The conventional Unix form. Without it, `echo ... | argdown render -`
+    // fails with ENOENT because loadInput calls readFileSync('-').
+    const out = runCli(['render', '-'], '[#X] --> [#Y].\n');
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain('flowchart');
+    expect(out.stdout).toContain('X');
+  });
+
+  it('solve: reads from stdin when filename is "-"', () => {
+    const out = runCli(['solve', '-'], '[#a].\n[#b].\n[#a] --x [#b].\n');
+    expect(out.status).toBe(0);
+    expect(out.stdout).toMatch(/IN \(\d+\)/);
+  });
+
   it('solve: default semantics (no --semantics) runs pure Dung', () => {
     const file = writeDoc('[#a].\n[#b].\n[#a] --x [#b].\n');
     const out = runCli(['solve', file]);

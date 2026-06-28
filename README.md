@@ -2,7 +2,7 @@
 
 A TypeScript parser and Mermaid renderer for the **Argdown Extended** argumentation markup language — single runtime dependency, mutation-tested to 80%+, spec-driven from [`docs/GRAMMAR.bnf`](docs/GRAMMAR.bnf).
 
-> `argdown-2` is currently at **v0.0.0**, private to this repository. The parser is **spec-complete** for the grammar specified in `docs/GRAMMAR.bnf`; the public API is frozen; the package is not yet published to npm.
+> `argdown-2` is currently at **v0.1.0-alpha1**, private to this repository. The parser is **spec-complete** for the grammar specified in `docs/GRAMMAR.bnf`; the public API is frozen; the package is not yet published to npm. Distributed as GitHub Release tarballs; see [`CHANGELOG.md`](CHANGELOG.md) for the release history.
 
 ---
 
@@ -161,17 +161,21 @@ and ignored by `solve()` and `solveBipolar()`. Default value is `0`.
 ([#thesis]) -> [#a], [#b]. { preference: 0.6 }
 ```
 
-**CLI:**
+**CLI:** install the latest tagged release directly from GitHub Releases (the package is not yet on npm):
 
 ```bash
-echo '[#A] --> [#B]' | npx argdown render
+echo '[#A] --> [#B]' \
+  | npx https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz \
+      render -
 ```
 
 ```bash
-echo '[#A] --> [#B]' | npx argdown solve --semantics=bipolar
+echo '[#A] --> [#B]' \
+  | npx https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz \
+      solve --semantics=bipolar -
 ```
 
-The `argdown` binary reads stdin (or a filename argument) and writes to stdout. Parse errors go to stderr with non-zero exit. Subcommands:
+The `argdown` binary reads stdin (or a filename argument; `-` is the stdin sentinel) and writes to stdout. Parse errors go to stderr with non-zero exit. Subcommands:
 
 | Command | Action |
 | --- | --- |
@@ -183,6 +187,10 @@ The `argdown` binary reads stdin (or a filename argument) and writes to stdout. 
 | `argdown mcp` | Start an [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server on stdio exposing `parse`, `validate`, `render_mermaid`, `solve`, and `format` as tools. |
 | `argdown --help` / `--version` | Self-documenting. |
 
+To pin a different release, substitute the tag and asset name in the URL
+(they're the GitHub Release tag and the `npm pack` filename, respectively —
+e.g. `v0.1.0` → `casualtheorics-argdown-2-0.1.0.tgz`).
+
 **MCP server:** `argdown mcp` is the agent-friendly entry point. Wire it into Claude Desktop or any MCP host with a stdio transport and the host gets JSON-RPC tools for every CLI capability. Example host config:
 
 ```json
@@ -190,7 +198,10 @@ The `argdown` binary reads stdin (or a filename argument) and writes to stdout. 
   "mcpServers": {
     "argdown": {
       "command": "npx",
-      "args": ["argdown", "mcp"]
+      "args": [
+        "https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz",
+        "mcp"
+      ]
     }
   }
 }
@@ -211,9 +222,9 @@ The legacy `argdown-mermaid` binary name and the legacy flag form (`--solve`, `-
 
 ```bash
 # Legacy (still works, prints "legacy flag form is deprecated" to stderr)
-npx argdown-mermaid --solve --semantics=bipolar doc.argdown
+npx https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz argdown-mermaid --solve --semantics=bipolar doc.argdown
 # New (preferred)
-npx argdown solve --semantics=bipolar doc.argdown
+npx https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz argdown solve --semantics=bipolar doc.argdown
 ```
 
 ### Multi-Extension Semantics
@@ -302,7 +313,7 @@ The benefit is visible in the lead example: the same `co2` fact declared on line
 
 - The parser is **feature-complete** for the language specified in `docs/GRAMMAR.bnf` (post-Cycle-2, which removed the `:-` rule syntax in favor of linked `->` arguments).
 - The Mermaid renderer is a thin smoke test over the AST — it does what the parser produces, no more.
-- The package is **`private: true` at `0.0.0`**. Not yet published to npm. No CI workflow yet. No release artifacts.
+- The package is **`private: true` at `0.1.0-alpha1`**. Not yet published to npm; distributed as a GitHub Release tarball per `.github/workflows/release.yml`. See [`CHANGELOG.md`](CHANGELOG.md) for the release history.
 
 **What's here:**
 
@@ -317,12 +328,11 @@ The benefit is visible in the lead example: the same `co2` fact declared on line
 
 **What's deliberately not here:**
 
-- **Stringifier** (`format(ast) → string`) — closes the read/write loop. Not built; not stubbed.
 - **Argdown 1.x migration tooling** — the `:-` syntax is rejected, not translated. A separate `argdown-migrate` package would be the right home for this.
 - **Datalog/argument evaluator** — the AST supports it; nothing queries it yet.
 - **DOT/D2 renderer** — Mermaid is the smoke test; alternative renderers are independent packages.
 - **Editor plugin / Language Server** — feasible via the `./ast` boundary; not built.
-- **CI workflow** — not configured. Run `yarn lint && yarn typecheck && yarn test && yarn mutate` locally.
+- **Mutation testing in CI** — `yarn mutate` is local-only; it's slow and orthogonal to "is this safe to release." The CI workflow runs `lint`, `format:check`, `typecheck`, `test`, and `build` per `.github/workflows/release.yml`.
 
 **Spec conformance vs. parser extensibility:** the grammar is frozen and the `./ast` boundary is hard. Downstream developers cannot extend the language (custom tokens, plugin tokens, custom relation types) without forking the repository. This is a deliberate scoping decision, not an oversight.
 
@@ -343,6 +353,28 @@ yarn mutate         # Stryker, 80%+ threshold
 ```
 
 See [`docs/DESIGN.md`](docs/DESIGN.md) for the language specification and [`docs/GRAMMAR.bnf`](docs/GRAMMAR.bnf) for the authoritative grammar.
+
+## Cutting a release
+
+Releases are produced by `.github/workflows/release.yml` on every push to
+`main` whose `package.json` `version` differs from `HEAD~1`. To cut a
+release:
+
+1. Edit `package.json` and bump `version` to the new tag (e.g. `0.1.0`,
+   `0.1.0-alpha2`, `1.0.0`).
+2. Add a `## [<version>] - <YYYY-MM-DD>` section to `CHANGELOG.md`. The
+   workflow fails the job if this section is missing — release notes are
+   required, not optional.
+3. Open a PR; merge into `main`.
+
+The workflow runs `yarn install --immutable`, `yarn lint`, `yarn format:check`,
+`yarn typecheck`, `yarn test`, then `yarn build`, then `npm pack`. It
+extracts the matching section from `CHANGELOG.md` and publishes a GitHub
+Release at tag `v<version>` with the tarball as the asset. On re-run, any
+existing tag and release at the same version are deleted and recreated
+idempotently. To publish without a version bump (e.g. to fix release notes
+on an already-published tag), trigger the workflow manually via the
+"Run workflow" button with an explicit `version` input.
 
 ## License
 

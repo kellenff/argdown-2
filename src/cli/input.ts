@@ -25,6 +25,8 @@ export type LoadResult =
 
 /**
  * Read source from `filename` if given, otherwise from stdin, then parse it.
+ * Treats `-` as a stdin sentinel (the conventional Unix form) so that
+ * `argdown render -` works the same as `argdown render` with no argument.
  * On parse failure returns a tagged result; subcommands decide how to surface
  * the errors (most want stderr + non-zero exit).
  */
@@ -32,9 +34,14 @@ export async function loadInput(
   filename: string | undefined,
   parse: (source: string, options?: { filename?: string }) => ParseResult,
 ): Promise<LoadResult> {
-  const source = filename ? readFileSync(filename, 'utf8') : await readStdin();
-  const label = filename ?? '<stdin>';
-  const result = parse(source, filename ? { filename } : {});
+  // `-` is the conventional stdin sentinel; collapse it to "no filename" so
+  // every subcommand (render / solve / ast / validate / format) accepts it
+  // without per-subcommand special-casing.
+  const isStdin = filename === undefined || filename === '-';
+  const source = isStdin ? await readStdin() : readFileSync(filename as string, 'utf8');
+  const effectiveFilename = isStdin ? undefined : filename;
+  const label = effectiveFilename ?? '<stdin>';
+  const result = parse(source, effectiveFilename ? { filename: effectiveFilename } : {});
   if (!result.ok) return { ok: false, errors: result.errors, label };
   return { ok: true, ast: result.ast };
 }

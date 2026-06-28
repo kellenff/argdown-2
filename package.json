@@ -1,6 +1,6 @@
 {
   "name": "@casualtheorics/argdown-2",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha1",
   "private": true,
   "type": "module",
   "packageManager": "yarn@4.17.0",
