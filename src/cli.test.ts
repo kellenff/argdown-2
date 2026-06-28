@@ -76,16 +76,21 @@ describe('CLI --solve', () => {
     expect(out.stdout).toMatch(/OUT \(\d+\):[^]*\ba\b/);
   });
 
-  it('rejects --semantics without --solve', () => {
-    const out = runCli(['--semantics=bipolar']);
-    expect(out.status).not.toBe(0);
-    expect(out.stderr).toContain('--semantics requires --solve');
-  });
-
   it('rejects unknown --semantics values', () => {
     const out = runCli(['--solve', '--semantics=foo']);
     expect(out.status).not.toBe(0);
     expect(out.stderr).toMatch(/--semantics must be one of/);
+  });
+
+  it('warns on legacy flag form but still dispatches to solve', () => {
+    // Pre-consolidation the binary rejected `--semantics` without `--solve`.
+    // After consolidation `--semantics` is a `solve` subcommand flag, so the
+    // legacy form is accepted (with a deprecation hint) and dispatches into
+    // the solver.
+    const out = runCli(['--semantics=bipolar']);
+    expect(out.status).toBe(0);
+    expect(out.stderr).toContain('legacy flag form is deprecated');
+    expect(out.stdout).toMatch(/IN \(\d+\)/);
   });
 });
 
@@ -153,5 +158,142 @@ describe('CLI multi-extension --semantics', () => {
     expect(out.status).toBe(0);
     // For empty result, CLI prints "(no extensions)" rather than Extension lines.
     expect(out.stdout).toContain('(no extensions)');
+  });
+});
+
+describe('consolidated CLI — subcommands', () => {
+  function writeDoc(src: string): string {
+    const dir = mkdtempSync(join(tmpdir(), 'argdown-cli-'));
+    const file = join(dir, 'doc.argdown');
+    writeFileSync(file, src);
+    return file;
+  }
+
+  it('--help lists every subcommand and exits 0', () => {
+    const out = runCli(['--help']);
+    expect(out.status).toBe(0);
+    for (const cmd of ['render', 'solve', 'ast', 'validate', 'format']) {
+      expect(out.stdout).toContain(cmd);
+    }
+    // The help text must mention the binary name itself.
+    expect(out.stdout).toContain('argdown');
+  });
+
+  it('--version prints a version string and exits 0', () => {
+    const out = runCli(['--version']);
+    expect(out.status).toBe(0);
+    expect(out.stdout).toMatch(/^argdown \S+/);
+  });
+
+  it('render: writes a Mermaid flowchart to stdout', () => {
+    const file = writeDoc('[#A] --> [#B].\n[#B] --> [#C].\n');
+    const out = runCli(['render', file]);
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain('flowchart');
+    expect(out.stdout).toContain('A');
+    expect(out.stdout).toContain('B');
+  });
+
+  it('render: reads from stdin when no file is given', () => {
+    const out = runCli(['render'], '[#X] --> [#Y].\n');
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain('flowchart');
+    expect(out.stdout).toContain('X');
+  });
+
+  it('solve: default semantics (no --semantics) runs pure Dung', () => {
+    const file = writeDoc('[#a].\n[#b].\n[#a] --x [#b].\n');
+    const out = runCli(['solve', file]);
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain('IN');
+    expect(out.stdout).toContain('OUT');
+    expect(out.stdout).toContain('UNDEC');
+  });
+
+  it('solve: --semantics=bipolar runs Method 2', () => {
+    const file = writeDoc('[#a].\n[#b].\n[#x].\n[#a] --> [#b].\n[#x] --x [#a].\n');
+    const out = runCli(['solve', '--semantics=bipolar', file]);
+    expect(out.status).toBe(0);
+    expect(out.stdout).toMatch(/IN \(\d+\):[^]*\ba\b/);
+    expect(out.stdout).toMatch(/IN \(\d+\):[^]*\bb\b/);
+  });
+
+  it('solve: rejects unknown --semantics with non-zero exit', () => {
+    const file = writeDoc('[#a].\n');
+    const out = runCli(['solve', '--semantics=nonsense', file]);
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toMatch(/--semantics must be one of/);
+  });
+
+  it('ast: dumps the AST as JSON to stdout', () => {
+    const file = writeDoc('[#a] claim.\n[#b] other.\n[#a] --> [#b].\n');
+    const out = runCli(['ast', file]);
+    expect(out.status).toBe(0);
+    // The JSON should round-trip through JSON.parse cleanly.
+    const parsed = JSON.parse(out.stdout) as { kind?: string; elements?: unknown[] };
+    expect(parsed.kind).toBe('Document');
+    expect(Array.isArray(parsed.elements)).toBe(true);
+    expect((parsed.elements as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it('ast: writes nothing to stdout on parse failure (just stderr + non-zero)', () => {
+    const file = writeDoc('[#a -->\n'); // malformed
+    const out = runCli(['ast', file]);
+    expect(out.status).not.toBe(0);
+    expect(out.stdout).toBe('');
+    expect(out.stderr).toMatch(/parse error/);
+  });
+
+  it('validate: exits 0 on a well-formed document and writes nothing', () => {
+    const file = writeDoc('[#a].\n[#b].\n[#a] --> [#b].\n');
+    const out = runCli(['validate', file]);
+    expect(out.status).toBe(0);
+    expect(out.stdout).toBe('');
+  });
+
+  it('validate: exits non-zero on a malformed document', () => {
+    const file = writeDoc('[#a -->\n');
+    const out = runCli(['validate', file]);
+    expect(out.status).not.toBe(0);
+    expect(out.stdout).toBe('');
+    expect(out.stderr).toMatch(/parse error/);
+  });
+
+  it('format: emits the round-tripped source via stringify', () => {
+    const file = writeDoc('[#a].\n[#b].\n[#a] --> [#b].\n');
+    const out = runCli(['format', file]);
+    expect(out.status).toBe(0);
+    // The stringifier should at minimum preserve the fact keys and the
+    // relation arrow shape — we don't pin the full source layout, just the
+    // load-bearing tokens that prove the round-trip worked.
+    expect(out.stdout).toContain('#a');
+    expect(out.stdout).toContain('#b');
+    expect(out.stdout).toContain('-->');
+  });
+
+  it('unknown subcommand exits non-zero and prints help', () => {
+    const out = runCli(['frobnicate']);
+    expect(out.status).not.toBe(0);
+    expect(out.stderr).toMatch(/unknown command "frobnicate"/);
+    expect(out.stdout).toContain('render');
+  });
+
+  it('legacy --solve form still works (backward compat)', () => {
+    const file = writeDoc('[#a].\n[#b].\n[#a] --x [#b].\n');
+    const out = runCli(['--solve', file]);
+    expect(out.status).toBe(0);
+    // Legacy form should emit a deprecation hint to stderr.
+    expect(out.stderr).toContain('legacy flag form is deprecated');
+    // And the body should look like the solve subcommand output.
+    expect(out.stdout).toContain('IN');
+  });
+
+  it('legacy --solve --semantics=aspic form still works', () => {
+    const file = writeDoc('[#a].\n[#b].\n[#x].\n[#a] --> [#b].\n[#x] --x [#a].\n');
+    const out = runCli(['--solve', '--semantics=aspic', file]);
+    expect(out.status).toBe(0);
+    expect(out.stderr).toContain('legacy flag form is deprecated');
+    expect(out.stdout).toMatch(/IN \(\d+\):[^]*\bb\b/);
+    expect(out.stdout).toMatch(/OUT \(\d+\):[^]*\ba\b/);
   });
 });

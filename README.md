@@ -164,28 +164,41 @@ and ignored by `solve()` and `solveBipolar()`. Default value is `0`.
 **CLI:**
 
 ```bash
-echo '[#A] --> [#B]' | npx argdown-mermaid
+echo '[#A] --> [#B]' | npx argdown render
 ```
 
 ```bash
-echo '[#A] --> [#B]' | npx argdown-mermaid --solve --semantics=bipolar
+echo '[#A] --> [#B]' | npx argdown solve --semantics=bipolar
 ```
 
-`argdown-mermaid` reads stdin (or a filename argument) and writes a Mermaid `flowchart TD` to stdout. Parse errors go to stderr with non-zero exit.
+The `argdown` binary reads stdin (or a filename argument) and writes to stdout. Parse errors go to stderr with non-zero exit. Subcommands:
 
-Flags:
+| Command | Action |
+| --- | --- |
+| `argdown render <file>` | Parse and write a Mermaid `flowchart TD` to stdout (default mode). |
+| `argdown solve <file> [--semantics=X]` | Run a solver and write labels (grounded) or extension lists (multi-extension). |
+| `argdown ast <file>` | Parse and dump the AST as JSON to stdout. |
+| `argdown validate <file>` | Parse only — exit 0 on success, 1 on parse error, nothing on stdout. |
+| `argdown format <file>` | Parse and emit the round-tripped source via `stringify`. |
+| `argdown --help` / `--version` | Self-documenting. |
 
-- `--solve` — run the grounded-extension solver and color the output.
-- `--semantics=aspic` — use the ASPIC+ solver (Method 3 of the Method 1/2/3/4
-  ladder). Distinguishes rebut (`--x`), undercut (`-.->`), and undermine
-  (`-.-`) attacks. Reads the `preference:` attribute to determine which
-  attacks become defeats. Standard Modgil & Prakken 2014 dispute
-  derivation. Pairs with `--solve`.
-- `--semantics=evidential` — use the necessary-support solver (Method 4 of
-  the Method 1/2/3/4 ladder). Cayrol & Lagasquie-Schiex 2005 §3.3: each
-  `-->` is interpreted as "the supporter is necessary for the supported."
-  A's defeat propagates to B (the opposite direction of bipolar's
-  deductive reduction). Pairs with `--solve`.
+`--semantics=` values for `solve`:
+
+- `dung` (default) | `bipolar` | `aspic` | `evidential` — grounded extension.
+  - `dung` is the no-suffix default; `bipolar` is Method 2 (bipolar support, see Cayrol & Lagasquie-Schiex 2005 §3.2).
+  - `aspic` is Method 3. Distinguishes rebut (`--x`), undercut (`-.->`), and undermine (`-.-`) attacks. Reads the `preference:` attribute to determine which attacks become defeats. Standard Modgil & Prakken 2014 dispute derivation.
+  - `evidential` is Method 4. Cayrol & Lagasquie-Schiex 2005 §3.3: each `-->` is interpreted as "the supporter is necessary for the supported." A's defeat propagates to B (the opposite direction of bipolar's deductive reduction).
+
+### Backward compatibility
+
+The legacy `argdown-mermaid` binary name and the legacy flag form (`--solve`, `--semantics=…` without a subcommand) still work. The shim emits a one-time deprecation hint to stderr pointing at the new subcommand shape:
+
+```bash
+# Legacy (still works, prints "legacy flag form is deprecated" to stderr)
+npx argdown-mermaid --solve --semantics=bipolar doc.argdown
+# New (preferred)
+npx argdown solve --semantics=bipolar doc.argdown
+```
 
 ### Multi-Extension Semantics
 
@@ -246,7 +259,9 @@ src/
 ├── ast.ts                ← discriminated-union AST types (pure data, no runtime)
 ├── visitor*.ts           ← CST → AST transformers
 ├── mermaid.ts            ← pure AST → Mermaid `flowchart TD`
-└── cli.ts                ← `argdown-mermaid` binary
+├── stringifier.ts        ← AST → source round-trip
+├── cli.ts                ← top-level `argdown` dispatcher (argv → subcommand)
+└── cli/                  ← one file per subcommand (render, solve, ast, validate, format, input, help)
 ```
 
 ### AST is plain data
@@ -276,7 +291,7 @@ The benefit is visible in the lead example: the same `co2` fact declared on line
 **What's here:**
 
 - Typed parser, typed AST, error recovery with partial-AST output
-- CLI binary (`argdown-mermaid`) for stdin/file → Mermaid
+- CLI binary (`argdown`) with subcommands: `render`, `solve`, `ast`, `validate`, `format`
 - 7-arrow relation taxonomy (`-->`, `--x`, `-.->`, `-.-`, `~>`, `?>`, `<->`)
 - Linked-argument inference with multi-premise, disjunction, and nesting
 - Unified `{}` attribute blocks (typed values: string, number, bool, null, flow-sequence, flow-mapping, plain scalar)

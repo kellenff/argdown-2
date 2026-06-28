@@ -10,6 +10,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
+    "argdown": "./dist/cli.js",
     "argdown-mermaid": "./dist/cli.js"
   },
   "exports": {

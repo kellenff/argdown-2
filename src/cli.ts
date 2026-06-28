@@ -1,146 +1,82 @@
 #!/usr/bin/env node
 // src/cli.ts
-// Read an Argdown document (stdin or first arg) and write a Mermaid diagram
-// to stdout. Parse errors go to stderr with non-zero exit. With `--solve`,
-// write the grounded-extension label summary instead.
+// Consolidated CLI entry point. Dispatches to one of the subcommand modules
+// in src/cli/, with a backward-compat layer for the legacy `argdown-mermaid`
+// flag shape (`--solve`, `--semantics=…`).
 
-import { readFileSync } from 'node:fs';
+import { run as runRender } from './cli/render.js';
+import { run as runSolve } from './cli/solve.js';
+import { run as runAst } from './cli/ast.js';
+import { run as runValidate } from './cli/validate.js';
+import { run as runFormat } from './cli/format.js';
+import { HELP, VERSION, BINARY_NAME, SUBCOMMANDS } from './cli/help.js';
 
-import { parse, formatError } from './parser.js';
-import { renderMermaid } from './mermaid.js';
-import {
-  solve, solveBipolar, solveEvidential,
-  solvePreferred, solvePreferredBipolar, solvePreferredEvidential,
-  solveStable, solveStableBipolar, solveStableEvidential,
-  solveComplete, solveCompleteBipolar, solveCompleteEvidential,
-  type MultiSolveResult,
-  type Label,
-} from './solver.js';
-import {
-  solveAspic,
-  solvePreferredAspic,
-  solveStableAspic,
-  solveCompleteAspic,
-} from './solver-aspic.js';
+// Map of known subcommand names to their handlers. The lookup is
+// case-insensitive so `argdown Render foo.argdown` works the same as
+// `argdown render foo.argdown`.
+const HANDLERS: Record<string, (argv: string[], binaryName: string) => Promise<number>> = {
+  render: runRender,
+  solve: runSolve,
+  ast: runAst,
+  validate: runValidate,
+  format: runFormat,
+};
 
-function readStdin(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let data = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk: string) => {
-      data += chunk;
-    });
-    process.stdin.on('end', () => resolve(data));
-    process.stdin.on('error', reject);
-  });
+const LEGACY_FLAGS = new Set(['--solve']);
+
+function isLegacyInvocation(argv: string[]): boolean {
+  return argv.some((a) => LEGACY_FLAGS.has(a) || a.startsWith('--semantics='));
 }
 
-const VALID_SEMANTICS = new Set([
-  'dung', 'bipolar', 'aspic', 'evidential',
-  'preferred', 'preferred-bipolar', 'preferred-aspic', 'preferred-evidential',
-  'stable', 'stable-bipolar', 'stable-aspic', 'stable-evidential',
-  'complete', 'complete-bipolar', 'complete-aspic', 'complete-evidential',
-]);
+function emitDeprecationHint(): void {
+  process.stderr.write(
+    `${BINARY_NAME}: legacy flag form is deprecated; use 'argdown render' or 'argdown solve --semantics=…' instead.\n`,
+  );
+}
 
-type MultiSemantics =
-  | 'preferred' | 'preferred-bipolar' | 'preferred-aspic' | 'preferred-evidential'
-  | 'stable' | 'stable-bipolar' | 'stable-aspic' | 'stable-evidential'
-  | 'complete' | 'complete-bipolar' | 'complete-aspic' | 'complete-evidential';
-
-function dispatchMulti(semantics: MultiSemantics, ast: import('./ast.js').Document): MultiSolveResult {
-  switch (semantics) {
-    case 'preferred': return solvePreferred(ast);
-    case 'preferred-bipolar': return solvePreferredBipolar(ast);
-    case 'preferred-aspic': return solvePreferredAspic(ast);
-    case 'preferred-evidential': return solvePreferredEvidential(ast);
-    case 'stable': return solveStable(ast);
-    case 'stable-bipolar': return solveStableBipolar(ast);
-    case 'stable-aspic': return solveStableAspic(ast);
-    case 'stable-evidential': return solveStableEvidential(ast);
-    case 'complete': return solveComplete(ast);
-    case 'complete-bipolar': return solveCompleteBipolar(ast);
-    case 'complete-aspic': return solveCompleteAspic(ast);
-    case 'complete-evidential': return solveCompleteEvidential(ast);
-  }
+function printHelp(): void {
+  process.stdout.write(HELP);
 }
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  const solveMode = argv.includes('--solve');
-  const semanticsIdx = argv.findIndex((a) => a.startsWith('--semantics='));
-  const semantics =
-    semanticsIdx >= 0 ? (argv[semanticsIdx] as string).slice('--semantics='.length) : undefined;
-  const positional = argv.filter((a) => a !== '--solve' && !a.startsWith('--semantics='));
-  const filename = positional[0];
 
-  if (semantics !== undefined && !solveMode) {
-    process.stderr.write('argdown-mermaid: --semantics requires --solve\n');
-    process.exit(1);
+  if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) {
+    printHelp();
+    return;
   }
-  if (semantics !== undefined && !VALID_SEMANTICS.has(semantics)) {
-    process.stderr.write(
-      `argdown-mermaid: --semantics must be one of: ${[...VALID_SEMANTICS].join(', ')} (got "${semantics}")\n`,
-    );
-    process.exit(1);
-  }
-
-  const source = filename ? readFileSync(filename, 'utf8') : await readStdin();
-
-  const result = parse(source, filename ? { filename } : {});
-  if (!result.ok) {
-    const label = filename ?? '<stdin>';
-    for (const err of result.errors) {
-      process.stderr.write(`${formatError(err, label)}\n`);
-    }
-    process.exit(1);
-  }
-
-  if (solveMode) {
-    const isMulti = semantics !== undefined && semantics !== 'dung' && semantics !== 'bipolar' && semantics !== 'aspic' && semantics !== 'evidential';
-    if (isMulti) {
-      const solved = dispatchMulti(semantics as MultiSemantics, result.ast);
-      const lines: string[] = [];
-      if (solved.extensions.length === 0) {
-        lines.push('(no extensions)');
-      } else {
-        solved.extensions.forEach((ext, i) => {
-          const sortedKeys = [...ext].sort();
-          lines.push(`Extension ${i + 1}: ${sortedKeys.join(', ') || '(empty set)'}`);
-        });
-      }
-      process.stdout.write(lines.join('\n') + '\n');
-      for (const w of solved.warnings) process.stderr.write(`warning: ${w}\n`);
-      return;
-    }
-    // existing 4-grounded dispatch (unchanged)
-    const solved =
-      semantics === 'bipolar'
-        ? solveBipolar(result.ast)
-        : semantics === 'aspic'
-          ? solveAspic(result.ast)
-          : semantics === 'evidential'
-            ? solveEvidential(result.ast)
-            : solve(result.ast);
-    const groups: Record<Label, string[]> = { in: [], out: [], undec: [] };
-    for (const [k, v] of solved.labels) groups[v].push(k);
-    for (const v of ['in', 'out', 'undec'] as const) groups[v].sort();
-
-    const lines: string[] = [];
-    for (const v of ['in', 'out', 'undec'] as const) {
-      lines.push(`${v.toUpperCase()} (${groups[v].length}): ${groups[v].join(', ')}`);
-    }
-    process.stdout.write(lines.join('\n') + '\n');
-    for (const w of solved.warnings) {
-      process.stderr.write(`warning: ${w}\n`);
-    }
+  if (argv.includes('--version') || argv.includes('-V')) {
+    process.stdout.write(`${BINARY_NAME} ${VERSION}\n`);
     return;
   }
 
-  process.stdout.write(renderMermaid(result.ast));
+  const [head, ...rest] = argv;
+
+  // Legacy path: `--solve` or `--semantics=…` with no subcommand. We have to
+  // forward the full argv to the solve handler so it can find --semantics=…
+  // and the optional positional file.
+  if (!HANDLERS[head!] && isLegacyInvocation(argv)) {
+    emitDeprecationHint();
+    const exitCode = await runSolve(argv, BINARY_NAME);
+    if (exitCode !== 0) process.exit(exitCode);
+    return;
+  }
+
+  const handler = HANDLERS[head!];
+  if (!handler) {
+    process.stderr.write(
+      `${BINARY_NAME}: unknown command "${head}". Known commands: ${SUBCOMMANDS.map((c) => c.name).join(', ')}.\n`,
+    );
+    printHelp();
+    process.exit(1);
+  }
+
+  const exitCode = await handler(rest, BINARY_NAME);
+  if (exitCode !== 0) process.exit(exitCode);
 }
 
 main().catch((err: unknown) => {
   const msg = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`argdown-mermaid: ${msg}\n`);
+  process.stderr.write(`${BINARY_NAME}: ${msg}\n`);
   process.exit(1);
 });
