@@ -283,20 +283,35 @@ export function findStableExtensions(map: Map<string, string[]>): Set<string>[] 
 }
 
 export function findCompleteExtensions(map: Map<string, string[]>): Set<string>[] {
-  const args = [...map.keys()];
-  const n = args.length;
+  const grounded = findGroundedExtension(map);
+  const { args, subMap } = residueOf(map, grounded);
+
+  // Fast path: empty residue → grounded is the only complete extension.
+  if (args.length === 0) {
+    return [stripAux(lift(new Set(), grounded))];
+  }
+
+  // Search the residue for complete extensions (admissible AND closed under
+  // defense closure within the induced sub-framework). Lift by G ∪ T and strip
+  // auxiliary args.
   const results: Set<string>[] = [];
   const ONE = 1n;
+  const n = args.length;
 
-  // Iterate all subsets. S is complete iff S is admissible AND closed under
-  // defense closure (defenseClosure(S) === S). BigInt masks for graphs >32 keys.
   for (let mask = 0n; mask < (ONE << BigInt(n)); mask++) {
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
     }
-    if (isClosedUnderDefense(subset, map) && isAdmissible(subset, map)) {
-      results.push(stripAux(subset));
+    // Modgil's characterization: T ⊆ A \ G is the residue of a complete
+    // extension iff T is admissible in the induced sub-framework AND
+    // T ∪ G is closed under defense closure in F. The defense check uses the
+    // lifted set against the full map because attackers outside T ∪ G (those
+    // being defended against) may include grounded args whose presence is
+    // only visible in the original map.
+    const lifted = lift(subset, grounded);
+    if (isAdmissible(subset, subMap) && isClosedUnderDefense(lifted, map)) {
+      results.push(stripAux(lifted));
     }
   }
   return results;
