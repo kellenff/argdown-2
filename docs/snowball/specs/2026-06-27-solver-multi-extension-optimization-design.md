@@ -144,11 +144,11 @@ For DAGs (G = A), R = ∅; the finders return `[G]` without entering brute force
 
 ### Reduction theorems (textbook Dung 1995; Baroni-Caminada-Giacomin 2018)
 
-- **Complete:** T ⊆ R is the residue of a complete extension of F iff T is admissible in F' AND T ∪ G is closed under defense closure in F. The two checks use **different maps**: admissibility against `subMap` (residue-only attackers), defense closure against the **full** `map` (so grounded attackers are visible). Filtering attackers via `subMap` would make `defenseClosure((T∪G), subMap)` erroneously treat residues attacked only by grounded as "vacuously defended."
-- **Preferred:** every preferred extension of F = {G ∪ T : T maximal admissible in F'}.
-- **Stable:** every stable extension of F = {G ∪ T : T stable in F'}.
+- **Complete:** T ⊆ R is the residue of a complete extension of F iff T ∪ G is **admissible in F** AND T ∪ G is closed under defense closure in F. Both checks use the **full** `map`. Filtering attackers via `subMap` would (a) miss internal conflicts between G and T (subMap filters out G, hiding attacks from G to T and from T to G), and (b) miss defense attackers from G.
+- **Preferred:** T ⊆ R is the residue of a preferred extension of F iff T ∪ G is admissible in F (full map) AND T is maximal admissible in F' (subMap). Internal conflicts between G and T are invisible to subMap.
+- **Stable:** T ⊆ R is the residue of a stable extension of F iff T ∪ G is admissible in F (full map) AND T ∪ G attacks every arg in R \ T in F (full map). An arg in R \ T may be attacked by a grounded arg (in G) as well as by a residue member (in T); only the full map captures both.
 
-The residue search uses the existing `isAdmissible`, `isClosedUnderDefense`, `isStable`, `stripAux` helpers applied to subsets of R (smaller inputs, same predicates), with the full-map defense-closure correction for complete extensions.
+The residue search uses the existing `isAdmissible`, `isClosedUnderDefense`, `isStable`, `stripAux`, `lift` helpers against the FULL map for the cross-cutting checks, with `subMap` used only for internal-residue maximality in preferred.
 
 ### Tarjan implementation — iterative, not recursive
 
