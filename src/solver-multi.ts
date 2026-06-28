@@ -117,6 +117,33 @@ export function findGroundedExtension(map: Map<string, string[]>): Set<string> {
   return defenseClosure(new Set(), map);
 }
 
+/**
+ * Returns the induced sub-framework on A \ grounded.
+ * subMap entries have attackers filtered to residue members only.
+ */
+export function residueOf(
+  map: Map<string, string[]>,
+  grounded: Set<string>,
+): { args: string[]; subMap: Map<string, string[]> } {
+  const args: string[] = [];
+  const subMap = new Map<string, string[]>();
+  for (const [arg, attackers] of map) {
+    if (grounded.has(arg)) continue;
+    args.push(arg);
+    const filteredAttackers = attackers.filter((a) => !grounded.has(a));
+    subMap.set(arg, filteredAttackers);
+  }
+  return { args, subMap };
+}
+
+/**
+ * Lift a residue subset T by unioning with the grounded extension G.
+ * Returns a fresh Set.
+ */
+export function lift(t: Set<string>, g: Set<string>): Set<string> {
+  return new Set([...t, ...g]);
+}
+
 export function attackersOf(map: Map<string, string[]>, arg: string): string[] {
   return map.get(arg) ?? [];
 }
