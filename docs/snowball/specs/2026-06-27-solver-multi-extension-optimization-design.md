@@ -83,6 +83,13 @@ function findStableExtensions(map): Set<string>[] {
 function findCompleteExtensions(map): Set<string>[] {
   const g = findGroundedExtension(map);
   const { args, subMap } = residueOf(map, g);
+  // T ⊆ R is the residue of a complete extension iff:
+  //   (a) T is admissible in F' (subMap), AND
+  //   (b) T ∪ G is closed under defense closure in F (full map).
+  // The defense check MUST use the full map, not subMap: a residue arg
+  // attacked only by grounded args has an empty attackers list in subMap,
+  // which would make defenseClosure((T∪G), subMap) erroneously treat it as
+  // "vacuously defended" and admit candidates that aren't actually closed.
   const ts = bruteForceComplete(args, subMap);
   return ts.map((t) => stripAux(lift(t, g)));
 }
@@ -137,11 +144,11 @@ For DAGs (G = A), R = ∅; the finders return `[G]` without entering brute force
 
 ### Reduction theorems (textbook Dung 1995; Baroni-Caminada-Giacomin 2018)
 
-- **Complete:** every complete extension of F = {G ∪ T : T complete in F' = (R, R ∩ R × R)}.
+- **Complete:** T ⊆ R is the residue of a complete extension of F iff T is admissible in F' AND T ∪ G is closed under defense closure in F. The two checks use **different maps**: admissibility against `subMap` (residue-only attackers), defense closure against the **full** `map` (so grounded attackers are visible). Filtering attackers via `subMap` would make `defenseClosure((T∪G), subMap)` erroneously treat residues attacked only by grounded as "vacuously defended."
 - **Preferred:** every preferred extension of F = {G ∪ T : T maximal admissible in F'}.
 - **Stable:** every stable extension of F = {G ∪ T : T stable in F'}.
 
-The residue search uses the existing `isAdmissible`, `isClosedUnderDefense`, `isStable`, `stripAux` helpers applied to subsets of R (smaller inputs, same predicates).
+The residue search uses the existing `isAdmissible`, `isClosedUnderDefense`, `isStable`, `stripAux` helpers applied to subsets of R (smaller inputs, same predicates), with the full-map defense-closure correction for complete extensions.
 
 ### Tarjan implementation — iterative, not recursive
 
