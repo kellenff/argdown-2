@@ -180,7 +180,23 @@ The `argdown` binary reads stdin (or a filename argument) and writes to stdout. 
 | `argdown ast <file>` | Parse and dump the AST as JSON to stdout. |
 | `argdown validate <file>` | Parse only — exit 0 on success, 1 on parse error, nothing on stdout. |
 | `argdown format <file>` | Parse and emit the round-tripped source via `stringify`. |
+| `argdown mcp` | Start an [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server on stdio exposing `parse`, `validate`, `render_mermaid`, `solve`, and `format` as tools. |
 | `argdown --help` / `--version` | Self-documenting. |
+
+**MCP server:** `argdown mcp` is the agent-friendly entry point. Wire it into Claude Desktop or any MCP host with a stdio transport and the host gets JSON-RPC tools for every CLI capability. Example host config:
+
+```json
+{
+  "mcpServers": {
+    "argdown": {
+      "command": "npx",
+      "args": ["argdown", "mcp"]
+    }
+  }
+}
+```
+
+The server registers 5 tools: `parse` (returns AST JSON or structured error list), `validate` (parse-only exit-code check), `render_mermaid` (Mermaid string), `solve` (one of 16 semantics, returns grounded labels or extension arrays), and `format` (round-tripped source). EOF on stdin or SIGTERM triggers a clean shutdown.
 
 `--semantics=` values for `solve`:
 
@@ -291,7 +307,7 @@ The benefit is visible in the lead example: the same `co2` fact declared on line
 **What's here:**
 
 - Typed parser, typed AST, error recovery with partial-AST output
-- CLI binary (`argdown`) with subcommands: `render`, `solve`, `ast`, `validate`, `format`
+- CLI binary (`argdown`) with subcommands: `render`, `solve`, `ast`, `validate`, `format`, `mcp` (MCP server on stdio)
 - 7-arrow relation taxonomy (`-->`, `--x`, `-.->`, `-.-`, `~>`, `?>`, `<->`)
 - Linked-argument inference with multi-premise, disjunction, and nesting
 - Unified `{}` attribute blocks (typed values: string, number, bool, null, flow-sequence, flow-mapping, plain scalar)

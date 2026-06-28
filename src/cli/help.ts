@@ -6,6 +6,7 @@ import { COMMAND as SOLVE_COMMAND, DESCRIPTION as SOLVE_DESC } from './solve.js'
 import { COMMAND as AST_COMMAND, DESCRIPTION as AST_DESC } from './ast.js';
 import { COMMAND as VALIDATE_COMMAND, DESCRIPTION as VALIDATE_DESC } from './validate.js';
 import { COMMAND as FORMAT_COMMAND, DESCRIPTION as FORMAT_DESC } from './format.js';
+import { COMMAND as MCP_COMMAND, DESCRIPTION as MCP_DESC } from './mcp.js';
 
 export const BINARY_NAME = 'argdown';
 
@@ -15,6 +16,7 @@ export const SUBCOMMANDS: ReadonlyArray<{ name: string; description: string }> =
   { name: AST_COMMAND, description: AST_DESC },
   { name: VALIDATE_COMMAND, description: VALIDATE_DESC },
   { name: FORMAT_COMMAND, description: FORMAT_DESC },
+  { name: MCP_COMMAND, description: MCP_DESC },
 ];
 
 export const HELP: string = `${BINARY_NAME} — parse, render, solve, and validate Argdown documents.

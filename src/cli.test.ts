@@ -172,7 +172,7 @@ describe('consolidated CLI — subcommands', () => {
   it('--help lists every subcommand and exits 0', () => {
     const out = runCli(['--help']);
     expect(out.status).toBe(0);
-    for (const cmd of ['render', 'solve', 'ast', 'validate', 'format']) {
+    for (const cmd of ['render', 'solve', 'ast', 'validate', 'format', 'mcp']) {
       expect(out.stdout).toContain(cmd);
     }
     // The help text must mention the binary name itself.
@@ -295,5 +295,36 @@ describe('consolidated CLI — subcommands', () => {
     expect(out.stderr).toContain('legacy flag form is deprecated');
     expect(out.stdout).toMatch(/IN \(\d+\):[^]*\bb\b/);
     expect(out.stdout).toMatch(/OUT \(\d+\):[^]*\ba\b/);
+  });
+
+  it('mcp: starts an MCP server on stdio, exits 0 when stdin is closed', () => {
+    // `argdown mcp` blocks on `StdioServerTransport` reading from stdin.
+    // If we close stdin immediately, the EOF handler in src/cli/mcp.ts
+    // tears the server down and the process exits cleanly with status 0.
+    // We're not driving the protocol here — that's the in-process test in
+    // src/cli/mcp.test.ts. This test only proves that:
+    //   1. `argdown mcp` is a real subcommand (dispatcher routes to it)
+    //   2. The server starts without crashing
+    //   3. EOF on stdin = clean shutdown, not a non-zero exit
+    const result = spawnSync(process.execPath, [CLI_PATH, 'mcp'], {
+      input: '',
+      encoding: 'utf8',
+      // Don't pull in our process's stdin — we want the child to see EOF
+      // immediately, not block on the parent's tty.
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    expect(result.status).toBe(0);
+  });
+
+  it('mcp: rejects trailing args with a non-zero exit', () => {
+    // `argdown mcp` takes no arguments. Anything else should fail loudly
+    // rather than being silently ignored.
+    const result = spawnSync(process.execPath, [CLI_PATH, 'mcp', '--bogus'], {
+      input: '',
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toMatch(/mcp takes no arguments/);
   });
 });

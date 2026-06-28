@@ -9,6 +9,7 @@ import { run as runSolve } from './cli/solve.js';
 import { run as runAst } from './cli/ast.js';
 import { run as runValidate } from './cli/validate.js';
 import { run as runFormat } from './cli/format.js';
+import { run as runMcp } from './cli/mcp.js';
 import { HELP, VERSION, BINARY_NAME, SUBCOMMANDS } from './cli/help.js';
 
 // Map of known subcommand names to their handlers. The lookup is
@@ -20,6 +21,7 @@ const HANDLERS: Record<string, (argv: string[], binaryName: string) => Promise<n
   ast: runAst,
   validate: runValidate,
   format: runFormat,
+  mcp: runMcp,
 };
 
 const LEGACY_FLAGS = new Set(['--solve']);

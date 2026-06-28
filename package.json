@@ -43,7 +43,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "chevrotain": "^11.0.3"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "chevrotain": "^11.0.3",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@stryker-mutator/core": "8.7.1",
