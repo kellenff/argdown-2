@@ -224,28 +224,32 @@ export function stripAux(set: Set<string>): Set<string> {
 }
 
 export function findPreferredExtensions(map: Map<string, string[]>): Set<string>[] {
-  const args = [...map.keys()];
-  const n = args.length;
+  const grounded = findGroundedExtension(map);
+  const { args, subMap } = residueOf(map, grounded);
+
+  // Fast path: empty residue → grounded is the unique preferred extension.
+  if (args.length === 0) {
+    return [stripAux(lift(new Set(), grounded))];
+  }
+
+  // Search the residue for maximal admissible subsets. Iterate subsets
+  // large-to-small; once we find an admissible S, mark all subsets of S as
+  // skipped (any subset is non-maximal by definition of preferred). Lift by
+  // G ∪ T and strip aux args.
   const results: Set<string>[] = [];
   const skipMasks = new Set<bigint>();
   const ONE = 1n;
+  const n = args.length;
 
-  // Textbook Dung: S is preferred iff S is a maximal admissible set. Iterate
-  // subsets large-to-small; once we find an admissible S, mark all subsets
-  // of S as skipped (any subset is non-maximal by definition of preferred).
-  // The empty set is admissible vacuously and must be considered: for a
-  // 3-cycle the only preferred extension is ∅ (no singleton is self-defending).
-  // BigInt masks are required: JS `<<` truncates to 32 bits, so for graphs
-  // with >32 keys `1 << n` would silently produce a small value and the loop
-  // would terminate or wrap incorrectly.
   for (let mask = (ONE << BigInt(n)) - 1n; mask >= 0n; mask--) {
     if (skipMasks.has(mask)) continue;
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
     }
-    if (isAdmissible(subset, map)) {
-      results.push(stripAux(subset));
+    if (isAdmissible(subset, subMap)) {
+      const lifted = lift(subset, grounded);
+      results.push(stripAux(lifted));
       // Mark all subsets of `mask` as skipped.
       let sub = mask;
       while (true) {
