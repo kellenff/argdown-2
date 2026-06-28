@@ -266,41 +266,25 @@ When G = ∅ (pure-cycle frameworks, e.g., odd cycles with no defended member), 
 - **Cross-validation invariant** verified on every generated graph.
 - **Mutation testing** (Stryker) still applies — mutants must remain killed in the rewritten code.
 
-## Benchmarks & Timeouts
+## Benchmarks & Bench Refresh
 
-### Per-task timeout posture
+### Skip-guard policy (unchanged from before this cycle)
 
-| Mechanism | Default | Override flag |
-|-----------|---------|---------------|
-| Per-task wall-clock cap | 30 s | `--task-timeout=<ms>` |
-| Per-fixture total cap | 5 min | `--fixture-timeout=<ms>` |
-| Whole-bench cap | 30 min | `--bench-timeout=<ms>` |
+The existing skip guard in `src/solver.bench.ts` (`isTaskSkippedOnFixture`: skip multi-extension tasks on the `large-stress` fixture) is **kept as-is**. The residue-search optimization helps when the residue `R = A \ G` is small (typical for argdown documents where cyclic sections are short), but does not help when `|R|` is large. For the large-stress fixture's random dense attacks, `|R|` is around 40-45 and `2^|R|` is infeasible regardless of any algorithmic optimization. No amount of clever pruning makes `2^40` tractable in seconds.
 
-**On timeout:**
-- Log `TIMEOUT: <fixture>/<task> after <duration>`.
-- Mark task result as `{ status: 'timeout' }` — **not included in baseline JSON**.
-- Continue to next task / fixture.
-- If a fixture exceeds its budget, abort that fixture, continue to next.
-- If whole bench exceeds budget, abort everything with a clear summary of what was skipped.
+### What did NOT change
 
-### Skip-guard policy
-
-- Existing skip guard in `solver.bench.ts` (commit `d514fa4`) is **kept as a defensive default** for known-bad combinations — but it's not the primary defense. Timeouts are.
-- After the new algorithm lands, remove the explicit skips for multi-extension tasks on large-stress and **let timeouts handle failures naturally**.
-- Concretely: `try { runTask(); } catch (TimeoutError) { reportTimeout(); }` rather than `if (large && multi) skip`.
+**No timeout infrastructure.** We considered adding per-task wall-clock timeouts but decided against it. The skip guard is sufficient: known-bad combinations are skipped up-front rather than running into timeouts that complicate the bench harness and produce noisy baselines. The trade-off is that a regression in a "skipped" combination would go undetected by the bench. Accepted.
 
 ### Baseline refresh
 
-- `yarn bench:baseline` will skip tasks that time out. The resulting baseline JSON will simply omit those task/fixture entries.
-- `--check` mode treats missing entries as "no baseline to check against" — passes through (does not fail). Document in the bench's behavior.
-- Add a new task type: `solve-grounded` (just G, not extensions) — measures SCC speedup in isolation.
+Refresh `perf-baseline-solver.json` once the new finders are verified. The baseline still excludes large-stress × multi-extension tasks (the skip guard is preserved). Solved and bipolar/aspic/evidential variants on small fixtures should improve (residue search), and grounded-only on all fixtures should be measurable.
 
 ### Verification gates (before merging)
 
 1. All existing fixture/task combinations within baseline margin (no regression on tractable cases).
-2. New large-stress multi-extension tasks complete within the bench timeout.
-3. Peak heap delta on small fixtures ≤ 1.5× baseline.
-4. `yarn bench:baseline` writes a coherent baseline; `yarn bench --check` passes against it.
+2. New solvers (preferred, complete, stable) on small fixtures within baseline margin.
+3. Cross-validation invariant (`∩ complete = grounded`) holds for all test fixtures.
 
 ### No timeout on the finders themselves
 
@@ -313,7 +297,7 @@ When G = ∅ (pure-cycle frameworks, e.g., odd cycles with no defended member), 
 | Result-order drift breaks an order-sensitive test | Med | Low | Audit tests for ordering assumptions before locking; switch any found to set-equality |
 | Iterative Tarjan differs from recursive Tarjan on a degenerate graph | Low | Med | `solver.tarjan.test.ts` against known SCC decompositions |
 | New G / residue search gives different result from old on multi-component SCCs | Low | High | Property-based equivalence (`solver.equivalence.test.ts`) for N ≤ 20 |
-| Large-stress fixture still times out (residue = A) | High (for that one fixture) | Low | Timeouts handle gracefully; task excluded from baseline |
+| Large-stress fixture still times out (residue = A) | High (for that one fixture) | Low | Skip guard preserved; large-stress × multi-extension tasks not run |
 | Perf-baseline regression on small fixtures due to added SCC overhead | Low | Med | Verify small-claim / small-rule within baseline margin; abort if regression > 10% |
 | Bench timeout budget too tight, false-positive timeouts | Low | Low | Default 30 s is generous; override flag available |
 | Stryker mutants survive in new code | Low | Med | Existing Stryker config covers `solver-multi.ts`; verify mutation score post-change |
