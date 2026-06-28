@@ -263,24 +263,34 @@ export function findPreferredExtensions(map: Map<string, string[]>): Set<string>
 }
 
 export function findStableExtensions(map: Map<string, string[]>): Set<string>[] {
-  const args = [...map.keys()];
-  const n = args.length;
+  const grounded = findGroundedExtension(map);
+  const { args, subMap } = residueOf(map, grounded);
+
+  // Fast path: empty residue → grounded is the only stable extension (when
+  // non-empty). Stable requires S to attack all of A \ S. For empty residue,
+  // A \ G = G, and every grounded arg's attackers (which are counter-attacked
+  // by G) are in G, so G is stable when residue is empty (DAG case). When the
+  // framework is empty (G = ∅), there are no stable extensions by convention
+  // (∅ is excluded; original loop started at mask = 1n).
+  if (args.length === 0) {
+    return grounded.size === 0 ? [] : [stripAux(lift(new Set(), grounded))];
+  }
+
+  // Search the residue for stable subsets. T ⊆ R is the residue of a stable
+  // extension iff T is stable in F' (subMap): T is admissible AND every arg in
+  // R \ T is attacked by some member of T within the induced sub-framework.
+  // Lift by G ∪ T.
   const results: Set<string>[] = [];
   const ONE = 1n;
+  const n = args.length;
 
-  // Iterate all subsets. Textbook Dung: S is stable iff S is admissible AND
-  // S attacks every arg not in S. The empty set is excluded by convention:
-  // a stable extension must attack all outside arguments, which for an empty
-  // framework is vacuously satisfied but yields no semantic content. (Used to
-  // include a "no outside attacker on members" clause; that was a deviation
-  // removed in Task 6 follow-up.) BigInt masks for graphs >32 keys.
   for (let mask = 1n; mask < (ONE << BigInt(n)); mask++) {
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
     }
-    if (isStable(subset, map)) {
-      results.push(stripAux(subset));
+    if (isStable(subset, subMap)) {
+      results.push(stripAux(lift(subset, grounded)));
     }
   }
   return results;
