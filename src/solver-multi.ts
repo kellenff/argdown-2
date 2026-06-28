@@ -232,10 +232,11 @@ export function findPreferredExtensions(map: Map<string, string[]>): Set<string>
     return [stripAux(lift(new Set(), grounded))];
   }
 
-  // Search the residue for maximal admissible subsets. Iterate subsets
-  // large-to-small; once we find an admissible S, mark all subsets of S as
-  // skipped (any subset is non-maximal by definition of preferred). Lift by
-  // G ∪ T and strip aux args.
+  // Search the residue for maximal admissible subsets. Modgil reduction: T
+  // is the residue of a preferred extension iff T ∪ G is admissible in F
+  // AND T is maximal admissible in F'. Both use the FULL map for the
+  // admissibility check (T ∪ G can have internal conflicts between G and T
+  // that subMap doesn't see). Maximality is computed within F' (subMap).
   const results: Set<string>[] = [];
   const skipMasks = new Set<bigint>();
   const ONE = 1n;
@@ -247,10 +248,11 @@ export function findPreferredExtensions(map: Map<string, string[]>): Set<string>
     for (let i = 0; i < n; i++) {
       if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
     }
-    if (isAdmissible(subset, subMap)) {
-      const lifted = lift(subset, grounded);
+    const lifted = lift(subset, grounded);
+    if (isAdmissible(lifted, map)) {
       results.push(stripAux(lifted));
-      // Mark all subsets of `mask` as skipped.
+      // Mark all subsets of `mask` as skipped (any subset is non-maximal
+      // by definition of preferred).
       let sub = mask;
       while (true) {
         skipMasks.add(sub);
@@ -277,20 +279,37 @@ export function findStableExtensions(map: Map<string, string[]>): Set<string>[] 
   }
 
   // Search the residue for stable subsets. T ⊆ R is the residue of a stable
-  // extension iff T is stable in F' (subMap): T is admissible AND every arg in
-  // R \ T is attacked by some member of T within the induced sub-framework.
-  // Lift by G ∪ T.
+  // extension of F iff T ∪ G is stable in F: T ∪ G admissible in F AND
+  // every arg in R \ T is attacked by some member of T ∪ G. The "attack
+  // all outside" check uses the FULL map: an arg in R \ T may be attacked
+  // by a grounded arg (in G) as well as by a residue member (in T).
   const results: Set<string>[] = [];
   const ONE = 1n;
   const n = args.length;
 
-  for (let mask = 1n; mask < (ONE << BigInt(n)); mask++) {
+  // Note: we start at mask = 0n (not 1n as in the original brute force). T = ∅
+  // corresponds to G alone — a valid candidate when G attacks all of R.
+  // The original brute force over A excluded ∅ as "no semantic content," but
+  // in residue search ∅ lifts to G, which can be a meaningful stable extension.
+  for (let mask = 0n; mask < (ONE << BigInt(n)); mask++) {
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
     }
-    if (isStable(subset, subMap)) {
-      results.push(stripAux(lift(subset, grounded)));
+    const lifted = lift(subset, grounded);
+    if (!isAdmissible(lifted, map)) continue;
+    // Check every arg in R \ T is attacked by some member of lifted.
+    let attacksAllOutside = true;
+    for (const a of args) {
+      if (subset.has(a)) continue;
+      const attackers = map.get(a) ?? [];
+      if (!attackers.some((c) => lifted.has(c))) {
+        attacksAllOutside = false;
+        break;
+      }
+    }
+    if (attacksAllOutside) {
+      results.push(stripAux(lifted));
     }
   }
   return results;
@@ -305,9 +324,11 @@ export function findCompleteExtensions(map: Map<string, string[]>): Set<string>[
     return [stripAux(lift(new Set(), grounded))];
   }
 
-  // Search the residue for complete extensions (admissible AND closed under
-  // defense closure within the induced sub-framework). Lift by G ∪ T and strip
-  // auxiliary args.
+  // Search the residue for complete extensions. Modgil reduction: T ⊆ R is
+  // the residue of a complete extension of F iff T ∪ G is admissible in F
+  // AND T ∪ G is closed under defense in F. Both checks use the FULL map,
+  // not subMap: T ∪ G can have internal conflicts between G and T (e.g.,
+  // g ∈ G attacks t ∈ T) that subMap doesn't see (it filters out G).
   const results: Set<string>[] = [];
   const ONE = 1n;
   const n = args.length;
@@ -317,14 +338,8 @@ export function findCompleteExtensions(map: Map<string, string[]>): Set<string>[
     for (let i = 0; i < n; i++) {
       if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
     }
-    // Modgil's characterization: T ⊆ A \ G is the residue of a complete
-    // extension iff T is admissible in the induced sub-framework AND
-    // T ∪ G is closed under defense closure in F. The defense check uses the
-    // lifted set against the full map because attackers outside T ∪ G (those
-    // being defended against) may include grounded args whose presence is
-    // only visible in the original map.
     const lifted = lift(subset, grounded);
-    if (isAdmissible(subset, subMap) && isClosedUnderDefense(lifted, map)) {
+    if (isAdmissible(lifted, map) && isClosedUnderDefense(lifted, map)) {
       results.push(stripAux(lifted));
     }
   }
