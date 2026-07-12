@@ -256,7 +256,7 @@ Expected: ~80 words.
 
 ```bash
 cat > skills/prose-to-argdown/fixtures/research-abstract/expected.argdown <<'EOF'
-=== title: "Attention as soft database lookup" source: "(test fixture)" extracted-from: lines 1-3 validated: 2026-07-11 ===
+=== title: "Attention as soft database lookup" source: "(test fixture)" extracted-from: line 1 validated: 2026-07-11 ===
 
 [#transformer-attention-lookup] Transformer attention heads can be interpreted as soft database lookups. { source-line: 1, source-quote: "transformer attention heads can be interpreted as soft database lookups" }
 [#attention-knn-approximation] Attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation. { source-line: 1, source-quote: "attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation" }
@@ -345,7 +345,7 @@ Expected: ~100 words.
 
 ```bash
 cat > skills/prose-to-argdown/fixtures/position-disagreement/expected.argdown <<'EOF'
-=== title: "Remote work productivity debate" source: "(test fixture)" extracted-from: lines 1-3 validated: 2026-07-11 ===
+=== title: "Remote work productivity debate" source: "(test fixture)" extracted-from: line 1 validated: 2026-07-11 ===
 
 [#smith-productivity-gain] Remote work has increased worker productivity by twelve percent across surveyed firms. { source-line: 1, source-quote: "remote work has increased worker productivity by 12% across surveyed firms" }
 [#smith-deep-work-gain] Eliminating the daily commute produces measurable gains in deep-work hours. { source-line: 1, source-quote: "eliminating the daily commute produces measurable gains in deep-work hours" }
@@ -509,7 +509,7 @@ Expected: 3 (three `# Section N:` headers).
 
 ```bash
 cat > skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdown <<'EOF'
-=== title: "Pay down technical debt continuously" source: "(test fixture)" extracted-from: lines 1-25 validated: 2026-07-11 ===
+=== title: "Pay down technical debt continuously" source: "(test fixture)" extracted-from: lines 1-15 validated: 2026-07-11 ===
 
 [#debt-accumulation] Modern software systems routinely accumulate technical debt. { source-line: 2, source-quote: "Modern software systems routinely accumulate technical debt" }
 [#stripe-2024-study] A 2024 Stripe study found that developers spend forty-two percent of their time dealing with legacy code rather than building new features. { source-line: 3, source-quote: "A 2024 Stripe study found that developers spend 42% of their time dealing with legacy code rather than building new features" }
@@ -609,7 +609,7 @@ EOF
 
 ```bash
 cat > skills/prose-to-argdown/fixtures/ambiguous-prose/expected.argdown <<'EOF'
-=== title: "Post-quantum cryptography families" source: "(test fixture)" extracted-from: lines 1-3 validated: 2026-07-11 ===
+=== title: "Post-quantum cryptography families" source: "(test fixture)" extracted-from: line 1 validated: 2026-07-11 ===
 
 [#lattice-hardness] Lattice-based cryptography relies on the hardness of shortest-vector problems in high-dimensional lattices. { source-line: 1, source-quote: "lattice-based cryptography relies on the hardness of shortest-vector problems in high-dimensional lattices" }
 [#code-hardness] Code-based cryptography relies on the hardness of decoding random linear codes. { source-line: 1, source-quote: "code-based cryptography relies on the hardness of decoding random linear codes" }
