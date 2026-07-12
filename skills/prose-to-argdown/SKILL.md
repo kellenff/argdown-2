@@ -233,3 +233,49 @@ These are argdown-2 grammar constraints surfaced during plan validation. They ap
 
 If `argdown validate` rejects your output with any of these errors, fix the offending section and re-validate. Do not deliver invalid argdown.
 
+## Edge cases
+
+| Situation | Skill behavior |
+| --- | --- |
+| **argdown-2 MCP server unavailable** | Warn user once. Proceed without validation. Add `<!-- unvalidated -->` to frontmatter. |
+| **Prose < 50 words** | Reply: "This passage is too short to contain argumentative claims; nothing to extract." Do not produce empty argdown. |
+| **Prose > 10,000 words** | Chunk on paragraph boundaries (≥ 500 words each), process each, concatenate with `<!-- chunk N of M -->` separator. Re-validate. |
+| **No claims detected** (recipe, log, list) | Reply: "No argumentative claims detected in this prose; argdown-2 is for structured arguments. If you intended a different extraction, please clarify." Do not produce empty argdown. |
+| **Contradictory prose** | Emit both sides as facts with a `--x` relation. Preserve the disagreement; do not resolve. |
+| **Parse keeps failing** | After 2 parse-retry rounds, surface the parser errors verbatim. Mark with `<!-- parse-errors -->`. |
+| **Sanity-check keeps failing** | After 2 Pass-3 refinement rounds, deliver best-effort with the warning note + list of unverified arguments. |
+| **Provenance mismatch** | Rewrite the quote from the prose and re-emit. If that fails, drop the fact/argument. |
+
+**User-visible error format:** when any of the above triggers, the chat reply is plain prose (no argdown code block), with the issue explained and a suggested remediation. The argdown code block is only present on successful extraction.
+
+## Output assembly
+
+Assembly order (top to bottom in the final code block):
+
+1. **Frontmatter** (`=== ... ===`) — `title`, `source` (prose's title/URL if user provided), `extracted-from: lines X-Y` (or chunk list), `validated: <date>`.
+2. **Facts** — all `[#id] claim { source-line, source-quote }` lines from Pass 1.
+3. **Relations** — all `[#A] --> [#B] { source-line, source-quote }` lines from Pass 2.
+4. **Arguments** — all `([#X]) -> [#Y], [#Z]. { source-line, source-quote }` lines from Pass 3.
+5. **Structured blocks** — `:::evidence { … } :::` and `:::position { … } :::` groups.
+6. **Trailing comment** — `// extracted by prose-to-argdown; review source-quote attributes against source prose` (argdown-2 line-comment syntax).
+
+Delivery wrapper in chat reply:
+
+```
+Extracted N facts, M relations, and K arguments from <word count> words of prose.
+
+```argdown
+=== … ===
+[#id-1] …
+…
+```
+
+Review the `source-quote` attributes against the source to verify each claim is grounded.
+```
+
+**What the reply does NOT contain:**
+
+- Internal reasoning traces
+- MCP tool outputs (parse errors, Mermaid strings)
+- Refinement history
+
