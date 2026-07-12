@@ -1,0 +1,8 @@
+=== title: "Post-quantum cryptography families" source: "(test fixture)" extracted-from: line 1 validated: 2026-07-11 ===
+
+[#lattice-hardness] Lattice-based cryptography relies on the hardness of shortest-vector problems in high-dimensional lattices. { source-line: 1, source-quote: "lattice-based cryptography relies on the hardness of shortest-vector problems in high-dimensional lattices" }
+[#code-hardness] Code-based cryptography relies on the hardness of decoding random linear codes. { source-line: 1, source-quote: "code-based cryptography relies on the hardness of decoding random linear codes" }
+[#hash-hardness] Hash-based cryptography relies only on the collision-resistance of standard hash functions. { source-line: 1, source-quote: "hash-based cryptography relies only on the collision-resistance of standard hash functions" }
+[#three-families-tradeoffs] Each family offers different trade-offs in key size, signature size, and computational cost. { source-line: 1, source-quote: "Each family offers different trade-offs in key size, signature size, and computational cost" }
+
+// extracted by prose-to-argdown; review source-quote attributes against source prose. No arguments emitted: the prose does not argue for any specific family.

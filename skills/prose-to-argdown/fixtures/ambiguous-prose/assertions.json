@@ -1,0 +1,14 @@
+{
+  "fixture": "ambiguous-prose",
+  "expects_parseable": true,
+  "expects_arguments": false,
+  "min_facts": 3,
+  "max_facts": 12,
+  "max_relations": 0,
+  "max_arguments": 0,
+  "provenance_required": true,
+  "every_quote_must_be_substring": true,
+  "grounded_arguments_only": true,
+  "source_line_matches_quote": true,
+  "notes": "Tests 'silence is valid output': prose lists properties but does not argue for any conclusion. No arguments should be emitted. source_line_matches_quote is enabled."
+}
