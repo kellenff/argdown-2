@@ -95,3 +95,42 @@ Inline argdown-2 code block delivered in chat reply
 - Fix any syntax errors and retry once.
 - Spot-check that every `source-quote` is a literal substring of the prose (use string search).
 
+## Pass 2: Relations
+
+**Input:** the prose + the validated facts from Pass 1.
+
+**Goal:** identify support/attack/undercut edges that the prose states or strongly implies.
+
+**Output shape:**
+
+```argdown
+[#A] --> [#B] { source-line: N, source-quote: "Verbatim prose span." }
+[#C] --x [#D] { source-line: N, source-quote: "Verbatim prose span." }
+```
+
+**Arrow taxonomy:**
+
+- `-->` support: A supports B
+- `--x` attack: A rebuts B (attacks the conclusion)
+- `-.->` undercut: A attacks B's inference rule
+- `-.-` undermine: A attacks a premise of B
+- `~>` concession: A concedes to B but doesn't support
+- `?>` qualification: A qualifies B with conditions
+- `<->` equivalence: A and B are equivalent
+
+Pick the arrow that matches the prose's actual semantics. When ambiguous, default to `-->`.
+
+**Instructions:**
+
+1. Re-read the prose, focusing on transition words and relational language: "supports", "because", "however", "despite", "even though", "but", "nevertheless", "consequently", "follows from".
+2. For each relational statement, identify the source fact and target fact.
+3. Only emit relations the prose asserts or strongly implies. The LLM does NOT add background-knowledge relations (e.g., do not infer "X attacks Y" just because the LLM knows X and Y contradict in general knowledge).
+4. Every relation must reference IDs that exist in Pass 1. If a relation requires a fact that wasn't extracted, split or add it (with provenance) in this pass, then re-validate Pass 1.
+5. Add `source-line` and `source-quote` provenance to each relation.
+
+**Validation:**
+
+- Call `mcp__argdown__validate(source)` on the combined Pass 1 + Pass 2 fragment.
+- Retry once on syntax errors.
+- Internal check: every relation should be defensible by a sentence or two in the prose.
+
