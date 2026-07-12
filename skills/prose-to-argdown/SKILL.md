@@ -173,3 +173,63 @@ Every emitted argument MUST correspond to a statement or strong implication in t
    - **Provenance:** does every argument have `source-line` + `source-quote` that match the prose verbatim? Missing or mismatched → refine.
 4. Refine Pass 3's output (NOT Pass 1/2 unless they are independently broken) up to 2 rounds.
 5. After 2 rounds, deliver the best version with a one-line note: `Note: extraction is best-effort; some arguments may not be fully grounded — review against source.`
+## Provenance schema
+
+Every fact and argument carries `source-line` and `source-quote` attributes. These are the audit anchors — the user can verify each claim by searching the prose for the quote.
+
+**Attribute conventions:**
+
+- `source-line` — number attribute, 1-indexed.
+  - Single line: `source-line: 42`
+  - Range: `source-line: "42-45"`
+  - Discontiguous: `source-line: [42, 67]`
+
+- `source-quote` — string attribute, MUST be a verbatim substring of the input prose.
+  - Single line: `source-quote: "Verbatim text from prose."`
+  - Multi-line: `source-quote: "Line one.\nLine two.\nLine three."`
+  - Discontiguous: `source-quote: "First part.\n--\nSecond part."`
+
+Quoting inside the quote: escape with `\"`, or wrap the attribute in single quotes:
+
+```argdown
+source-quote: 'He said "argdown is great".'
+```
+
+Attribute order inside `{}`: `source-line` first, `source-quote` second. Deterministic ordering keeps diffs clean.
+
+**Validation contract:** before delivery, programmatically verify that every `source-quote` is a literal substring of the input prose (case-sensitive, whitespace-sensitive). Any fact or argument that fails this check is rewritten with corrected provenance or dropped — never silently delivered with a bad quote.
+
+## Validation loop
+
+The skill uses argdown-2's MCP server for validation. Tools used:
+
+- `mcp__argdown__parse(source: string)` — returns `{ ok: boolean, errors?: ParseError[], ast?: Document, partial?: Document }`. Use this for detailed parse errors.
+- `mcp__argdown__validate(source: string)` — returns `{ ok: boolean, errors?: ParseError[] }`. Quick check that the source is parseable.
+- `mcp__argdown__render_mermaid(document)` — returns a Mermaid `flowchart TD` string. Use this for the Pass-3 sanity-check.
+
+**Validation per pass:**
+
+- Pass 1: `validate(facts_fragment)` after writing facts. Retry once on errors.
+- Pass 2: `validate(facts_plus_relations_fragment)` after writing relations. Retry once on errors.
+- Pass 3: `validate(full_doc)` + `render_mermaid(full_doc)` + LLM visual sanity-check. Up to 2 refinement rounds.
+
+If the argdown-2 MCP server is unavailable at skill load, the skill proceeds in degraded mode without validation, with a one-time warning to the user. Output gets a `<!-- unvalidated -->` comment in the frontmatter.
+
+## Argdown-2 grammar constraints (READ BEFORE WRITING)
+
+These are argdown-2 grammar constraints surfaced during plan validation. They apply to ALL output (facts, relations, arguments, comments):
+
+1. **Arguments support only `->` in conclusion position.** Rebuttal arguments are NOT a separate `([#X]) --x [#Y]` construction; use a `[#A] --x [#B]` relation instead. The argument syntax `([#conclusion]) -> [#premise-1], [#premise-2].` is the only supported form.
+
+2. **Comments are `//` (line) or `/* */` (block), not `<!-- -->.** argdown-2's lexer rejects HTML-style comments. The trailing marker line uses `// extracted by prose-to-argdown; ...`.
+
+3. **Five block-type keywords are reserved as fact-ID prefixes:** `evidence-`, `position-`, `stakeholder-`, `domain-`, `meta-`. Any fact ID starting with one of these prefixes (e.g., `[#evidence-clear]`, `[#position-x]`) is rejected by the lexer. Use alternative spellings: `facts-are-clear`, `the-position-held`, etc.
+
+4. **Source-line ranges must use quoted strings.** `source-line: 1-2` (unquoted range) is rejected in relations and arguments. Use `source-line: "1-2"` (quoted string), or `source-line: [42, 67]` (flow sequence) for discontiguous spans.
+
+5. **`%` in unquoted fact text is rejected by the lexer** (the `%` character is reserved). Source-quote strings (which are quoted) accept `%` fine. If the prose uses `%`, spell out "percent" in the fact text but keep the original `%` in the source-quote verbatim.
+
+6. **Legacy `:—` syntax is a hard parse error** with migration hint. Never emit it; never include `:—` in any test fixture that the skill will validate.
+
+If `argdown validate` rejects your output with any of these errors, fix the offending section and re-validate. Do not deliver invalid argdown.
+
