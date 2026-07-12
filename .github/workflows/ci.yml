@@ -106,7 +106,7 @@ jobs:
       - name: Install dependencies (immutable)
         run: yarn install --immutable
       - name: Test
-        run: yarn test --exclude src/cli.test.ts
+        run: yarn test --exclude src/cli.test.ts --pool=forks
 
   build:
     name: Build
