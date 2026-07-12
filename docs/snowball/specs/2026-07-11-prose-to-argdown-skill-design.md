@@ -1,8 +1,8 @@
 # `prose-to-argdown` Skill Design
 
 **Date:** 2026-07-11
-**Status:** Approved
-**Scope:** A new snowball SKILL.md that takes argumentative or research/technical prose and distills it into a full argdown-2 document, with strict provenance and grounded arguments. Lives at `~/.agents/skills/prose-to-argdown/SKILL.md` (user-scope, matching the convention of `brainstorming` and `structured-argumentation`). Validates output by parsing and rendering through `argdown-2`'s MCP server before delivering inline.
+**Status:** Approved (rev 2: distribution moved from user-scope to repo-scope with multi-host packaging)
+**Scope:** A new snowball SKILL.md that takes argumentative or research/technical prose and distills it into a full argdown-2 document, with strict provenance and grounded arguments. Lives **inside the `argdown-2` repo** at `skills/prose-to-argdown/SKILL.md`, alongside host-specific adapters: a pi-coding-agent extension at `.pi/extensions/prose-to-argdown.ts` and a Claude Code plugin at `.claude-plugin/plugin.json` + `commands/prose-to-argdown.md`. Validates output by parsing and rendering through `argdown-2`'s MCP server before delivering inline.
 
 ---
 
@@ -14,7 +14,9 @@ Today, producing argdown-2 documents from natural-language prose is a manual exe
 
 **Goals**
 
-- One new SKILL.md at `~/.agents/skills/prose-to-argdown/SKILL.md`. The skill loads into any agent that has the snowball skill-discovery machinery.
+- One new SKILL.md at `skills/prose-to-argdown/SKILL.md` inside the `argdown-2` repo. The skill loads into any agent that has the snowball skill-discovery machinery (project-local `.agents/skills` or equivalent).
+- Pi-coding-agent extension at `.pi/extensions/prose-to-argdown.ts` that registers a `prose_to_argdown` tool and `/prose-to-argdown` command, both of which load the SKILL.md content as instructions and validate output via the argdown-2 MCP server.
+- Claude Code plugin at `.claude-plugin/plugin.json` plus a slash command at `commands/prose-to-argdown.md` that mirrors the pi extension's command behavior for Claude Code hosts.
 - Triggered by user requests to "extract the claims", "map the argument", "turn this into argdown", "structure this", or similar — applied to argumentative prose (essays, op-eds, reviews, polemics, position papers) and research/technical prose (paper sections, technical reports, book chapter excerpts).
 - Three-pass reasoning pipeline inside the skill (Facts → Relations → Arguments). Each pass validated via `argdown-2`'s MCP server.
 - Strict provenance: every fact and argument carries `source-line` and `source-quote` attributes. `source-quote` MUST be a verbatim substring of the input prose; the skill verifies this programmatically before delivery.
@@ -32,12 +34,16 @@ Today, producing argdown-2 documents from natural-language prose is a manual exe
 - Translation across languages. English-only for v1.
 - Streaming or incremental output. The skill processes a complete chunk end-to-end before delivery.
 - Inferring arguments beyond what the prose states or strongly implies. Explicitly out of scope by design (the grounded-arguments invariant).
+- Publishing the skill to a public marketplace or registry (Claude marketplace listing, npm `prose-to-argdown` package, etc.). v1 ships in-repo; publication is a future cycle.
+- Cursor, Aider, or Gemini CLI plugins. The snowball SKILL.md is portable to all three; explicit adapters for non-pi / non-Claude hosts are deferred until requested.
 
 ## 2. Decisions summary
 
 | Concern | Decision |
 |---|---|
-| Skill scope (user-level) | `~/.agents/skills/prose-to-argdown/SKILL.md` |
+| Skill scope (repo-level) | `skills/prose-to-argdown/SKILL.md` inside the `argdown-2` repo |
+| Pi extension | `.pi/extensions/prose-to-argdown.ts` registering a `prose_to_argdown` tool + `/prose-to-argdown` command |
+| Claude plugin | `.claude-plugin/plugin.json` manifest + `commands/prose-to-argdown.md` slash command |
 | Skill name | `prose-to-argdown` |
 | Trigger scope | Argumentative prose (essays, op-eds, reviews, polemics, position papers) and research/technical prose (paper sections, technical reports, book excerpts) |
 | Output shape | Full argdown-2 document: frontmatter + facts + relations + arguments + structured blocks |
@@ -81,7 +87,7 @@ description: Use when the user provides a block of argumentative or research/tec
 ---
 ```
 
-**File location:** `~/.agents/skills/prose-to-argdown/SKILL.md` (user-scope). The skill depends on argdown-2's MCP server being available in the user's environment; this is a host-side concern, not a repo-side concern. The file is portable if a future cycle wants to publish it alongside `argdown-2`.
+**File location:** `skills/prose-to-argdown/SKILL.md` inside the `argdown-2` repo (project-local; snowball-compatible loaders discover it automatically). The skill depends on argdown-2's MCP server being available in the user's environment; that is a host-side concern satisfied by the user's MCP host config, not by the repo. Pi and Claude packaging adapters live alongside, at `.pi/extensions/prose-to-argdown.ts` and `.claude-plugin/plugin.json` respectively (see Section 11).
 
 **Trigger logic:**
 - Fires on: "extract the claims from…", "map the argument in…", "turn this essay into argdown", "structure this paper", "what does this argue"
@@ -200,7 +206,7 @@ Every fact and argument carries two attributes:
 
 ## 8. Testing approach
 
-**Fixtures** — at `~/.agents/skills/prose-to-argdown/fixtures/`:
+**Fixtures** — at `skills/prose-to-argdown/fixtures/` (inside the repo):
 
 | Fixture | What it stresses |
 | --- | --- |
@@ -270,9 +276,52 @@ Then a one-line footer: *"Review the `source-quote` attributes against the sourc
 - **Citation graph extraction** — when prose cites other works, build a citation network in argdown form. Deferred; v1 extracts only the claims within the prose itself.
 - **Output format alternatives** — Markdown summary, JSON AST, Mermaid diagram embedded. v1 is the argdown code block only.
 
-## 11. SKILL.md sketch (target file)
+## 11. Distribution & host packaging
 
-For reference, the implementation plan will produce a SKILL.md at `~/.agents/skills/prose-to-argdown/SKILL.md` with the following high-level structure:
+The skill ships inside the `argdown-2` repo with three layers of host-specific packaging. The snowball SKILL.md is the source of truth; the pi extension and Claude plugin are thin adapters.
+
+**Layer 1 — Source of truth (snowball skill loader):**
+
+```
+skills/prose-to-argdown/
+├── SKILL.md             # source of truth for skill body
+├── README.md            # human-facing docs
+├── MANUAL.md            # smoke-test instructions
+└── fixtures/            # 7 fixtures with input/expected/assertions
+```
+
+Project-local placement (`skills/prose-to-argdown/`) is portable to any snowball-compatible loader (Claude Code, Copilot CLI, Aider, Gemini CLI, VTCode). Snowball discovers skills at project-local `skills/<name>/SKILL.md` automatically.
+
+**Layer 2 — Pi-coding-agent extension:**
+
+```
+.pi/extensions/prose-to-argdown.ts
+```
+
+Per [pi's extension docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/extensions.md), project-local `.pi/extensions/*.ts` files are auto-discovered after the project is trusted. The extension registers:
+
+- A `/prose-to-argdown <path>` slash command that reads the file, injects the SKILL.md content as a `before_agent_start` system-prompt augmentation, and lets the agent run the skill pipeline.
+- A `prose_to_argdown` custom tool the LLM can call with `{prose: string, source?: string}`; the tool validates output via the argdown-2 MCP server before returning.
+- An event subscription on `session_start` that surfaces a one-line status banner if argdown-2's MCP server is not registered (degraded-mode warning).
+
+**Layer 3 — Claude Code plugin:**
+
+```
+.claude-plugin/
+└── plugin.json          # manifest (name, version, description, author, license)
+commands/
+└── prose-to-argdown.md  # slash command body — instructs Claude to load the skill
+```
+
+Per Claude's plugin format (mirroring `codexkins-mono/grfp`'s `.claude-plugin/plugin.json` pattern), the plugin manifest advertises the plugin and `commands/prose-to-argdown.md` provides the slash-command body. Claude Code discovers both automatically.
+
+**Why three layers:** each host has its own packaging format. The SKILL.md is portable across all of them; pi gets a TypeScript adapter because pi's extension system is the richest; Claude Code gets a manifest + slash command because that's its packaging shape. Future hosts (Cursor, Aider, Gemini CLI) can ship their own adapters without re-writing the SKILL.md.
+
+**CI / release:** the existing `.github/workflows/release.yml` (which builds and packs on every push to `main`) will include the new files automatically. No release-process changes required. Fixtures and scripts live under `skills/prose-to-argdown/` and are version-controlled alongside the rest of the repo.
+
+## 12. SKILL.md sketch (target file)
+
+For reference, the implementation plan will produce a SKILL.md at `skills/prose-to-argdown/SKILL.md` (inside the `argdown-2` repo) with the following high-level structure:
 
 ```
 # prose-to-argdown
