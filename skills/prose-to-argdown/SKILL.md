@@ -66,3 +66,32 @@ Inline argdown-2 code block delivered in chat reply
 - **Grounded-arguments invariant:** the LLM MAY NOT add `([#X]) -> [#Y].` constructions beyond what the prose states or strongly implies. If the prose does NOT argue anything → emit facts and relations only, no arguments section. Silence is a valid output.
 - Pass 2 may need to split a Pass 1 fact into two if a relation reveals two claims packed into one. If so, update Pass 1 and re-validate from there.
 
+## Pass 1: Facts
+
+**Goal:** identify every atomic claim in the prose.
+
+**Output shape:**
+
+```argdown
+[#id] Claim text. { source-line: N, source-quote: "Verbatim prose span." }
+```
+
+**Instructions:**
+
+1. Read the entire prose once. Identify each atomic claim — a single proposition that can be true or false.
+2. If a sentence makes two claims, split them into two facts.
+3. Assign each fact a stable, semantic ID: lowercase, hyphenated, descriptive. Examples: `co2-emissions-cause`, `evidence-from-ipcc`, `policy-failure-claim`.
+4. The `claim text` should preserve the prose's terminology where possible. Minor grammar smoothing is OK, but no semantic paraphrase.
+5. Set `source-line` to the line number (1-indexed) where the claim appears.
+   - Single line: `source-line: 42`
+   - Range: `source-line: "42-45"`
+   - Discontiguous: `source-line: [42, 67]`
+6. Set `source-quote` to a verbatim substring of the prose that anchors the claim. This is the audit anchor.
+7. Do NOT include claims the prose does not state or strongly imply. Background-knowledge claims are out of scope.
+
+**Validation:**
+
+- Call `mcp__argdown__validate(source)` on the facts fragment (wrap facts in a minimal `Document` shell if needed).
+- Fix any syntax errors and retry once.
+- Spot-check that every `source-quote` is a literal substring of the prose (use string search).
+
