@@ -11,9 +11,7 @@ import {
  * the FULL argument set. Captured here for equivalence testing against the
  * new residue-based finders.
  */
-function bruteForceCompleteReference(
-  map: Map<string, string[]>,
-): Set<string>[] {
+function bruteForceCompleteReference(map: Map<string, string[]>): Set<string>[] {
   const args = [...map.keys()];
   const n = args.length;
   const results: Set<string>[] = [];
@@ -51,7 +49,7 @@ function bruteForceCompleteReference(
     return true;
   }
 
-  for (let mask = 0n; mask < (ONE << BigInt(n)); mask++) {
+  for (let mask = 0n; mask < ONE << BigInt(n); mask++) {
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
@@ -63,9 +61,7 @@ function bruteForceCompleteReference(
   return results;
 }
 
-function bruteForceStableReference(
-  map: Map<string, string[]>,
-): Set<string>[] {
+function bruteForceStableReference(map: Map<string, string[]>): Set<string>[] {
   const args = [...map.keys()];
   const n = args.length;
   const results: Set<string>[] = [];
@@ -97,7 +93,7 @@ function bruteForceStableReference(
     return true;
   }
 
-  for (let mask = 1n; mask < (ONE << BigInt(n)); mask++) {
+  for (let mask = 1n; mask < ONE << BigInt(n); mask++) {
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
@@ -109,9 +105,7 @@ function bruteForceStableReference(
   return results;
 }
 
-function bruteForcePreferredReference(
-  map: Map<string, string[]>,
-): Set<string>[] {
+function bruteForcePreferredReference(map: Map<string, string[]>): Set<string>[] {
   const args = [...map.keys()];
   const n = args.length;
   const results: Set<string>[] = [];

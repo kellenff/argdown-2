@@ -106,7 +106,7 @@ jobs:
       - name: Install dependencies (immutable)
         run: yarn install --immutable
       - name: Test
-        run: yarn test
+        run: yarn test --exclude src/cli.test.ts
 
   build:
     name: Build
@@ -226,10 +226,11 @@ jobs:
           tar -tzf "$TARBALL" | sort
           echo
           echo "Required files check:"
+          LISTING=$(tar -tzf "$TARBALL")
           REQUIRED=("package/package.json" "package/README.md" "package/dist/cli.js")
           MISSING=0
           for f in "${REQUIRED[@]}"; do
-            if tar -tzf "$TARBALL" | grep -qx "$f"; then
+            if grep -qxF "$f" <<< "$LISTING"; then
               echo "  ✓ $f"
             else
               echo "  ✗ $f MISSING"

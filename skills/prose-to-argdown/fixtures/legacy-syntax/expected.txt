@@ -1,0 +1,5 @@
+The source prose describes the legacy ':—' syntax but does not itself contain it as a parseable Argdown construct. If the user's intent was to test that the skill surfaces the legacy-syntax error, please supply prose that uses ':—' as an Argdown rule (e.g., `[#a] :— [#b].`). The current parser rejects ':—' with the migration message:
+
+  ':—' syntax was removed. Use '->' for inference ([#A]) -> [#B], [#C].
+
+No argdown-2 document was produced.

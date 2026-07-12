@@ -1,0 +1,15 @@
+{
+  "fixture": "position-disagreement",
+  "expects_parseable": true,
+  "expects_arguments": true,
+  "expects_position_blocks": true,
+  "min_facts": 4,
+  "min_relations": 3,
+  "min_arguments": 2,
+  "max_facts": 12,
+  "provenance_required": true,
+  "every_quote_must_be_substring": true,
+  "grounded_arguments_only": true,
+  "source_line_matches_quote": true,
+  "notes": "Tests :::position blocks and --x rebuttals between attributed positions. source_line_matches_quote is enabled."
+}

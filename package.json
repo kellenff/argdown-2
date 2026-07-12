@@ -35,7 +35,7 @@
     "bench:solver:check": "yarn bench:solver --check",
     "build": "tsc",
     "format": "oxfmt src",
-    "format:check": "oxfmt --check src",
+    "format:check": "npx --yes oxfmt@0.6.0 --check src",
     "lint": "oxlint src",
     "mutate": "stryker run",
     "test": "vitest run --passWithNoTests",

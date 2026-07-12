@@ -1,6 +1,6 @@
 // src/cli.test.ts
 import { describe, expect, it } from 'vitest';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -121,10 +121,9 @@ describe('CLI multi-extension --semantics', () => {
       // no stable extensions. Use mutual '-.-' (undercut) instead: undercuts
       // always win, so both directions defeat each other and we get the same
       // textbook Dung outcome.
-      const src =
-        semantics.endsWith('-aspic')
-          ? '[#A] x.\n[#B] y.\n[#A] -.-> [#B].\n[#B] -.-> [#A].\n'
-          : '[#A] x.\n[#B] y.\n[#A] --x [#B].\n[#B] --x [#A].\n';
+      const src = semantics.endsWith('-aspic')
+        ? '[#A] x.\n[#B] y.\n[#A] -.-> [#B].\n[#B] -.-> [#A].\n'
+        : '[#A] x.\n[#B] y.\n[#A] --x [#B].\n[#B] --x [#A].\n';
       writeFileSync(file, src);
       const out = runCli(['--solve', `--semantics=${semantics}`, file]);
       expect(out.status).toBe(0);
@@ -153,7 +152,10 @@ describe('CLI multi-extension --semantics', () => {
     const dir = mkdtempSync(join(tmpdir(), 'argdown-cli-'));
     const file = join(dir, 'doc.argdown');
     // 3-cycle has 0 stable extensions by textbook Dung.
-    writeFileSync(file, '[#A] x.\n[#B] y.\n[#C] z.\n[#A] --x [#B].\n[#B] --x [#C].\n[#C] --x [#A].\n');
+    writeFileSync(
+      file,
+      '[#A] x.\n[#B] y.\n[#C] z.\n[#A] --x [#B].\n[#B] --x [#C].\n[#C] --x [#A].\n',
+    );
     const out = runCli(['--solve', '--semantics=stable', file]);
     expect(out.status).toBe(0);
     // For empty result, CLI prints "(no extensions)" rather than Extension lines.
@@ -312,34 +314,57 @@ describe('consolidated CLI — subcommands', () => {
     expect(out.stdout).toMatch(/OUT \(\d+\):[^]*\ba\b/);
   });
 
-  it('mcp: starts an MCP server on stdio, exits 0 when stdin is closed', () => {
+  it('mcp: starts an MCP server on stdio, exits 0 when stdin is closed', async () => {
     // `argdown mcp` blocks on `StdioServerTransport` reading from stdin.
-    // If we close stdin immediately, the EOF handler in src/cli/mcp.ts
-    // tears the server down and the process exits cleanly with status 0.
-    // We're not driving the protocol here — that's the in-process test in
-    // src/cli/mcp.test.ts. This test only proves that:
-    //   1. `argdown mcp` is a real subcommand (dispatcher routes to it)
-    //   2. The server starts without crashing
-    //   3. EOF on stdin = clean shutdown, not a non-zero exit
-    const result = spawnSync(process.execPath, [CLI_PATH, 'mcp'], {
-      input: '',
-      encoding: 'utf8',
-      // Don't pull in our process's stdin — we want the child to see EOF
-      // immediately, not block on the parent's tty.
+    // The stdio transport does not auto-detect EOF reliably (see the
+    // comment in src/cli/mcp.ts:429), so we explicitly close the child's
+    // stdin after a short grace period and SIGKILL if it has not exited
+    // within the test timeout. Without this guard, spawnSync can block the
+    // event loop indefinitely and orphan the runner.
+    const child = spawn(process.execPath, [CLI_PATH, 'mcp'], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    expect(result.status).toBe(0);
+    // Close stdin immediately so the server sees EOF.
+    child.stdin.end();
+    // Race the child against a 10s wall clock; SIGKILL on timeout.
+    const exit = await new Promise<number | null>((resolve) => {
+      const timer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {}
+        resolve(null);
+      }, 10_000);
+      child.on('exit', (code) => {
+        clearTimeout(timer);
+        resolve(code);
+      });
+    });
+    expect(exit).toBe(0);
   });
 
-  it('mcp: rejects trailing args with a non-zero exit', () => {
+  it('mcp: rejects trailing args with a non-zero exit', async () => {
     // `argdown mcp` takes no arguments. Anything else should fail loudly
     // rather than being silently ignored.
-    const result = spawnSync(process.execPath, [CLI_PATH, 'mcp', '--bogus'], {
-      input: '',
-      encoding: 'utf8',
+    const child = spawn(process.execPath, [CLI_PATH, 'mcp', '--bogus'], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toMatch(/mcp takes no arguments/);
+    let stderr = '';
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
+    const exit = await new Promise<number | null>((resolve) => {
+      const timer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {}
+        resolve(null);
+      }, 10_000);
+      child.on('exit', (code) => {
+        clearTimeout(timer);
+        resolve(code);
+      });
+    });
+    expect(exit).not.toBe(0);
+    expect(stderr).toMatch(/mcp takes no arguments/);
   });
 });

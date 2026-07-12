@@ -170,7 +170,10 @@ describe('writeSolverBaselineJson', () => {
     const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
     try {
       const out = join(dir, 'baseline.json');
-      const { results, peakHeapMB } = await runSolverBench({ ...FAST_BENCH, fixtures: VERY_FAST_FIXTURES });
+      const { results, peakHeapMB } = await runSolverBench({
+        ...FAST_BENCH,
+        fixtures: VERY_FAST_FIXTURES,
+      });
       await writeSolverBaselineJson(results, peakHeapMB, out);
 
       const raw = await readFile(out, 'utf8');
@@ -191,7 +194,10 @@ describe('writeSolverBaselineJson', () => {
     const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
     try {
       const out = join(dir, 'baseline.json');
-      const { results, peakHeapMB } = await runSolverBench({ ...FAST_BENCH, fixtures: VERY_FAST_FIXTURES });
+      const { results, peakHeapMB } = await runSolverBench({
+        ...FAST_BENCH,
+        fixtures: VERY_FAST_FIXTURES,
+      });
       await writeSolverBaselineJson(results, peakHeapMB, out);
 
       const parsed = JSON.parse(await readFile(out, 'utf8')) as SolverBaselineFile;
@@ -303,7 +309,10 @@ describe('checkAgainstSolverBaseline', () => {
     const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
     try {
       const out = join(dir, 'baseline.json');
-      const { results, peakHeapMB } = await runSolverBench({ ...FAST_BENCH, fixtures: VERY_FAST_FIXTURES });
+      const { results, peakHeapMB } = await runSolverBench({
+        ...FAST_BENCH,
+        fixtures: VERY_FAST_FIXTURES,
+      });
       await writeSolverBaselineJson(results, peakHeapMB, out);
       const baseline = await loadSolverBaseline(out);
       // VERY_FAST_FIXTURES is just small-claim.
@@ -321,7 +330,10 @@ describe('checkAgainstSolverBaseline', () => {
     const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
     try {
       const out = join(dir, 'baseline.json');
-      const { results, peakHeapMB } = await runSolverBench({ ...FAST_BENCH, fixtures: VERY_FAST_FIXTURES });
+      const { results, peakHeapMB } = await runSolverBench({
+        ...FAST_BENCH,
+        fixtures: VERY_FAST_FIXTURES,
+      });
       await writeSolverBaselineJson(results, peakHeapMB, out);
       const baseline = await loadSolverBaseline(out);
       await expect(
@@ -336,7 +348,10 @@ describe('checkAgainstSolverBaseline', () => {
     const dir = await mkdtemp(join(tmpdir(), 'argdown-solver-perf-'));
     try {
       const out = join(dir, 'baseline.json');
-      const { results, peakHeapMB } = await runSolverBench({ ...FAST_BENCH, fixtures: VERY_FAST_FIXTURES });
+      const { results, peakHeapMB } = await runSolverBench({
+        ...FAST_BENCH,
+        fixtures: VERY_FAST_FIXTURES,
+      });
       await writeSolverBaselineJson(results, peakHeapMB, out);
       const baseline = await loadSolverBaseline(out);
       const slowed = results.map((r) => ({ ...r, hz: r.hz / 2 }));

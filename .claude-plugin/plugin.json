@@ -1,0 +1,20 @@
+{
+  "name": "argdown-prose-to-argdown",
+  "version": "0.1.0",
+  "description": "Distill argumentative or research/technical prose into a full argdown-2 document with strict provenance (source-line + source-quote on every fact and argument) and grounded arguments. Three-pass pipeline (Facts → Relations → Arguments), each validated via argdown-2's MCP server. The argdown-2 parser/CLI must be installed separately; this plugin is the agent-facing skill layer.",
+  "author": {
+    "name": "kellenff",
+    "url": "https://github.com/kellenff"
+  },
+  "homepage": "https://github.com/kellenff/argdown-2/tree/main/skills/prose-to-argdown",
+  "repository": "https://github.com/kellenff/argdown-2",
+  "license": "MIT",
+  "keywords": [
+    "argdown",
+    "argdown-2",
+    "argumentation",
+    "structured-argumentation",
+    "claim-extraction",
+    "provenance"
+  ]
+}

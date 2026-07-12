@@ -8,7 +8,9 @@ describe('solvePreferred (dung reduction)', () => {
   it('returns 3 preferred for 3-cycle (textbook: A, B, C are not admissible — ∅ is the only preferred)', () => {
     // Note: by textbook Dung, {A} is NOT admissible in a 3-cycle (A is attacked
     // by C, but A doesn't attack C). So the only preferred is ∅.
-    const result = parse('[#A] x.\n[#B] y.\n[#C] z.\n[#A] --x [#B].\n[#B] --x [#C].\n[#C] --x [#A].\n');
+    const result = parse(
+      '[#A] x.\n[#B] y.\n[#C] z.\n[#A] --x [#B].\n[#B] --x [#C].\n[#C] --x [#A].\n',
+    );
     if (!result.ok) throw new Error('parse failed');
     const ast = result.ast;
     const { extensions } = solvePreferred(ast);

@@ -8,8 +8,7 @@ import { parse, formatError } from '../parser.js';
 import { loadInput, reportParseErrors } from './input.js';
 
 export const COMMAND = 'ast';
-export const DESCRIPTION =
-  'Parse an Argdown document and dump the AST as JSON to stdout';
+export const DESCRIPTION = 'Parse an Argdown document and dump the AST as JSON to stdout';
 
 export async function run(argv: string[], binaryName: string): Promise<number> {
   const filename = argv[0];

@@ -1,0 +1,1 @@
+No argumentative claims detected in this prose; argdown-2 is for structured arguments. If you intended a different extraction (e.g., a step-by-step procedure, a recipe, a list), please clarify or use a different tool.

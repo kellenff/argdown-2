@@ -1,0 +1,14 @@
+{
+  "fixture": "multi-paragraph",
+  "expects_parseable": true,
+  "expects_arguments": true,
+  "min_facts": 12,
+  "min_relations": 6,
+  "min_arguments": 2,
+  "max_facts": 30,
+  "provenance_required": true,
+  "every_quote_must_be_substring": true,
+  "grounded_arguments_only": true,
+  "source_line_matches_quote": true,
+  "notes": "Multi-section essay (~240 words) with two arguments: main allocation and conclusion. The fixture is well under the 10,000-word chunking threshold; it tests multi-section frontmatter and source-quote verbatim matching rather than chunking itself."
+}

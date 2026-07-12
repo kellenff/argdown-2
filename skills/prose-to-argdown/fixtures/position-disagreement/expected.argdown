@@ -1,0 +1,25 @@
+=== title: "Remote work productivity debate" source: "(test fixture)" extracted-from: line 1 validated: 2026-07-11 ===
+
+[#smith-productivity-gain] Remote work has increased worker productivity by twelve percent across surveyed firms. { source-line: 1, source-quote: "remote work has increased worker productivity by 12% across surveyed firms" }
+[#smith-deep-work-gain] Eliminating the daily commute produces measurable gains in deep-work hours. { source-line: 1, source-quote: "eliminating the daily commute produces measurable gains in deep-work hours" }
+[#jones-collaboration-fragmentation] Remote work fragments collaboration and erodes institutional knowledge. { source-line: 1, source-quote: "remote work fragments collaboration and erodes institutional knowledge" }
+[#jones-spontaneous-exchange] In-person work enables the kind of spontaneous exchange that remote workers systematically miss. { source-line: 1, source-quote: "in-person work enables the kind of spontaneous exchange that remote workers systematically miss" }
+
+:::position
+[#smith-productivity-gain] Remote work has increased worker productivity by twelve percent across surveyed firms. { source-line: 1, source-quote: "According to Smith, remote work has increased worker productivity by 12% across surveyed firms" }
+[#smith-deep-work-gain] Eliminating the daily commute produces measurable gains in deep-work hours. { source-line: 1, source-quote: "Smith argues that eliminating the daily commute produces measurable gains in deep-work hours" }
+:::
+
+:::position
+[#jones-collaboration-fragmentation] Remote work fragments collaboration and erodes institutional knowledge. { source-line: 1, source-quote: "According to Jones, remote work fragments collaboration and erodes institutional knowledge" }
+[#jones-spontaneous-exchange] In-person work enables the kind of spontaneous exchange that remote workers systematically miss. { source-line: 1, source-quote: "Jones argues that in-person work enables the kind of spontaneous exchange that remote workers systematically miss" }
+:::
+
+[#smith-deep-work-gain] --> [#smith-productivity-gain] { source-line: 1, source-quote: "Smith argues that eliminating the daily commute produces measurable gains in deep-work hours" }
+[#jones-spontaneous-exchange] --> [#jones-collaboration-fragmentation] { source-line: 1, source-quote: "Jones argues that in-person work enables the kind of spontaneous exchange that remote workers systematically miss" }
+[#smith-productivity-gain] --x [#jones-collaboration-fragmentation] { source-line: 1, source-quote: "However, Jones contests this finding" }
+
+([#smith-productivity-gain]) -> [#smith-deep-work-gain]. { source-line: 1, source-quote: "According to Smith, remote work has increased worker productivity by 12% across surveyed firms. Smith argues that eliminating the daily commute produces measurable gains in deep-work hours" }
+([#jones-collaboration-fragmentation]) -> [#jones-spontaneous-exchange]. { source-line: 1, source-quote: "According to Jones, remote work fragments collaboration and erodes institutional knowledge. Jones argues that in-person work enables the kind of spontaneous exchange that remote workers systematically miss" }
+
+// extracted by prose-to-argdown; review source-quote attributes against source prose

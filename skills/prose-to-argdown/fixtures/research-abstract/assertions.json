@@ -1,0 +1,14 @@
+{
+  "fixture": "research-abstract",
+  "expects_parseable": true,
+  "expects_arguments": true,
+  "min_facts": 4,
+  "min_relations": 2,
+  "min_arguments": 2,
+  "max_facts": 12,
+  "provenance_required": true,
+  "every_quote_must_be_substring": true,
+  "grounded_arguments_only": true,
+  "source_line_matches_quote": true,
+  "notes": "Two-argument structure: main thesis + implication. Tests 'we argue that X' extraction. source_line_matches_quote is enabled."
+}

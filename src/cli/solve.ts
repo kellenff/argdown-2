@@ -14,10 +14,18 @@
 // values produce non-zero exit.
 
 import {
-  solve, solveBipolar, solveEvidential,
-  solvePreferred, solvePreferredBipolar, solvePreferredEvidential,
-  solveStable, solveStableBipolar, solveStableEvidential,
-  solveComplete, solveCompleteBipolar, solveCompleteEvidential,
+  solve,
+  solveBipolar,
+  solveEvidential,
+  solvePreferred,
+  solvePreferredBipolar,
+  solvePreferredEvidential,
+  solveStable,
+  solveStableBipolar,
+  solveStableEvidential,
+  solveComplete,
+  solveCompleteBipolar,
+  solveCompleteEvidential,
   type MultiSolveResult,
   type Label,
 } from '../solver.js';
@@ -35,16 +43,37 @@ export const DESCRIPTION =
   'Run an argumentation semantics and print the label summary (or extensions)';
 
 const VALID_SEMANTICS = new Set([
-  'dung', 'bipolar', 'aspic', 'evidential',
-  'preferred', 'preferred-bipolar', 'preferred-aspic', 'preferred-evidential',
-  'stable', 'stable-bipolar', 'stable-aspic', 'stable-evidential',
-  'complete', 'complete-bipolar', 'complete-aspic', 'complete-evidential',
+  'dung',
+  'bipolar',
+  'aspic',
+  'evidential',
+  'preferred',
+  'preferred-bipolar',
+  'preferred-aspic',
+  'preferred-evidential',
+  'stable',
+  'stable-bipolar',
+  'stable-aspic',
+  'stable-evidential',
+  'complete',
+  'complete-bipolar',
+  'complete-aspic',
+  'complete-evidential',
 ]);
 
 type MultiSemantics =
-  | 'preferred' | 'preferred-bipolar' | 'preferred-aspic' | 'preferred-evidential'
-  | 'stable' | 'stable-bipolar' | 'stable-aspic' | 'stable-evidential'
-  | 'complete' | 'complete-bipolar' | 'complete-aspic' | 'complete-evidential';
+  | 'preferred'
+  | 'preferred-bipolar'
+  | 'preferred-aspic'
+  | 'preferred-evidential'
+  | 'stable'
+  | 'stable-bipolar'
+  | 'stable-aspic'
+  | 'stable-evidential'
+  | 'complete'
+  | 'complete-bipolar'
+  | 'complete-aspic'
+  | 'complete-evidential';
 
 const MULTI_PREFIXES = ['preferred', 'stable', 'complete'] as const;
 
@@ -52,20 +81,35 @@ function isMulti(semantics: string): semantics is MultiSemantics {
   return MULTI_PREFIXES.some((p) => semantics === p || semantics.startsWith(`${p}-`));
 }
 
-function dispatchMulti(semantics: MultiSemantics, ast: import('../ast.js').Document): MultiSolveResult {
+function dispatchMulti(
+  semantics: MultiSemantics,
+  ast: import('../ast.js').Document,
+): MultiSolveResult {
   switch (semantics) {
-    case 'preferred': return solvePreferred(ast);
-    case 'preferred-bipolar': return solvePreferredBipolar(ast);
-    case 'preferred-aspic': return solvePreferredAspic(ast);
-    case 'preferred-evidential': return solvePreferredEvidential(ast);
-    case 'stable': return solveStable(ast);
-    case 'stable-bipolar': return solveStableBipolar(ast);
-    case 'stable-aspic': return solveStableAspic(ast);
-    case 'stable-evidential': return solveStableEvidential(ast);
-    case 'complete': return solveComplete(ast);
-    case 'complete-bipolar': return solveCompleteBipolar(ast);
-    case 'complete-aspic': return solveCompleteAspic(ast);
-    case 'complete-evidential': return solveCompleteEvidential(ast);
+    case 'preferred':
+      return solvePreferred(ast);
+    case 'preferred-bipolar':
+      return solvePreferredBipolar(ast);
+    case 'preferred-aspic':
+      return solvePreferredAspic(ast);
+    case 'preferred-evidential':
+      return solvePreferredEvidential(ast);
+    case 'stable':
+      return solveStable(ast);
+    case 'stable-bipolar':
+      return solveStableBipolar(ast);
+    case 'stable-aspic':
+      return solveStableAspic(ast);
+    case 'stable-evidential':
+      return solveStableEvidential(ast);
+    case 'complete':
+      return solveComplete(ast);
+    case 'complete-bipolar':
+      return solveCompleteBipolar(ast);
+    case 'complete-aspic':
+      return solveCompleteAspic(ast);
+    case 'complete-evidential':
+      return solveCompleteEvidential(ast);
   }
 }
 
@@ -122,9 +166,12 @@ export async function run(argv: string[], binaryName: string): Promise<number> {
 
   // Grounded-extension dispatch (4 reductions). `dung` is the no-suffix default.
   const grounded =
-    semantics === 'bipolar' ? solveBipolar(loaded.ast)
-      : semantics === 'aspic' ? solveAspic(loaded.ast)
-        : semantics === 'evidential' ? solveEvidential(loaded.ast)
+    semantics === 'bipolar'
+      ? solveBipolar(loaded.ast)
+      : semantics === 'aspic'
+        ? solveAspic(loaded.ast)
+        : semantics === 'evidential'
+          ? solveEvidential(loaded.ast)
           : solve(loaded.ast);
   emitGrounded(grounded);
   return 0;

@@ -1,0 +1,35 @@
+=== title: "Pay down technical debt continuously" source: "(test fixture)" extracted-from: lines 1-15 validated: 2026-07-11 ===
+
+[#debt-accumulation] Modern software systems routinely accumulate technical debt. { source-line: 2, source-quote: "Modern software systems routinely accumulate technical debt" }
+[#stripe-2024-study] A 2024 Stripe study found that developers spend forty-two percent of their time dealing with legacy code rather than building new features. { source-line: 3, source-quote: "A 2024 Stripe study found that developers spend 42% of their time dealing with legacy code rather than building new features" }
+[#debt-not-sustainable] This is not sustainable. { source-line: 4, source-quote: "This is not sustainable" }
+[#debt-cost-compounds] The cost of deferred refactoring compounds. { source-line: 5, source-quote: "The cost of deferred refactoring compounds" }
+[#debt-rule-of-ten] A function that takes three days to understand today will take five next year and ten the year after. { source-line: 5, source-quote: "a function that takes three days to understand today will take five next year and ten the year after" }
+[#twenty-percent-allocation] Every team should allocate at least twenty percent of sprint capacity to debt reduction. { source-line: 7, source-quote: "every team should allocate at least 20% of sprint capacity to debt reduction" }
+[#facts-are-overwhelming] The evidence is overwhelming. { source-line: 8, source-quote: "The evidence is overwhelming" }
+[#debt-alternative-unmaintainable] Letting debt accumulate produces systems that nobody wants to touch and nobody can extend. { source-line: 9, source-quote: "The alternative — letting debt accumulate — produces systems that nobody wants to touch and nobody can extend" }
+[#twenty-percent-too-much-claim] Some will object that twenty percent is too much. { source-line: 12, source-quote: "Some will object that 20% is too much" }
+[#customer-features-faster-claim] Customer features ship faster when developers spend all their time on new code. { source-line: 12, source-quote: "Customer features ship faster when developers spend all their time on new code" }
+[#compounding-cost-ignored] This view ignores the compounding cost of debt. { source-line: 13, source-quote: "this view ignores the compounding cost of debt" }
+[#not-actually-moved-forward] A team that ships features today but cannot ship them next year has not actually moved forward. { source-line: 13, source-quote: "A team that ships features today but cannot ship them next year has not actually moved forward" }
+[#refactoring-risky-claim] Refactoring is risky and breaks production. { source-line: 15, source-quote: "Others will argue that refactoring is risky and breaks production" }
+[#risk-short-term-true] The risk of breaking production during a refactor is true in the short term. { source-line: 16, source-quote: "This is true in the short term" }
+[#risk-long-term-false] The risk of breaking production during a refactor is false in the long term. { source-line: 16, source-quote: "and false in the long term" }
+[#unable-to-ship-risk] The risk of being unable to ship anything at all once the system becomes unmaintainable is much larger. { source-line: 16, source-quote: "The risk of breaking production during a refactor is much smaller than the risk of being unable to ship anything at all once the system becomes unmaintainable" }
+[#pay-now-or-later] Pay down debt continuously, or pay it down later with interest. { source-line: 21, source-quote: "pay down debt continuously, or pay it down later with interest" }
+[#math-favors-continuous] The math favors the former. { source-line: 22, source-quote: "The math favors the former" }
+[#discipline-ships-faster] Teams that adopt this discipline ship faster over the long run, not slower. { source-line: 22, source-quote: "Teams that adopt this discipline ship faster over the long run, not slower" }
+
+[#stripe-2024-study] --> [#debt-accumulation] { source-line: 3, source-quote: "A 2024 Stripe study found that developers spend 42% of their time dealing with legacy code rather than building new features" }
+[#debt-cost-compounds] --> [#debt-rule-of-ten] { source-line: 5, source-quote: "The cost of deferred refactoring compounds: a function that takes three days to understand today will take five next year and ten the year after" }
+[#facts-are-overwhelming] --> [#twenty-percent-allocation] { source-line: 8, source-quote: "The evidence is overwhelming" }
+[#debt-alternative-unmaintainable] --> [#twenty-percent-allocation] { source-line: 9, source-quote: "letting debt accumulate produces systems that nobody wants to touch and nobody can extend" }
+[#compounding-cost-ignored] --x [#twenty-percent-too-much-claim] { source-line: 13, source-quote: "However, this view ignores the compounding cost of debt" }
+[#not-actually-moved-forward] --x [#twenty-percent-too-much-claim] { source-line: 13, source-quote: "A team that ships features today but cannot ship them next year has not actually moved forward" }
+[#unable-to-ship-risk] --x [#refactoring-risky-claim] { source-line: 16, source-quote: "The risk of breaking production during a refactor is much smaller than the risk of being unable to ship anything at all once the system becomes unmaintainable" }
+[#discipline-ships-faster] --> [#pay-now-or-later] { source-line: 22, source-quote: "Teams that adopt this discipline ship faster over the long run, not slower" }
+
+([#twenty-percent-allocation]) -> [#stripe-2024-study], [#debt-cost-compounds], [#facts-are-overwhelming], [#debt-alternative-unmaintainable]. { source-line: 7, source-quote: "Therefore, every team should allocate at least 20% of sprint capacity to debt reduction. The evidence is overwhelming. The alternative — letting debt accumulate — produces systems that nobody wants to touch and nobody can extend" }
+([#pay-now-or-later]) -> [#math-favors-continuous], [#discipline-ships-faster]. { source-line: "21-22", source-quote: "pay down debt continuously, or pay it down later with interest. The math favors the former. Teams that adopt this discipline ship faster over the long run, not slower" }
+
+// extracted by prose-to-argdown; review source-quote attributes against source prose. Rebuttal arguments omitted: argdown-2 supports only `->` in argument position, so the "--x" relations above capture the rebuttal semantics for the "20% is too much" and "refactoring is risky" counter-claims without needing separate argument nodes.

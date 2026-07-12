@@ -168,9 +168,7 @@ describe('buildArgumentGraph (aspic reduction)', () => {
   });
 
   it('rebut requires strict preference to be a defeat', () => {
-    const result = parse(
-      '[#A] x { preference: 1 }\n[#B] y { preference: 0.5 }\n[#A] --x [#B].\n',
-    );
+    const result = parse('[#A] x { preference: 1 }\n[#B] y { preference: 0.5 }\n[#A] --x [#B].\n');
     if (!result.ok) throw new Error('parse failed');
     const ast = result.ast;
     const { map } = buildArgumentGraph(ast, 'aspic');
