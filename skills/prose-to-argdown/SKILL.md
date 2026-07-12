@@ -33,3 +33,36 @@ The user provides:
 
 Read the prose once. Then process it through the three-pass pipeline below.
 
+## Pipeline
+
+Three reasoning passes, each validated independently. The skill body walks the LLM through these stages; validation is via MCP calls to argdown-2's tools.
+
+```
+Prose input
+    │
+    ▼
+[Pass 1: Facts]              extract atomic claims with provenance
+    │                        validate via argdown parse (MCP)
+    ▼
+[Pass 2: Relations]          identify support/attack/undercut edges (grounded)
+    │                        validate via argdown parse
+    ▼
+[Pass 3: Arguments]          extract stated/implied argument structures (grounded)
+    │                        validate via argdown parse
+    │                        render Mermaid via argdown render
+    │                        LLM sanity-check diagram against prose
+    │                        refine up to 2 rounds on structural mismatch
+    ▼
+[Assembly]                   frontmatter + facts + relations + arguments + blocks
+    │
+    ▼
+Inline argdown-2 code block delivered in chat reply
+```
+
+**Key invariants:**
+- Read-only on prose: each pass is read-only on the source prose. Never modify or paraphrase the source.
+- Each pass emits a complete argdown-2 fragment for that layer, parseable in isolation.
+- Pass 3's render + sanity-check is the load-bearing correctness step.
+- **Grounded-arguments invariant:** the LLM MAY NOT add `([#X]) -> [#Y].` constructions beyond what the prose states or strongly implies. If the prose does NOT argue anything → emit facts and relations only, no arguments section. Silence is a valid output.
+- Pass 2 may need to split a Pass 1 fact into two if a relation reveals two claims packed into one. If so, update Pass 1 and re-validate from there.
+
