@@ -6,7 +6,9 @@ import type { Document } from './ast.js';
 
 describe('solveStable (dung reduction)', () => {
   it('returns 0 stable for 3-cycle', () => {
-    const result = parse('[#A] x.\n[#B] y.\n[#C] z.\n[#A] --x [#B].\n[#B] --x [#C].\n[#C] --x [#A].\n');
+    const result = parse(
+      '[#A] x.\n[#B] y.\n[#C] z.\n[#A] --x [#B].\n[#B] --x [#C].\n[#C] --x [#A].\n',
+    );
     if (!result.ok) throw new Error('parse failed');
     const ast = result.ast;
     expect(solveStable(ast).extensions).toEqual([]);

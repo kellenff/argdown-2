@@ -29,7 +29,15 @@ describe('isConflictFree', () => {
     expect(isConflictFree(new Set(), new Map())).toBe(true);
   });
   it('returns true when no internal attacks', () => {
-    expect(isConflictFree(new Set(['A', 'B']), new Map([['A', []], ['B', ['C']]]))).toBe(true);
+    expect(
+      isConflictFree(
+        new Set(['A', 'B']),
+        new Map([
+          ['A', []],
+          ['B', ['C']],
+        ]),
+      ),
+    ).toBe(true);
   });
   it('returns false when an internal attack exists', () => {
     expect(isConflictFree(new Set(['A', 'B']), new Map([['A', ['B']]]))).toBe(false);
@@ -48,7 +56,15 @@ describe('isAdmissible', () => {
   });
   it('A IS admissible when attacked by B and A attacks B back', () => {
     // 2-cycle: A -> B, B -> A. {A} is admissible (A defends itself against B).
-    expect(isAdmissible(new Set(['A']), new Map([['A', ['B']], ['B', ['A']]]))).toBe(true);
+    expect(
+      isAdmissible(
+        new Set(['A']),
+        new Map([
+          ['A', ['B']],
+          ['B', ['A']],
+        ]),
+      ),
+    ).toBe(true);
   });
 });
 
@@ -59,12 +75,22 @@ describe('defenseClosure', () => {
   it('adds unattacked args vacuously (defended trivially)', () => {
     // A is unattacked; {B} does not explicitly defend A, but A is defended
     // vacuously (no attackers → universal quantifier is trivially satisfied).
-    const result = defenseClosure(new Set(['B']), new Map([['A', []], ['B', []]]));
+    const result = defenseClosure(
+      new Set(['B']),
+      new Map([
+        ['A', []],
+        ['B', []],
+      ]),
+    );
     expect([...result].sort()).toEqual(['A', 'B']);
   });
   it('adds an arg whose attackers are all defeated by the set', () => {
     // A attacks B, B attacks C. {A} defends C (B is attacked by A).
-    const map = new Map<string, string[]>([['A', []], ['B', ['A']], ['C', ['B']]]);
+    const map = new Map<string, string[]>([
+      ['A', []],
+      ['B', ['A']],
+      ['C', ['B']],
+    ]);
     const result = defenseClosure(new Set(['A']), map);
     expect([...result].sort()).toEqual(['A', 'C']);
   });
@@ -76,7 +102,10 @@ describe('isClosedUnderDefense', () => {
   });
   it('returns true for set that contains all it defends', () => {
     // {A} in the 2-cycle above; A is defended; {A} contains A.
-    const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
+    const map = new Map<string, string[]>([
+      ['A', ['B']],
+      ['B', ['A']],
+    ]);
     expect(isClosedUnderDefense(new Set(['A']), map)).toBe(true);
   });
 });
@@ -86,11 +115,18 @@ describe('isStable', () => {
     expect(isStable(new Set(['A']), new Map([['A', []]]))).toBe(true);
   });
   it('returns false for 3-cycle (odd cycle has no stable)', () => {
-    const map = new Map<string, string[]>([['A', ['B']], ['B', ['C']], ['C', ['A']]]);
+    const map = new Map<string, string[]>([
+      ['A', ['B']],
+      ['B', ['C']],
+      ['C', ['A']],
+    ]);
     expect(isStable(new Set(['A']), map)).toBe(false);
   });
   it('returns true for {A} in 2-cycle A<->B (textbook Dung: {A} is admissible and attacks B)', () => {
-    const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
+    const map = new Map<string, string[]>([
+      ['A', ['B']],
+      ['B', ['A']],
+    ]);
     expect(isStable(new Set(['A']), map)).toBe(true);
   });
 });
@@ -124,7 +160,11 @@ describe('findPreferredExtensions', () => {
     // {A} is NOT admissible: A is attacked by C; for A to be defended, {A}
     // needs a member attacking C, but A only attacks B. Same for {B} and
     // {C}. Only ∅ is admissible. Preferred = [∅].
-    const map = new Map<string, string[]>([['A', ['C']], ['B', ['A']], ['C', ['B']]]);
+    const map = new Map<string, string[]>([
+      ['A', ['C']],
+      ['B', ['A']],
+      ['C', ['B']],
+    ]);
     const result = findPreferredExtensions(map);
     expect(result.length).toBe(1);
     expect(result[0]!.size).toBe(0);
@@ -132,7 +172,10 @@ describe('findPreferredExtensions', () => {
 
   it('returns 2 preferred for 2-cycle A<->B', () => {
     // A <-> B means A attacks B (B's attackers = [A]) AND B attacks A (A's attackers = [B]).
-    const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
+    const map = new Map<string, string[]>([
+      ['A', ['B']],
+      ['B', ['A']],
+    ]);
     const result = findPreferredExtensions(map);
     expect(result.length).toBe(2);
   });
@@ -167,7 +210,10 @@ describe('findStableExtensions', () => {
 
   it('returns 2 stable for 2-cycle A<->B', () => {
     // {A} and {B} are both admissible and each attacks the other.
-    const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
+    const map = new Map<string, string[]>([
+      ['A', ['B']],
+      ['B', ['A']],
+    ]);
     const result = findStableExtensions(map);
     expect(result.length).toBe(2);
     const sorted = result.map((s) => [...s].sort());
@@ -176,7 +222,11 @@ describe('findStableExtensions', () => {
   });
 
   it('returns 0 stable for 3-cycle (odd cycle has no stable)', () => {
-    const map = new Map<string, string[]>([['A', ['C']], ['B', ['A']], ['C', ['B']]]);
+    const map = new Map<string, string[]>([
+      ['A', ['C']],
+      ['B', ['A']],
+      ['C', ['B']],
+    ]);
     expect(findStableExtensions(map)).toEqual([]);
   });
 
@@ -205,7 +255,11 @@ describe('findCompleteExtensions', () => {
   it('returns 1 (∅) for 3-cycle', () => {
     // {A}, {B}, {C} are admissible but defenseClosure({A}) = {A, B, C} ≠ {A}, so not closed.
     // ∅ is closed (no args added vacuously to closure since attackers are non-empty).
-    const map = new Map<string, string[]>([['A', ['C']], ['B', ['A']], ['C', ['B']]]);
+    const map = new Map<string, string[]>([
+      ['A', ['C']],
+      ['B', ['A']],
+      ['C', ['B']],
+    ]);
     const result = findCompleteExtensions(map);
     expect(result.length).toBe(1);
     expect(result[0]!.size).toBe(0);
@@ -213,7 +267,10 @@ describe('findCompleteExtensions', () => {
 
   it('returns 3 (∅, {A}, {B}) for 2-cycle', () => {
     // ∅ closed; {A} and {B} each admissible and closed (defenseClosure({A}) = {A}).
-    const map = new Map<string, string[]>([['A', ['B']], ['B', ['A']]]);
+    const map = new Map<string, string[]>([
+      ['A', ['B']],
+      ['B', ['A']],
+    ]);
     const result = findCompleteExtensions(map);
     expect(result.length).toBe(3);
     const sorted = result.map((s) => [...s].sort());

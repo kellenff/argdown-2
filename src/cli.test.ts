@@ -121,10 +121,9 @@ describe('CLI multi-extension --semantics', () => {
       // no stable extensions. Use mutual '-.-' (undercut) instead: undercuts
       // always win, so both directions defeat each other and we get the same
       // textbook Dung outcome.
-      const src =
-        semantics.endsWith('-aspic')
-          ? '[#A] x.\n[#B] y.\n[#A] -.-> [#B].\n[#B] -.-> [#A].\n'
-          : '[#A] x.\n[#B] y.\n[#A] --x [#B].\n[#B] --x [#A].\n';
+      const src = semantics.endsWith('-aspic')
+        ? '[#A] x.\n[#B] y.\n[#A] -.-> [#B].\n[#B] -.-> [#A].\n'
+        : '[#A] x.\n[#B] y.\n[#A] --x [#B].\n[#B] --x [#A].\n';
       writeFileSync(file, src);
       const out = runCli(['--solve', `--semantics=${semantics}`, file]);
       expect(out.status).toBe(0);
@@ -153,7 +152,10 @@ describe('CLI multi-extension --semantics', () => {
     const dir = mkdtempSync(join(tmpdir(), 'argdown-cli-'));
     const file = join(dir, 'doc.argdown');
     // 3-cycle has 0 stable extensions by textbook Dung.
-    writeFileSync(file, '[#A] x.\n[#B] y.\n[#C] z.\n[#A] --x [#B].\n[#B] --x [#C].\n[#C] --x [#A].\n');
+    writeFileSync(
+      file,
+      '[#A] x.\n[#B] y.\n[#C] z.\n[#A] --x [#B].\n[#B] --x [#C].\n[#C] --x [#A].\n',
+    );
     const out = runCli(['--solve', '--semantics=stable', file]);
     expect(out.status).toBe(0);
     // For empty result, CLI prints "(no extensions)" rather than Extension lines.

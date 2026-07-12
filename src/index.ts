@@ -25,11 +25,7 @@ export {
   type MultiSolveResult,
 } from './solver.js';
 export { solveAspic } from './solver-aspic.js';
-export {
-  solvePreferredAspic,
-  solveStableAspic,
-  solveCompleteAspic,
-} from './solver-aspic.js';
+export { solvePreferredAspic, solveStableAspic, solveCompleteAspic } from './solver-aspic.js';
 export type { SolveResult, Label } from './solver.js';
 
 export type {

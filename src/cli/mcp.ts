@@ -19,10 +19,18 @@ import { parse, formatError } from '../parser.js';
 import { renderMermaid } from '../mermaid.js';
 import { stringify } from '../stringifier.js';
 import {
-  solve, solveBipolar, solveEvidential,
-  solvePreferred, solvePreferredBipolar, solvePreferredEvidential,
-  solveStable, solveStableBipolar, solveStableEvidential,
-  solveComplete, solveCompleteBipolar, solveCompleteEvidential,
+  solve,
+  solveBipolar,
+  solveEvidential,
+  solvePreferred,
+  solvePreferredBipolar,
+  solvePreferredEvidential,
+  solveStable,
+  solveStableBipolar,
+  solveStableEvidential,
+  solveComplete,
+  solveCompleteBipolar,
+  solveCompleteEvidential,
   type MultiSolveResult,
   type Label,
 } from '../solver.js';
@@ -38,16 +46,39 @@ export const DESCRIPTION =
   'Start an MCP (Model Context Protocol) server on stdio exposing parse, validate, render_mermaid, solve, and format tools';
 
 const VALID_SEMANTICS = [
-  'dung', 'bipolar', 'aspic', 'evidential',
-  'preferred', 'preferred-bipolar', 'preferred-aspic', 'preferred-evidential',
-  'stable', 'stable-bipolar', 'stable-aspic', 'stable-evidential',
-  'complete', 'complete-bipolar', 'complete-aspic', 'complete-evidential',
+  'dung',
+  'bipolar',
+  'aspic',
+  'evidential',
+  'preferred',
+  'preferred-bipolar',
+  'preferred-aspic',
+  'preferred-evidential',
+  'stable',
+  'stable-bipolar',
+  'stable-aspic',
+  'stable-evidential',
+  'complete',
+  'complete-bipolar',
+  'complete-aspic',
+  'complete-evidential',
 ] as const;
 
-type MultiSemantics = Extract<(typeof VALID_SEMANTICS)[number],
-  'preferred' | 'preferred-bipolar' | 'preferred-aspic' | 'preferred-evidential'
-  | 'stable' | 'stable-bipolar' | 'stable-aspic' | 'stable-evidential'
-  | 'complete' | 'complete-bipolar' | 'complete-aspic' | 'complete-evidential'>;
+type MultiSemantics = Extract<
+  (typeof VALID_SEMANTICS)[number],
+  | 'preferred'
+  | 'preferred-bipolar'
+  | 'preferred-aspic'
+  | 'preferred-evidential'
+  | 'stable'
+  | 'stable-bipolar'
+  | 'stable-aspic'
+  | 'stable-evidential'
+  | 'complete'
+  | 'complete-bipolar'
+  | 'complete-aspic'
+  | 'complete-evidential'
+>;
 
 const MULTI_PREFIXES = ['preferred', 'stable', 'complete'] as const;
 
@@ -55,20 +86,35 @@ function isMulti(semantics: string): semantics is MultiSemantics {
   return MULTI_PREFIXES.some((p) => semantics === p || semantics.startsWith(`${p}-`));
 }
 
-function dispatchMulti(semantics: MultiSemantics, ast: import('../ast.js').Document): MultiSolveResult {
+function dispatchMulti(
+  semantics: MultiSemantics,
+  ast: import('../ast.js').Document,
+): MultiSolveResult {
   switch (semantics) {
-    case 'preferred': return solvePreferred(ast);
-    case 'preferred-bipolar': return solvePreferredBipolar(ast);
-    case 'preferred-aspic': return solvePreferredAspic(ast);
-    case 'preferred-evidential': return solvePreferredEvidential(ast);
-    case 'stable': return solveStable(ast);
-    case 'stable-bipolar': return solveStableBipolar(ast);
-    case 'stable-aspic': return solveStableAspic(ast);
-    case 'stable-evidential': return solveStableEvidential(ast);
-    case 'complete': return solveComplete(ast);
-    case 'complete-bipolar': return solveCompleteBipolar(ast);
-    case 'complete-aspic': return solveCompleteAspic(ast);
-    case 'complete-evidential': return solveCompleteEvidential(ast);
+    case 'preferred':
+      return solvePreferred(ast);
+    case 'preferred-bipolar':
+      return solvePreferredBipolar(ast);
+    case 'preferred-aspic':
+      return solvePreferredAspic(ast);
+    case 'preferred-evidential':
+      return solvePreferredEvidential(ast);
+    case 'stable':
+      return solveStable(ast);
+    case 'stable-bipolar':
+      return solveStableBipolar(ast);
+    case 'stable-aspic':
+      return solveStableAspic(ast);
+    case 'stable-evidential':
+      return solveStableEvidential(ast);
+    case 'complete':
+      return solveComplete(ast);
+    case 'complete-bipolar':
+      return solveCompleteBipolar(ast);
+    case 'complete-aspic':
+      return solveCompleteAspic(ast);
+    case 'complete-evidential':
+      return solveCompleteEvidential(ast);
   }
 }
 
@@ -159,9 +205,10 @@ export function buildServer(): McpServer {
         'Parse an Argdown document and return the AST as JSON. On parse failure, returns the structured error list with `ok: false`.',
       inputSchema: {
         source: z.string().describe('The Argdown source text to parse.'),
-        filename: z.string().optional().describe(
-          'Optional filename used in error messages and source locations.',
-        ),
+        filename: z
+          .string()
+          .optional()
+          .describe('Optional filename used in error messages and source locations.'),
       },
     },
     ({ source, filename }) => {
@@ -173,7 +220,12 @@ export function buildServer(): McpServer {
         };
       }
       return {
-        content: [{ type: 'text', text: JSON.stringify({ ok: false, errors: parseErrorsToJson(result.errors, label) }) }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ ok: false, errors: parseErrorsToJson(result.errors, label) }),
+          },
+        ],
       };
     },
   );
@@ -189,9 +241,7 @@ export function buildServer(): McpServer {
         'Parse an Argdown document. Returns `ok: true` on success and `ok: false` with formatted error lines on failure.',
       inputSchema: {
         source: z.string().describe('The Argdown source text to validate.'),
-        filename: z.string().optional().describe(
-          'Optional filename used in error messages.',
-        ),
+        filename: z.string().optional().describe('Optional filename used in error messages.'),
       },
     },
     ({ source, filename }) => {
@@ -204,14 +254,16 @@ export function buildServer(): McpServer {
       }
       return {
         isError: true,
-        content: [{
-          type: 'text',
-          text: JSON.stringify({
-            ok: false,
-            errorCount: result.errors.length,
-            errors: parseErrorsToJson(result.errors, label),
-          }),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok: false,
+              errorCount: result.errors.length,
+              errors: parseErrorsToJson(result.errors, label),
+            }),
+          },
+        ],
       };
     },
   );
@@ -222,8 +274,7 @@ export function buildServer(): McpServer {
     'render_mermaid',
     {
       title: 'Render Mermaid flowchart',
-      description:
-        'Parse an Argdown document and return a Mermaid `flowchart TD` string.',
+      description: 'Parse an Argdown document and return a Mermaid `flowchart TD` string.',
       inputSchema: {
         source: z.string().describe('The Argdown source text to render.'),
         filename: z.string().optional().describe('Optional filename used in error messages.'),
@@ -234,18 +285,22 @@ export function buildServer(): McpServer {
       if (!result.ok) {
         return {
           isError: true,
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              ok: false,
-              errorCount: result.errors.length,
-              errors: parseErrorsToJson(result.errors, filename ?? '<anonymous>'),
-            }),
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                ok: false,
+                errorCount: result.errors.length,
+                errors: parseErrorsToJson(result.errors, filename ?? '<anonymous>'),
+              }),
+            },
+          ],
         };
       }
       return {
-        content: [{ type: 'text', text: JSON.stringify({ ok: true, mermaid: renderMermaid(result.ast) }) }],
+        content: [
+          { type: 'text', text: JSON.stringify({ ok: true, mermaid: renderMermaid(result.ast) }) },
+        ],
       };
     },
   );
@@ -261,9 +316,10 @@ export function buildServer(): McpServer {
         'Parse an Argdown document, run a semantics, and return either a grounded IN/OUT/UNDEC label summary or the multi-extension set. `semantics` defaults to "dung".',
       inputSchema: {
         source: z.string().describe('The Argdown source text to solve.'),
-        semantics: z.enum(VALID_SEMANTICS).optional().describe(
-          'The semantics to run. One of the 16 supported values. Defaults to "dung".',
-        ),
+        semantics: z
+          .enum(VALID_SEMANTICS)
+          .optional()
+          .describe('The semantics to run. One of the 16 supported values. Defaults to "dung".'),
         filename: z.string().optional().describe('Optional filename used in error messages.'),
       },
     },
@@ -272,35 +328,48 @@ export function buildServer(): McpServer {
       if (!result.ok) {
         return {
           isError: true,
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              ok: false,
-              errorCount: result.errors.length,
-              errors: parseErrorsToJson(result.errors, filename ?? '<anonymous>'),
-            }),
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                ok: false,
+                errorCount: result.errors.length,
+                errors: parseErrorsToJson(result.errors, filename ?? '<anonymous>'),
+              }),
+            },
+          ],
         };
       }
       const chosen: (typeof VALID_SEMANTICS)[number] = semantics ?? 'dung';
       if (isMulti(chosen)) {
         return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({ ok: true, result: multiToJson(chosen, dispatchMulti(chosen, result.ast)) }),
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                ok: true,
+                result: multiToJson(chosen, dispatchMulti(chosen, result.ast)),
+              }),
+            },
+          ],
         };
       }
       // Grounded extension: dung | bipolar | aspic | evidential.
-      const grounded = chosen === 'bipolar' ? solveBipolar(result.ast)
-        : chosen === 'aspic' ? solveAspic(result.ast)
-        : chosen === 'evidential' ? solveEvidential(result.ast)
-        : solve(result.ast);
+      const grounded =
+        chosen === 'bipolar'
+          ? solveBipolar(result.ast)
+          : chosen === 'aspic'
+            ? solveAspic(result.ast)
+            : chosen === 'evidential'
+              ? solveEvidential(result.ast)
+              : solve(result.ast);
       return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ ok: true, result: groundedToJson(chosen, grounded) }),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ ok: true, result: groundedToJson(chosen, grounded) }),
+          },
+        ],
       };
     },
   );
@@ -323,18 +392,22 @@ export function buildServer(): McpServer {
       if (!result.ok) {
         return {
           isError: true,
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              ok: false,
-              errorCount: result.errors.length,
-              errors: parseErrorsToJson(result.errors, filename ?? '<anonymous>'),
-            }),
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                ok: false,
+                errorCount: result.errors.length,
+                errors: parseErrorsToJson(result.errors, filename ?? '<anonymous>'),
+              }),
+            },
+          ],
         };
       }
       return {
-        content: [{ type: 'text', text: JSON.stringify({ ok: true, source: stringify(result.ast) }) }],
+        content: [
+          { type: 'text', text: JSON.stringify({ ok: true, source: stringify(result.ast) }) },
+        ],
       };
     },
   );
@@ -347,9 +420,7 @@ export async function run(argv: string[], binaryName: string): Promise<number> {
   // options yet, but we'd rather surface a useful error than ignore a
   // mistaken flag.
   if (argv.length > 0) {
-    process.stderr.write(
-      `${binaryName}: ${COMMAND} takes no arguments (got: ${argv.join(' ')})\n`,
-    );
+    process.stderr.write(`${binaryName}: ${COMMAND} takes no arguments (got: ${argv.join(' ')})\n`);
     return 2;
   }
   const server = buildServer();

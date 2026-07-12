@@ -7,8 +7,7 @@ import { renderMermaid } from '../mermaid.js';
 import { loadInput, reportParseErrors } from './input.js';
 
 export const COMMAND = 'render';
-export const DESCRIPTION =
-  'Parse an Argdown document and write a Mermaid flowchart to stdout';
+export const DESCRIPTION = 'Parse an Argdown document and write a Mermaid flowchart to stdout';
 
 export async function run(argv: string[], binaryName: string): Promise<number> {
   const filename = argv[0];

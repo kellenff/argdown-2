@@ -13,7 +13,11 @@ import type {
   RelationStatement,
 } from './ast.js';
 import { buildArgumentGraph, type Reduction } from './solver-graph.js';
-import { findPreferredExtensions, findStableExtensions, findCompleteExtensions } from './solver-multi.js';
+import {
+  findPreferredExtensions,
+  findStableExtensions,
+  findCompleteExtensions,
+} from './solver-multi.js';
 
 export type Label = 'in' | 'out' | 'undec';
 

@@ -60,6 +60,8 @@ export function reportParseErrors(
   for (const err of errors) {
     process.stderr.write(`${formatError(err, label)}\n`);
   }
-  process.stderr.write(`${binaryName}: ${errors.length} parse error${errors.length === 1 ? '' : 's'}\n`);
+  process.stderr.write(
+    `${binaryName}: ${errors.length} parse error${errors.length === 1 ? '' : 's'}\n`,
+  );
   return 1;
 }

@@ -26,9 +26,7 @@ export function tarjanScc(map: Map<string, string[]>): Scc[] {
   for (const start of map.keys()) {
     if (indices.has(start)) continue;
 
-    const workStack: Frame[] = [
-      { arg: start, successors: map.get(start) ?? [], succIdx: 0 },
-    ];
+    const workStack: Frame[] = [{ arg: start, successors: map.get(start) ?? [], succIdx: 0 }];
     indices.set(start, index);
     lowlinks.set(start, index);
     index++;
@@ -83,10 +81,7 @@ export function tarjanScc(map: Map<string, string[]>): Scc[] {
         workStack.pop();
         if (workStack.length > 0) {
           const parent = workStack[workStack.length - 1]!;
-          lowlinks.set(
-            parent.arg,
-            Math.min(lowlinks.get(parent.arg)!, lowlinks.get(arg)!),
-          );
+          lowlinks.set(parent.arg, Math.min(lowlinks.get(parent.arg)!, lowlinks.get(arg)!));
         }
       }
     }
@@ -291,7 +286,7 @@ export function findStableExtensions(map: Map<string, string[]>): Set<string>[] 
   // corresponds to G alone — a valid candidate when G attacks all of R.
   // The original brute force over A excluded ∅ as "no semantic content," but
   // in residue search ∅ lifts to G, which can be a meaningful stable extension.
-  for (let mask = 0n; mask < (ONE << BigInt(n)); mask++) {
+  for (let mask = 0n; mask < ONE << BigInt(n); mask++) {
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (mask & (ONE << BigInt(i))) subset.add(args[i]!);
@@ -333,7 +328,7 @@ export function findCompleteExtensions(map: Map<string, string[]>): Set<string>[
   const ONE = 1n;
   const n = args.length;
 
-  for (let mask = 0n; mask < (ONE << BigInt(n)); mask++) {
+  for (let mask = 0n; mask < ONE << BigInt(n); mask++) {
     const subset = new Set<string>();
     for (let i = 0; i < n; i++) {
       if (mask & (ONE << BigInt(i))) subset.add(args[i]!);

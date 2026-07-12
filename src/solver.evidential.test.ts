@@ -29,7 +29,7 @@ describe('solveEvidential', () => {
     expect(labels.get('B')).toBe('in');
   });
 
-  it('headline: propagates A\'s defeat to B', () => {
+  it("headline: propagates A's defeat to B", () => {
     const { labels } = solveSrc('[#A]\n[#B]\n[#C]\n[#A] --> [#B].\n[#C] --x [#A].');
     expect(labels.get('A')).toBe('out');
     expect(labels.get('B')).toBe('out');
@@ -60,7 +60,7 @@ describe('solveEvidential', () => {
     expect(labels.get('C')).toBe('in');
   });
 
-  it('necessary support from in-supporter does NOT force B\'s defeat', () => {
+  it("necessary support from in-supporter does NOT force B's defeat", () => {
     const { labels } = solveSrc('[#A]\n[#B]\n[#C]\n[#A] --> [#B].\n[#C] --x [#B].');
     expect(labels.get('A')).toBe('in');
     expect(labels.get('B')).toBe('in');
