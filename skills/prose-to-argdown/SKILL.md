@@ -235,6 +235,8 @@ If `argdown validate` rejects your output with any of these errors, fix the offe
 
 ## Edge cases
 
+> **Note on HTML-comment markers:** The `<!-- unvalidated -->`, `<!-- chunk N of M -->`, and `<!-- parse-errors -->` markers described in this table are placed in the **chat-reply wrapper text** outside the argdown code block (or in frontmatter metadata) — not inside the argdown-2 document itself. Argdown-2's lexer does reject `<!-- -->` syntax. If a marker needs to appear inside the argdown content, use `//` argdown line-comment syntax instead.
+
 | Situation | Skill behavior |
 | --- | --- |
 | **argdown-2 MCP server unavailable** | Warn user once. Proceed without validation. Add `<!-- unvalidated -->` to frontmatter. |

@@ -65,7 +65,7 @@ argdown-2/
 │       ├── research-abstract/           # paper abstract with "we argue that X"
 │       ├── position-disagreement/       # two voices arguing
 │       ├── no-claims/                   # recipe (tests early-exit)
-│       ├── multi-paragraph/             # 1,500-word essay with sections
+│       ├── multi-paragraph/             # ~240-word essay with sections
 │       ├── ambiguous-prose/             # facts only, no arguments
 │       └── legacy-syntax/               # prose mentioning ':—' syntax
 ├── .pi/extensions/prose-to-argdown.ts   # pi-coding-agent adapter

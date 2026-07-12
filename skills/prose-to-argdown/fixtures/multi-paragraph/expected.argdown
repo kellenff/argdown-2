@@ -7,7 +7,7 @@
 [#debt-rule-of-ten] A function that takes three days to understand today will take five next year and ten the year after. { source-line: 5, source-quote: "a function that takes three days to understand today will take five next year and ten the year after" }
 [#twenty-percent-allocation] Every team should allocate at least twenty percent of sprint capacity to debt reduction. { source-line: 7, source-quote: "every team should allocate at least 20% of sprint capacity to debt reduction" }
 [#facts-are-overwhelming] The evidence is overwhelming. { source-line: 8, source-quote: "The evidence is overwhelming" }
-[#debt-alternative-unmaintainable] Letting debt accumulate produces systems that nobody wants to touch and nobody can extend. { source-line: 9, source-quote: "letting debt accumulate produces systems that nobody wants to touch and nobody can extend" }
+[#debt-alternative-unmaintainable] Letting debt accumulate produces systems that nobody wants to touch and nobody can extend. { source-line: 9, source-quote: "The alternative — letting debt accumulate — produces systems that nobody wants to touch and nobody can extend" }
 [#twenty-percent-too-much-claim] Some will object that twenty percent is too much. { source-line: 12, source-quote: "Some will object that 20% is too much" }
 [#customer-features-faster-claim] Customer features ship faster when developers spend all their time on new code. { source-line: 12, source-quote: "Customer features ship faster when developers spend all their time on new code" }
 [#compounding-cost-ignored] This view ignores the compounding cost of debt. { source-line: 13, source-quote: "this view ignores the compounding cost of debt" }

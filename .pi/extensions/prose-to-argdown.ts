@@ -5,6 +5,7 @@ import { join } from "node:path";
 const SKILL_PATH = join(
   import.meta.dirname,
   "..",
+  "..",
   "skills",
   "prose-to-argdown",
   "SKILL.md",

@@ -473,7 +473,7 @@ git commit -m "test(fixture): add no-claims early-exit fixture (recipe prose, no
 - Create: `skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdown`
 - Create: `skills/prose-to-argdown/fixtures/multi-paragraph/assertions.json`
 
-A 1,500-word essay with section breaks. Tests chunking and frontmatter range.
+A ~240-word essay with section breaks. Tests multi-section frontmatter and source-quote verbatim matching.
 
 - [ ] **Step 1: Write `input.txt`**
 
@@ -518,7 +518,7 @@ cat > skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdown <<'EOF'
 [#debt-rule-of-ten] A function that takes three days to understand today will take five next year and ten the year after. { source-line: 5, source-quote: "a function that takes three days to understand today will take five next year and ten the year after" }
 [#twenty-percent-allocation] Every team should allocate at least twenty percent of sprint capacity to debt reduction. { source-line: 7, source-quote: "every team should allocate at least 20% of sprint capacity to debt reduction" }
 [#facts-are-overwhelming] The evidence is overwhelming. { source-line: 8, source-quote: "The evidence is overwhelming" }
-[#debt-alternative-unmaintainable] Letting debt accumulate produces systems that nobody wants to touch and nobody can extend. { source-line: 9, source-quote: "letting debt accumulate produces systems that nobody wants to touch and nobody can extend" }
+[#debt-alternative-unmaintainable] Letting debt accumulate produces systems that nobody wants to touch and nobody can extend. { source-line: 9, source-quote: "The alternative — letting debt accumulate — produces systems that nobody wants to touch and nobody can extend" }
 [#twenty-percent-too-much-claim] Some will object that twenty percent is too much. { source-line: 12, source-quote: "Some will object that 20% is too much" }
 [#customer-features-faster-claim] Customer features ship faster when developers spend all their time on new code. { source-line: 12, source-quote: "Customer features ship faster when developers spend all their time on new code" }
 [#compounding-cost-ignored] This view ignores the compounding cost of debt. { source-line: 13, source-quote: "this view ignores the compounding cost of debt" }
@@ -534,7 +534,7 @@ cat > skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdown <<'EOF'
 [#stripe-2024-study] --> [#debt-accumulation] { source-line: 3, source-quote: "A 2024 Stripe study found that developers spend 42% of their time dealing with legacy code rather than building new features" }
 [#debt-cost-compounds] --> [#debt-rule-of-ten] { source-line: 5, source-quote: "The cost of deferred refactoring compounds: a function that takes three days to understand today will take five next year and ten the year after" }
 [#facts-are-overwhelming] --> [#twenty-percent-allocation] { source-line: 8, source-quote: "The evidence is overwhelming" }
-[#debt-alternative-unmaintainable] --> [#twenty-percent-allocation] { source-line: 9, source-quote: "letting debt accumulate produces systems that nobody wants to touch and nobody can extend" }
+[#debt-alternative-unmaintainable] --> [#twenty-percent-allocation] { source-line: 9, source-quote: "The alternative — letting debt accumulate — produces systems that nobody wants to touch and nobody can extend" }
 [#compounding-cost-ignored] --x [#twenty-percent-too-much-claim] { source-line: 13, source-quote: "However, this view ignores the compounding cost of debt" }
 [#not-actually-moved-forward] --x [#twenty-percent-too-much-claim] { source-line: 13, source-quote: "A team that ships features today but cannot ship them next year has not actually moved forward" }
 [#unable-to-ship-risk] --x [#refactoring-risky-claim] { source-line: 16, source-quote: "The risk of breaking production during a refactor is much smaller than the risk of being unable to ship anything at all once the system becomes unmaintainable" }
@@ -557,12 +557,12 @@ cat > skills/prose-to-argdown/fixtures/multi-paragraph/assertions.json <<'EOF'
   "expects_arguments": true,
   "min_facts": 12,
   "min_relations": 6,
-  "min_arguments": 3,
+  "min_arguments": 2,
   "max_facts": 30,
   "provenance_required": true,
   "every_quote_must_be_substring": true,
   "grounded_arguments_only": true,
-  "notes": "Multi-section essay with three arguments: main allocation, two rebuttals, conclusion. Tests chunking threshold (1,500 words > 1,000 but < 10,000)."
+  "notes": "Multi-section essay (~240 words) with two arguments: main allocation and conclusion. The fixture is well under the 10,000-word chunking threshold; it tests multi-section frontmatter and source-quote verbatim matching rather than chunking itself."
 }
 EOF
 ```
@@ -581,7 +581,7 @@ Expected: exit code 0.
 cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
 git add skills/prose-to-argdown/fixtures/multi-paragraph
 git rm -f skills/prose-to-argdown/fixtures/multi-paragraph/.gitkeep 2>/dev/null || true
-git commit -m "test(fixture): add multi-paragraph fixture (1,500-word climate essay with sections)"
+git commit -m "test(fixture): add multi-paragraph fixture (~240-word essay with sections)"
 ```
 
 (Removes the Task 1 `.gitkeep` placeholder now that the directory has real content.)
@@ -1324,7 +1324,7 @@ argdown-2/
 │       ├── research-abstract/           # paper abstract with "we argue that X"
 │       ├── position-disagreement/       # two voices arguing
 │       ├── no-claims/                   # recipe (tests early-exit)
-│       ├── multi-paragraph/             # 1,500-word essay with sections
+│       ├── multi-paragraph/             # ~240-word essay with sections
 │       ├── ambiguous-prose/             # facts only, no arguments
 │       └── legacy-syntax/               # prose mentioning ':—' syntax
 ├── .pi/extensions/prose-to-argdown.ts   # pi-coding-agent adapter
