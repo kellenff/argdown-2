@@ -1,0 +1,1 @@
+The author uses the legacy Argdown 1.x syntax throughout. For example, they write [#a] :— [#b] to express that A supports B. This was the conventional syntax before the v0.1.0 release, which removed the ':—' rule syntax in favor of the linked `->` arguments. The current parser hard-errors on ':—' and recommends migration to the new form.
