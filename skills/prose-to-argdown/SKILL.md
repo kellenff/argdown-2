@@ -134,3 +134,42 @@ Pick the arrow that matches the prose's actual semantics. When ambiguous, defaul
 - Retry once on syntax errors.
 - Internal check: every relation should be defensible by a sentence or two in the prose.
 
+## Pass 3: Arguments + structured blocks
+
+**Input:** the prose + validated facts from Pass 1 + validated relations from Pass 2.
+
+**Goal:** extract argument structures the prose states or strongly implies. NOT synthesize new arguments.
+
+**Output shape:**
+
+```argdown
+([#conclusion]) -> [#premise-1], [#premise-2]. { source-line: N, source-quote: "Verbatim prose span." }
+```
+
+**Structured blocks:**
+
+- `:::evidence` — wraps evidence used to support a claim. Use only when the prose provides a clear evidence/claim distinction.
+- `:::position` — wraps a position attributed to a specific source. Use only when the prose attributes a position ("Smith argues that…", "According to Jones, …").
+
+Do NOT add blocks just to make the output look richer.
+
+**Grounded-arguments rule (load-bearing):**
+
+Every emitted argument MUST correspond to a statement or strong implication in the prose. Walk each argument and ask "where in the prose is this argued?" — if you cannot point to a specific span, the argument does not go in the output.
+
+**Silence is valid output** — if the prose does not argue anything beyond facts and relations, omit the arguments section entirely.
+
+**Operational definition of "strongly implies":** an argument is strongly implied when the prose EITHER (a) uses inference language to connect the premises to the conclusion — words like "therefore", "because", "since", "thus", "follows from", "implies", "entails", "consequently", "as a result", "so", "hence", "given that" — OR (b) places the premises and conclusion visibly adjacent in the same paragraph with no contradicting framing.
+
+"Strongly implies" is NOT satisfied by mere thematic relevance, by the LLM's background knowledge of how the topic works, or by inferring a missing premise to make the conclusion true.
+
+**Validation:**
+
+1. Call `mcp__argdown__validate(source)` on the combined doc. Retry once on syntax errors.
+2. Call `mcp__argdown__render_mermaid(document)` to get the Mermaid `flowchart TD`.
+3. Inspect the Mermaid against the prose using this rubric:
+   - **Completeness:** does the Mermaid include every argument the prose makes? Missing arguments → refine.
+   - **Fidelity:** does every Mermaid edge correspond to a stated/implied relation in the prose? Spurious edges → refine.
+   - **Provenance:** does every argument have `source-line` + `source-quote` that match the prose verbatim? Missing or mismatched → refine.
+4. Refine Pass 3's output (NOT Pass 1/2 unless they are independently broken) up to 2 rounds.
+5. After 2 rounds, deliver the best version with a one-line note: `Note: extraction is best-effort; some arguments may not be fully grounded — review against source.`
