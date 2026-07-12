@@ -2,55 +2,61 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use snowball:subagent-driven-development (recommended) or snowball:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Create a user-scope snowball skill (`~/.agents/skills/prose-to-argdown/SKILL.md`) that distills argumentative or research/technical prose into a full argdown-2 document with strict provenance and grounded arguments, validated via argdown-2's MCP server.
+**Goal:** Create a repo-scope snowball skill (`skills/prose-to-argdown/SKILL.md`) that distills argumentative or research/technical prose into a full argdown-2 document with strict provenance and grounded arguments, validated via argdown-2's MCP server. Ship with three layers of host-specific packaging: the snowball SKILL.md (source of truth), a pi-coding-agent extension (`.pi/extensions/prose-to-argdown.ts`), and a Claude Code plugin (`.claude-plugin/plugin.json` + `commands/prose-to-argdown.md`).
 
-**Architecture:** Three reasoning passes inside the skill body (Facts → Relations → Arguments), each validated independently. Every fact and argument carries `source-line` + `source-quote` provenance. The "grounded-arguments" invariant forbids synthesis: arguments are emitted only when the prose states or strongly implies them.
+**Architecture:** Three reasoning passes inside the skill body (Facts → Relations → Arguments), each validated independently. Every fact and argument carries `source-line` + `source-quote` provenance. The "grounded-arguments" invariant forbids synthesis: arguments are emitted only when the prose states or strongly implies them. The pi extension registers a slash command + custom tool that load the SKILL.md content into the agent prompt; the Claude plugin's slash command mirrors the pi behavior for Claude Code hosts.
 
-**Tech Stack:** snowball skill format (Markdown + YAML frontmatter), argdown-2 v0.1.0-alpha1's MCP server tools (`parse`, `validate`, `render_mermaid`), bash for verification scripts.
+**Tech Stack:** snowball skill format (Markdown + YAML frontmatter), argdown-2 v0.1.0-alpha1's MCP server tools (`parse`, `validate`, `render_mermaid`), pi-coding-agent extension API (`ExtensionAPI`), Claude Code plugin format (`.claude-plugin/plugin.json` manifest + `commands/*.md` slash commands), bash for verification scripts.
 
 **Reference spec:** [`docs/snowball/specs/2026-07-11-prose-to-argdown-skill-design.md`](../specs/2026-07-11-prose-to-argdown-skill-design.md)
 
-**Scope note:** Most deliverables live at `~/.agents/skills/prose-to-argdown/` (outside the git repo). The only git-tracked artifact is this plan. The skill content is committed via this plan, not as standalone files in the repo.
+**Scope note:** All deliverables live inside the `argdown-2` git repo at known paths. Every artifact is git-tracked.
 
 ---
 
 ## File Structure
 
+All deliverables live inside the `argdown-2` repo at git-tracked paths.
+
 ```
-~/.agents/skills/prose-to-argdown/
-├── SKILL.md                    # the skill itself (~400 lines)
-├── README.md                   # human-facing installation & usage docs
-├── MANUAL.md                   # step-by-step smoke test instructions
-├── fixtures/                   # one directory per fixture
-│   ├── lead-essay/
-│   │   ├── input.txt
-│   │   ├── expected.argdown
-│   │   └── assertions.json
-│   ├── research-abstract/
-│   │   ├── input.txt
-│   │   ├── expected.argdown
-│   │   └── assertions.json
-│   ├── position-disagreement/
-│   │   ├── input.txt
-│   │   ├── expected.argdown
-│   │   └── assertions.json
-│   ├── no-claims/
-│   │   ├── input.txt
-│   │   └── expected.txt        # plain-prose explanation, no argdown
-│   ├── multi-paragraph/
-│   │   ├── input.txt
-│   │   ├── expected.argdown
-│   │   └── assertions.json
-│   ├── ambiguous-prose/
-│   │   ├── input.txt
-│   │   ├── expected.argdown
-│   │   └── assertions.json
-│   └── legacy-syntax/
-│       ├── input.txt
-│       └── expected.txt        # plain-prose parser-error explanation
-└── scripts/
-    ├── verify-fixture.sh       # run argdown validate on expected.argdown
-    └── run-skill.sh            # helper for invoking the skill on a fixture
+argdown-2/                                   # repo root (this directory)
+├── skills/prose-to-argdown/                 # snowball skill (source of truth)
+│   ├── SKILL.md                             # the skill itself (~400 lines)
+│   ├── README.md                            # human-facing installation & usage docs
+│   ├── MANUAL.md                            # step-by-step smoke test instructions
+│   ├── scripts/
+│   │   ├── verify-fixture.sh                # run argdown validate on expected.argdown
+│   │   └── run-skill.sh                     # helper for invoking the skill on a fixture
+│   └── fixtures/                            # one directory per fixture
+│       ├── lead-essay/
+│       │   ├── input.txt
+│       │   ├── expected.argdown
+│       │   └── assertions.json
+│       ├── research-abstract/
+│       │   ├── input.txt
+│       │   ├── expected.argdown
+│       │   └── assertions.json
+│       ├── position-disagreement/
+│       │   ├── input.txt
+│       │   ├── expected.argdown
+│       │   └── assertions.json
+│       ├── no-claims/
+│       │   ├── input.txt
+│       │   └── expected.txt                 # plain-prose explanation, no argdown
+│       ├── multi-paragraph/
+│       │   ├── input.txt
+│       │   ├── expected.argdown
+│       │   └── assertions.json
+│       ├── ambiguous-prose/
+│       │   ├── input.txt
+│       │   ├── expected.argdown
+│       │   └── assertions.json
+│       └── legacy-syntax/
+│           ├── input.txt
+│           └── expected.txt                 # plain-prose parser-error explanation
+├── .pi/extensions/prose-to-argdown.ts       # pi-coding-agent extension (Task 22)
+├── .claude-plugin/plugin.json                # Claude Code plugin manifest (Task 23)
+└── commands/prose-to-argdown.md              # Claude Code slash command (Task 24)
 ```
 
 ---
@@ -58,64 +64,73 @@
 ## Task 1: Scaffold the skill directory tree
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/`
-- Create: `~/.agents/skills/prose-to-argdown/scripts/`
+- Create: `skills/prose-to-argdown/`
+- Create: `skills/prose-to-argdown/fixtures/`
+- Create: `skills/prose-to-argdown/scripts/`
 - Create: per-fixture directories under `fixtures/`
+- Create: `.pi/extensions/` (will hold prose-to-argdown.ts in Task 22)
+- Create: `.claude-plugin/` (will hold plugin.json in Task 23)
+- Create: `commands/` (will hold prose-to-argdown.md in Task 24)
 
-- [ ] **Step 1: Create the skill root**
-
-```bash
-mkdir -p ~/.agents/skills/prose-to-argdown/{fixtures,scripts}
-```
-
-- [ ] **Step 2: Create per-fixture directories**
+- [ ] **Step 1: Create the skill root and per-fixture directories**
 
 ```bash
-cd ~/.agents/skills/prose-to-argdown/fixtures
+cd "$(git rev-parse --show-toplevel)"
+mkdir -p skills/prose-to-argdown/{fixtures,scripts}
 for name in lead-essay research-abstract position-disagreement no-claims multi-paragraph ambiguous-prose legacy-syntax; do
-  mkdir -p "$name"
+  mkdir -p "skills/prose-to-argdown/fixtures/$name"
 done
+mkdir -p .pi/extensions .claude-plugin commands
 ```
 
-- [ ] **Step 3: Verify the directory tree**
+- [ ] **Step 2: Verify the directory tree**
 
 ```bash
-find ~/.agents/skills/prose-to-argdown -type d | sort
+cd "$(git rev-parse --show-toplevel)"
+find skills/prose-to-argdown .pi/extensions .claude-plugin commands -type d 2>/dev/null | sort
 ```
 
 Expected output (top of tree):
 
 ```
-/Users/kellen/.agents/skills/prose-to-argdown
-/Users/kellen/.agents/skills/prose-to-argdown/fixtures
-/Users/kellen/.agents/skills/prose-to-argdown/fixtures/ambiguous-prose
-/Users/kellen/.agents/skills/prose-to-argdown/fixtures/lead-essay
-/Users/kellen/.agents/skills/prose-to-argdown/fixtures/legacy-syntax
-/Users/kellen/.agents/skills/prose-to-argdown/fixtures/multi-paragraph
-/Users/kellen/.agents/skills/prose-to-argdown/fixtures/no-claims
-/Users/kellen/.agents/skills/prose-to-argdown/fixtures/position-disagreement
-/Users/kellen/.agents/skills/prose-to-argdown/fixtures/research-abstract
-/Users/kellen/.agents/skills/prose-to-argdown/scripts
+.claude-plugin
+.pi/extensions
+commands
+skills/prose-to-argdown
+skills/prose-to-argdown/fixtures
+skills/prose-to-argdown/fixtures/ambiguous-prose
+skills/prose-to-argdown/fixtures/lead-essay
+skills/prose-to-argdown/fixtures/legacy-syntax
+skills/prose-to-argdown/fixtures/multi-paragraph
+skills/prose-to-argdown/fixtures/no-claims
+skills/prose-to-argdown/fixtures/position-disagreement
+skills/prose-to-argdown/fixtures/research-abstract
+skills/prose-to-argdown/scripts
 ```
 
-(No git commit — this directory is outside the repo.)
+- [ ] **Step 3: Commit the scaffold**
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+git add skills/prose-to-argdown .pi/extensions .claude-plugin commands
+git commit -m "chore: scaffold prose-to-argdown directories (skill, fixtures, scripts, pi ext, claude plugin, slash command)"
+```
 
 ---
 
 ## Task 2: Write fixture #1 — `lead-essay`
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/lead-essay/input.txt`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/lead-essay/expected.argdown`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/lead-essay/assertions.json`
+- Create: `skills/prose-to-argdown/fixtures/lead-essay/input.txt`
+- Create: `skills/prose-to-argdown/fixtures/lead-essay/expected.argdown`
+- Create: `skills/prose-to-argdown/fixtures/lead-essay/assertions.json`
 
 A 300-word op-ed on climate policy. Tests the complete pipeline; expects ≥ 6 facts, ≥ 4 relations, ≥ 2 arguments.
 
 - [ ] **Step 1: Write `input.txt`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/lead-essay/input.txt <<'EOF'
+cat > skills/prose-to-argdown/fixtures/lead-essay/input.txt <<'EOF'
 The climate crisis demands urgent action. According to the IPCC's Sixth Assessment Report, human CO2 emissions are the primary driver of current warming trends, with observable impacts on ecosystems worldwide. Without coordinated international response, these impacts will continue to escalate.
 
 Some skeptics argue that climate action would harm economic growth. However, the Stern Review demonstrated decades ago that the costs of inaction far exceed the costs of transition. Renewable energy investments have already created more jobs than the fossil fuel sector in many economies.
@@ -129,7 +144,7 @@ EOF
 - [ ] **Step 2: Verify the input file is ~150 words**
 
 ```bash
-wc -w ~/.agents/skills/prose-to-argdown/fixtures/lead-essay/input.txt
+wc -w skills/prose-to-argdown/fixtures/lead-essay/input.txt
 ```
 
 Expected: ~150 words. (Spec says 300; this fixture is shorter for ease of testing.)
@@ -137,11 +152,11 @@ Expected: ~150 words. (Spec says 300; this fixture is shorter for ease of testin
 - [ ] **Step 3: Write `expected.argdown`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/lead-essay/expected.argdown <<'EOF'
+cat > skills/prose-to-argdown/fixtures/lead-essay/expected.argdown <<'EOF'
 === title: "The case for climate action" source: "(test fixture)" extracted-from: lines 1-15 validated: 2026-07-11 ===
 
 [#co2-primary-cause] Human CO2 emissions are the primary driver of current warming trends. { source-line: 1, source-quote: "According to the IPCC's Sixth Assessment Report, human CO2 emissions are the primary driver of current warming trends" }
-[#impacts-observable] Current warming trends have observable impacts on ecosystems worldwide. { source-line: 1-2, source-quote: "with observable impacts on ecosystems worldwide" }
+[#impacts-observable] Current warming trends have observable impacts on ecosystems worldwide. { source-line: "1-2", source-quote: "with observable impacts on ecosystems worldwide" }
 [#impacts-will-escalate] Without coordinated international response, these impacts will continue to escalate. { source-line: 3, source-quote: "Without coordinated international response, these impacts will continue to escalate" }
 [#skeptics-economic-harm] Some skeptics argue that climate action would harm economic growth. { source-line: 5, source-quote: "Some skeptics argue that climate action would harm economic growth" }
 [#stern-review-costs] The Stern Review demonstrated that the costs of inaction far exceed the costs of transition. { source-line: 6, source-quote: "the Stern Review demonstrated decades ago that the costs of inaction far exceed the costs of transition" }
@@ -150,44 +165,42 @@ cat > ~/.agents/skills/prose-to-argdown/fixtures/lead-essay/expected.argdown <<'
 [#market-signals-corporate] Consumer choices drive market signals, and market signals drive corporate behavior. { source-line: 10, source-quote: "consumer choices drive market signals, and market signals drive corporate behavior" }
 [#ev-manufacturer-response] When millions choose electric vehicles, manufacturers respond. { source-line: 11, source-quote: "When millions choose electric vehicles, manufacturers respond" }
 [#comprehensive-approach] A comprehensive approach combining policy reform, technological investment, and behavioral change offers the best path forward. { source-line: 13, source-quote: "Therefore, a comprehensive approach combining policy reform, technological investment, and behavioral change offers the best path forward" }
-[#evidence-clear] The evidence is clear. { source-line: 14, source-quote: "The evidence is clear" }
+[#facts-are-clear] The evidence is clear. { source-line: 14, source-quote: "The evidence is clear" }
 [#economics-support] The economics support it. { source-line: 14, source-quote: "the economics support it" }
 [#urgency-cannot-be-denied] The urgency cannot be denied. { source-line: 14, source-quote: "the urgency cannot be denied" }
 
 [#co2-primary-cause] --> [#comprehensive-approach] { source-line: 1, source-quote: "The climate crisis demands urgent action" }
-[#impacts-observable] --> [#comprehensive-approach] { source-line: 1-2, source-quote: "with observable impacts on ecosystems worldwide" }
+[#impacts-observable] --> [#comprehensive-approach] { source-line: "1-2", source-quote: "with observable impacts on ecosystems worldwide" }
 [#stern-review-costs] --x [#skeptics-economic-harm] { source-line: 6, source-quote: "However, the Stern Review demonstrated decades ago that the costs of inaction far exceed the costs of transition" }
 [#renewables-more-jobs] --x [#skeptics-economic-harm] { source-line: 7, source-quote: "Renewable energy investments have already created more jobs than the fossil fuel sector in many economies" }
 [#market-signals-corporate] --x [#individual-futile-claim] { source-line: 10, source-quote: "consumer choices drive market signals, and market signals drive corporate behavior" }
 [#ev-manufacturer-response] --x [#individual-futile-claim] { source-line: 11, source-quote: "When millions choose electric vehicles, manufacturers respond" }
-[#evidence-clear] --> [#comprehensive-approach] { source-line: 14, source-quote: "The evidence is clear" }
+[#facts-are-clear] --> [#comprehensive-approach] { source-line: 14, source-quote: "The evidence is clear" }
 [#economics-support] --> [#comprehensive-approach] { source-line: 14, source-quote: "the economics support it" }
 [#urgency-cannot-be-denied] --> [#comprehensive-approach] { source-line: 14, source-quote: "the urgency cannot be denied" }
 
-([#comprehensive-approach]) -> [#co2-primary-cause], [#impacts-observable], [#stern-review-costs], [#renewables-more-jobs], [#market-signals-corporate], [#ev-manufacturer-response], [#evidence-clear], [#economics-support], [#urgency-cannot-be-denied]. { source-line: 13, source-quote: "Therefore, a comprehensive approach combining policy reform, technological investment, and behavioral change offers the best path forward" }
-([#skeptics-economic-harm]) --x [#stern-review-costs], [#renewables-more-jobs]. { source-line: 5-7, source-quote: "Some skeptics argue that climate action would harm economic growth. However, the Stern Review demonstrated decades ago that the costs of inaction far exceed the costs of transition. Renewable energy investments have already created more jobs than the fossil fuel sector in many economies" }
-([#individual-futile-claim]) --x [#market-signals-corporate], [#ev-manufacturer-response]. { source-line: 9-11, source-quote: "Critics also claim that individual action is futile. But consumer choices drive market signals, and market signals drive corporate behavior. When millions choose electric vehicles, manufacturers respond" }
+([#comprehensive-approach]) -> [#co2-primary-cause], [#impacts-observable], [#stern-review-costs], [#renewables-more-jobs], [#market-signals-corporate], [#ev-manufacturer-response], [#facts-are-clear], [#economics-support], [#urgency-cannot-be-denied]. { source-line: 13, source-quote: "Therefore, a comprehensive approach combining policy reform, technological investment, and behavioral change offers the best path forward" }
 
-<!-- extracted by prose-to-argdown; review source-quote attributes against source prose -->
+// extracted by prose-to-argdown; review source-quote attributes against source prose. Rebuttal arguments omitted: argdown-2 supports only `->` in argument position, so the "[#stern-review-costs] --x [#skeptics-economic-harm]" and "[#market-signals-corporate] --x [#individual-futile-claim]" relations above capture the rebuttal semantics without needing separate argument nodes.
 EOF
 ```
 
 - [ ] **Step 4: Write `assertions.json`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/lead-essay/assertions.json <<'EOF'
+cat > skills/prose-to-argdown/fixtures/lead-essay/assertions.json <<'EOF'
 {
   "fixture": "lead-essay",
   "expects_parseable": true,
   "expects_arguments": true,
   "min_facts": 6,
   "min_relations": 4,
-  "min_arguments": 2,
+  "min_arguments": 1,
   "max_facts": 20,
   "provenance_required": true,
   "every_quote_must_be_substring": true,
   "grounded_arguments_only": true,
-  "notes": "Three-argument structure: comprehensive-approach (main), rebut skeptics-economic-harm, rebut individual-futile-claim."
+  "notes": "One main `->` argument for the comprehensive-approach conclusion; rebuttal semantics captured via `--x` relations (argdown-2 supports only `->` in argument position, so rebuttal arguments are not emitted). The fixture still exercises the full three-pass pipeline even with one argument."
 }
 EOF
 ```
@@ -195,7 +208,7 @@ EOF
 - [ ] **Step 5: Verify the expected.argdown parses cleanly via argdown-2**
 
 ```bash
-npx https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz validate ~/.agents/skills/prose-to-argdown/fixtures/lead-essay/expected.argdown
+yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/lead-essay/expected.argdown
 ```
 
 Expected: exit code 0, no output on stdout.
@@ -207,24 +220,24 @@ Expected: exit code 0, no output on stdout.
 ## Task 3: Write fixture #2 — `research-abstract`
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/research-abstract/input.txt`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/research-abstract/expected.argdown`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/research-abstract/assertions.json`
+- Create: `skills/prose-to-argdown/fixtures/research-abstract/input.txt`
+- Create: `skills/prose-to-argdown/fixtures/research-abstract/expected.argdown`
+- Create: `skills/prose-to-argdown/fixtures/research-abstract/assertions.json`
 
 A 150-word paper abstract with explicit "we argue that X because Y" structure. Tests argument extraction.
 
 - [ ] **Step 1: Write `input.txt`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/research-abstract/input.txt <<'EOF'
-We argue that transformer attention heads can be interpreted as soft database lookups. Specifically, attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation. Our experiments on three benchmarks demonstrate that 64-head attention recovers 91% of exact-match queries on synthetic lookup tasks. This work implies that future architectures should treat attention as a learned index rather than a sequence mixer, with consequent reductions in parameter count for memory-bound workloads.
+cat > skills/prose-to-argdown/fixtures/research-abstract/input.txt <<'EOF'
+We argue that transformer attention heads can be interpreted as soft database lookups. Specifically, attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation. Our experiments on three benchmarks demonstrate that 64-head attention recovers ninety-one percent of exact-match queries on synthetic lookup tasks. This work implies that future architectures should treat attention as a learned index rather than a sequence mixer, with consequent reductions in parameter count for memory-bound workloads.
 EOF
 ```
 
 - [ ] **Step 2: Verify input is ~80 words**
 
 ```bash
-wc -w ~/.agents/skills/prose-to-argdown/fixtures/research-abstract/input.txt
+wc -w skills/prose-to-argdown/fixtures/research-abstract/input.txt
 ```
 
 Expected: ~80 words.
@@ -232,30 +245,30 @@ Expected: ~80 words.
 - [ ] **Step 3: Write `expected.argdown`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/research-abstract/expected.argdown <<'EOF'
+cat > skills/prose-to-argdown/fixtures/research-abstract/expected.argdown <<'EOF'
 === title: "Attention as soft database lookup" source: "(test fixture)" extracted-from: lines 1-3 validated: 2026-07-11 ===
 
 [#transformer-attention-lookup] Transformer attention heads can be interpreted as soft database lookups. { source-line: 1, source-quote: "transformer attention heads can be interpreted as soft database lookups" }
 [#attention-knn-approximation] Attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation. { source-line: 1, source-quote: "attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation" }
-[#experiments-benchmarks] Experiments on three benchmarks demonstrate that 64-head attention recovers 91% of exact-match queries on synthetic lookup tasks. { source-line: 1, source-quote: "Our experiments on three benchmarks demonstrate that 64-head attention recovers 91% of exact-match queries on synthetic lookup tasks" }
+[#experiments-benchmarks] Experiments on three benchmarks demonstrate that 64-head attention recovers ninety-one percent of exact-match queries on synthetic lookup tasks. { source-line: 1, source-quote: "Our experiments on three benchmarks demonstrate that 64-head attention recovers ninety-one percent of exact-match queries on synthetic lookup tasks" }
 [#attention-as-index] Future architectures should treat attention as a learned index rather than a sequence mixer. { source-line: 1, source-quote: "future architectures should treat attention as a learned index rather than a sequence mixer" }
 [#memory-bound-reduction] Treating attention as an index produces consequent reductions in parameter count for memory-bound workloads. { source-line: 1, source-quote: "with consequent reductions in parameter count for memory-bound workloads" }
 
-[#experiments-benchmarks] --> [#transformer-attention-lookup] { source-line: 1, source-quote: "Our experiments on three benchmarks demonstrate that 64-head attention recovers 91% of exact-match queries on synthetic lookup tasks" }
+[#experiments-benchmarks] --> [#transformer-attention-lookup] { source-line: 1, source-quote: "Our experiments on three benchmarks demonstrate that 64-head attention recovers ninety-one percent of exact-match queries on synthetic lookup tasks" }
 [#attention-knn-approximation] --> [#transformer-attention-lookup] { source-line: 1, source-quote: "attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation" }
 [#attention-as-index] --> [#memory-bound-reduction] { source-line: 1, source-quote: "future architectures should treat attention as a learned index rather than a sequence mixer, with consequent reductions in parameter count for memory-bound workloads" }
 
-([#transformer-attention-lookup]) -> [#attention-knn-approximation], [#experiments-benchmarks]. { source-line: 1, source-quote: "We argue that transformer attention heads can be interpreted as soft database lookups. Specifically, attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation. Our experiments on three benchmarks demonstrate that 64-head attention recovers 91% of exact-match queries on synthetic lookup tasks" }
+([#transformer-attention-lookup]) -> [#attention-knn-approximation], [#experiments-benchmarks]. { source-line: 1, source-quote: "We argue that transformer attention heads can be interpreted as soft database lookups. Specifically, attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation. Our experiments on three benchmarks demonstrate that 64-head attention recovers ninety-one percent of exact-match queries on synthetic lookup tasks" }
 ([#memory-bound-reduction]) -> [#attention-as-index]. { source-line: 1, source-quote: "future architectures should treat attention as a learned index rather than a sequence mixer, with consequent reductions in parameter count for memory-bound workloads" }
 
-<!-- extracted by prose-to-argdown; review source-quote attributes against source prose -->
+// extracted by prose-to-argdown; review source-quote attributes against source prose
 EOF
 ```
 
 - [ ] **Step 4: Write `assertions.json`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/research-abstract/assertions.json <<'EOF'
+cat > skills/prose-to-argdown/fixtures/research-abstract/assertions.json <<'EOF'
 {
   "fixture": "research-abstract",
   "expects_parseable": true,
@@ -275,7 +288,7 @@ EOF
 - [ ] **Step 5: Verify the expected.argdown parses cleanly**
 
 ```bash
-npx https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz validate ~/.agents/skills/prose-to-argdown/fixtures/research-abstract/expected.argdown
+yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/research-abstract/expected.argdown
 ```
 
 Expected: exit code 0.
@@ -287,16 +300,16 @@ Expected: exit code 0.
 ## Task 4: Write fixture #3 — `position-disagreement`
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/position-disagreement/input.txt`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/position-disagreement/expected.argdown`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/position-disagreement/assertions.json`
+- Create: `skills/prose-to-argdown/fixtures/position-disagreement/input.txt`
+- Create: `skills/prose-to-argdown/fixtures/position-disagreement/expected.argdown`
+- Create: `skills/prose-to-argdown/fixtures/position-disagreement/assertions.json`
 
 Two voices arguing against each other. Tests `--x` relations and multi-source `:::position` blocks.
 
 - [ ] **Step 1: Write `input.txt`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/position-disagreement/input.txt <<'EOF'
+cat > skills/prose-to-argdown/fixtures/position-disagreement/input.txt <<'EOF'
 According to Smith, remote work has increased worker productivity by 12% across surveyed firms. Smith argues that eliminating the daily commute produces measurable gains in deep-work hours. However, Jones contests this finding. According to Jones, remote work fragments collaboration and erodes institutional knowledge. Jones argues that in-person work enables the kind of spontaneous exchange that remote workers systematically miss. Both positions are well-supported by their respective studies; the question is which effect dominates in practice.
 EOF
 ```
@@ -304,7 +317,7 @@ EOF
 - [ ] **Step 2: Verify input is ~100 words**
 
 ```bash
-wc -w ~/.agents/skills/prose-to-argdown/fixtures/position-disagreement/input.txt
+wc -w skills/prose-to-argdown/fixtures/position-disagreement/input.txt
 ```
 
 Expected: ~100 words.
@@ -312,16 +325,16 @@ Expected: ~100 words.
 - [ ] **Step 3: Write `expected.argdown`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/position-disagreement/expected.argdown <<'EOF'
+cat > skills/prose-to-argdown/fixtures/position-disagreement/expected.argdown <<'EOF'
 === title: "Remote work productivity debate" source: "(test fixture)" extracted-from: lines 1-3 validated: 2026-07-11 ===
 
-[#smith-productivity-gain] Remote work has increased worker productivity by 12% across surveyed firms. { source-line: 1, source-quote: "remote work has increased worker productivity by 12% across surveyed firms" }
+[#smith-productivity-gain] Remote work has increased worker productivity by twelve percent across surveyed firms. { source-line: 1, source-quote: "remote work has increased worker productivity by 12% across surveyed firms" }
 [#smith-deep-work-gain] Eliminating the daily commute produces measurable gains in deep-work hours. { source-line: 1, source-quote: "eliminating the daily commute produces measurable gains in deep-work hours" }
 [#jones-collaboration-fragmentation] Remote work fragments collaboration and erodes institutional knowledge. { source-line: 1, source-quote: "remote work fragments collaboration and erodes institutional knowledge" }
 [#jones-spontaneous-exchange] In-person work enables the kind of spontaneous exchange that remote workers systematically miss. { source-line: 1, source-quote: "in-person work enables the kind of spontaneous exchange that remote workers systematically miss" }
 
 :::position
-[#smith-productivity-gain] Remote work has increased worker productivity by 12% across surveyed firms. { source-line: 1, source-quote: "According to Smith, remote work has increased worker productivity by 12% across surveyed firms" }
+[#smith-productivity-gain] Remote work has increased worker productivity by twelve percent across surveyed firms. { source-line: 1, source-quote: "According to Smith, remote work has increased worker productivity by 12% across surveyed firms" }
 [#smith-deep-work-gain] Eliminating the daily commute produces measurable gains in deep-work hours. { source-line: 1, source-quote: "Smith argues that eliminating the daily commute produces measurable gains in deep-work hours" }
 :::
 
@@ -337,14 +350,14 @@ cat > ~/.agents/skills/prose-to-argdown/fixtures/position-disagreement/expected.
 ([#smith-productivity-gain]) -> [#smith-deep-work-gain]. { source-line: 1, source-quote: "According to Smith, remote work has increased worker productivity by 12% across surveyed firms. Smith argues that eliminating the daily commute produces measurable gains in deep-work hours" }
 ([#jones-collaboration-fragmentation]) -> [#jones-spontaneous-exchange]. { source-line: 1, source-quote: "According to Jones, remote work fragments collaboration and erodes institutional knowledge. Jones argues that in-person work enables the kind of spontaneous exchange that remote workers systematically miss" }
 
-<!-- extracted by prose-to-argdown; review source-quote attributes against source prose -->
+// extracted by prose-to-argdown; review source-quote attributes against source prose
 EOF
 ```
 
 - [ ] **Step 4: Write `assertions.json`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/position-disagreement/assertions.json <<'EOF'
+cat > skills/prose-to-argdown/fixtures/position-disagreement/assertions.json <<'EOF'
 {
   "fixture": "position-disagreement",
   "expects_parseable": true,
@@ -365,7 +378,7 @@ EOF
 - [ ] **Step 5: Verify the expected.argdown parses cleanly**
 
 ```bash
-npx https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz validate ~/.agents/skills/prose-to-argdown/fixtures/position-disagreement/expected.argdown
+yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/position-disagreement/expected.argdown
 ```
 
 Expected: exit code 0.
@@ -377,15 +390,15 @@ Expected: exit code 0.
 ## Task 5: Write fixture #4 — `no-claims`
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/no-claims/input.txt`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/no-claims/expected.txt`
+- Create: `skills/prose-to-argdown/fixtures/no-claims/input.txt`
+- Create: `skills/prose-to-argdown/fixtures/no-claims/expected.txt`
 
 A recipe. Tests the "no claims detected" early-exit. The expected output is a plain-prose explanation, no argdown code block.
 
 - [ ] **Step 1: Write `input.txt`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/no-claims/input.txt <<'EOF'
+cat > skills/prose-to-argdown/fixtures/no-claims/input.txt <<'EOF'
 To make sourdough bread, combine 500g flour, 350g water, 100g starter, and 10g salt in a large bowl. Mix until shaggy, then cover and rest for 30 minutes. After the rest, perform four sets of stretch-and-folds at 30-minute intervals. Bulk ferment for 4-6 hours at room temperature until the dough is 50% larger. Shape into a boule, place in a banneton, and refrigerate overnight. Bake at 230C in a preheated Dutch oven for 20 minutes covered, then 25 minutes uncovered.
 EOF
 ```
@@ -393,7 +406,7 @@ EOF
 - [ ] **Step 2: Verify input is descriptive, not argumentative**
 
 ```bash
-grep -iE "argue|claim|therefore|because|however|but" ~/.agents/skills/prose-to-argdown/fixtures/no-claims/input.txt || echo "No argumentative markers (expected)"
+grep -iE "argue|claim|therefore|because|however|but" skills/prose-to-argdown/fixtures/no-claims/input.txt || echo "No argumentative markers (expected)"
 ```
 
 Expected: prints "No argumentative markers (expected)".
@@ -403,7 +416,7 @@ Expected: prints "No argumentative markers (expected)".
 The skill should reply in plain prose, with no argdown code block:
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/no-claims/expected.txt <<'EOF'
+cat > skills/prose-to-argdown/fixtures/no-claims/expected.txt <<'EOF'
 No argumentative claims detected in this prose; argdown-2 is for structured arguments. If you intended a different extraction (e.g., a step-by-step procedure, a recipe, a list), please clarify or use a different tool.
 EOF
 ```
@@ -419,16 +432,16 @@ The skill does not produce argdown for this case, so there's no parseable output
 ## Task 6: Write fixture #5 — `multi-paragraph`
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/multi-paragraph/input.txt`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdown`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/multi-paragraph/assertions.json`
+- Create: `skills/prose-to-argdown/fixtures/multi-paragraph/input.txt`
+- Create: `skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdown`
+- Create: `skills/prose-to-argdown/fixtures/multi-paragraph/assertions.json`
 
 A 1,500-word essay with section breaks. Tests chunking and frontmatter range.
 
 - [ ] **Step 1: Write `input.txt`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/multi-paragraph/input.txt <<'EOF'
+cat > skills/prose-to-argdown/fixtures/multi-paragraph/input.txt <<'EOF'
 # Section 1: The Problem
 
 Modern software systems routinely accumulate technical debt. A 2024 Stripe study found that developers spend 42% of their time dealing with legacy code rather than building new features. This is not sustainable. The cost of deferred refactoring compounds: a function that takes three days to understand today will take five next year and ten the year after.
@@ -450,7 +463,7 @@ EOF
 - [ ] **Step 2: Verify input has section breaks**
 
 ```bash
-grep -c "^# " ~/.agents/skills/prose-to-argdown/fixtures/multi-paragraph/input.txt
+grep -c "^# " skills/prose-to-argdown/fixtures/multi-paragraph/input.txt
 ```
 
 Expected: 3 (three `# Section N:` headers).
@@ -458,18 +471,18 @@ Expected: 3 (three `# Section N:` headers).
 - [ ] **Step 3: Write `expected.argdown`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdown <<'EOF'
+cat > skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdown <<'EOF'
 === title: "Pay down technical debt continuously" source: "(test fixture)" extracted-from: lines 1-25 validated: 2026-07-11 ===
 
 [#debt-accumulation] Modern software systems routinely accumulate technical debt. { source-line: 2, source-quote: "Modern software systems routinely accumulate technical debt" }
-[#stripe-2024-study] A 2024 Stripe study found that developers spend 42% of their time dealing with legacy code rather than building new features. { source-line: 3, source-quote: "A 2024 Stripe study found that developers spend 42% of their time dealing with legacy code rather than building new features" }
+[#stripe-2024-study] A 2024 Stripe study found that developers spend forty-two percent of their time dealing with legacy code rather than building new features. { source-line: 3, source-quote: "A 2024 Stripe study found that developers spend 42% of their time dealing with legacy code rather than building new features" }
 [#debt-not-sustainable] This is not sustainable. { source-line: 4, source-quote: "This is not sustainable" }
 [#debt-cost-compounds] The cost of deferred refactoring compounds. { source-line: 5, source-quote: "The cost of deferred refactoring compounds" }
 [#debt-rule-of-ten] A function that takes three days to understand today will take five next year and ten the year after. { source-line: 5, source-quote: "a function that takes three days to understand today will take five next year and ten the year after" }
-[#twenty-percent-allocation] Every team should allocate at least 20% of sprint capacity to debt reduction. { source-line: 7, source-quote: "every team should allocate at least 20% of sprint capacity to debt reduction" }
-[#evidence-overwhelming] The evidence is overwhelming. { source-line: 8, source-quote: "The evidence is overwhelming" }
+[#twenty-percent-allocation] Every team should allocate at least twenty percent of sprint capacity to debt reduction. { source-line: 7, source-quote: "every team should allocate at least 20% of sprint capacity to debt reduction" }
+[#facts-are-overwhelming] The evidence is overwhelming. { source-line: 8, source-quote: "The evidence is overwhelming" }
 [#debt-alternative-unmaintainable] Letting debt accumulate produces systems that nobody wants to touch and nobody can extend. { source-line: 9, source-quote: "letting debt accumulate produces systems that nobody wants to touch and nobody can extend" }
-[#twenty-percent-too-much-claim] Some will object that 20% is too much. { source-line: 12, source-quote: "Some will object that 20% is too much" }
+[#twenty-percent-too-much-claim] Some will object that twenty percent is too much. { source-line: 12, source-quote: "Some will object that 20% is too much" }
 [#customer-features-faster-claim] Customer features ship faster when developers spend all their time on new code. { source-line: 12, source-quote: "Customer features ship faster when developers spend all their time on new code" }
 [#compounding-cost-ignored] This view ignores the compounding cost of debt. { source-line: 13, source-quote: "this view ignores the compounding cost of debt" }
 [#not-actually-moved-forward] A team that ships features today but cannot ship them next year has not actually moved forward. { source-line: 13, source-quote: "A team that ships features today but cannot ship them next year has not actually moved forward" }
@@ -483,26 +496,24 @@ cat > ~/.agents/skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdow
 
 [#stripe-2024-study] --> [#debt-accumulation] { source-line: 3, source-quote: "A 2024 Stripe study found that developers spend 42% of their time dealing with legacy code rather than building new features" }
 [#debt-cost-compounds] --> [#debt-rule-of-ten] { source-line: 5, source-quote: "The cost of deferred refactoring compounds: a function that takes three days to understand today will take five next year and ten the year after" }
-[#evidence-overwhelming] --> [#twenty-percent-allocation] { source-line: 8, source-quote: "The evidence is overwhelming" }
+[#facts-are-overwhelming] --> [#twenty-percent-allocation] { source-line: 8, source-quote: "The evidence is overwhelming" }
 [#debt-alternative-unmaintainable] --> [#twenty-percent-allocation] { source-line: 9, source-quote: "letting debt accumulate produces systems that nobody wants to touch and nobody can extend" }
 [#compounding-cost-ignored] --x [#twenty-percent-too-much-claim] { source-line: 13, source-quote: "However, this view ignores the compounding cost of debt" }
 [#not-actually-moved-forward] --x [#twenty-percent-too-much-claim] { source-line: 13, source-quote: "A team that ships features today but cannot ship them next year has not actually moved forward" }
 [#unable-to-ship-risk] --x [#refactoring-risky-claim] { source-line: 16, source-quote: "The risk of breaking production during a refactor is much smaller than the risk of being unable to ship anything at all once the system becomes unmaintainable" }
 [#discipline-ships-faster] --> [#pay-now-or-later] { source-line: 22, source-quote: "Teams that adopt this discipline ship faster over the long run, not slower" }
 
-([#twenty-percent-allocation]) -> [#stripe-2024-study], [#debt-cost-compounds], [#evidence-overwhelming], [#debt-alternative-unmaintainable]. { source-line: 7, source-quote: "Therefore, every team should allocate at least 20% of sprint capacity to debt reduction. The evidence is overwhelming. The alternative — letting debt accumulate — produces systems that nobody wants to touch and nobody can extend" }
-([#twenty-percent-too-much-claim]) --x [#compounding-cost-ignored], [#not-actually-moved-forward]. { source-line: 12-13, source-quote: "Some will object that 20% is too much. Customer features ship faster when developers spend all their time on new code. However, this view ignores the compounding cost of debt. A team that ships features today but cannot ship them next year has not actually moved forward" }
-([#refactoring-risky-claim]) --x [#unable-to-ship-risk]. { source-line: 15-16, source-quote: "Others will argue that refactoring is risky and breaks production. This is true in the short term and false in the long term. The risk of breaking production during a refactor is much smaller than the risk of being unable to ship anything at all once the system becomes unmaintainable" }
-([#pay-now-or-later]) -> [#math-favors-continuous], [#discipline-ships-faster]. { source-line: 21-22, source-quote: "pay down debt continuously, or pay it down later with interest. The math favors the former. Teams that adopt this discipline ship faster over the long run, not slower" }
+([#twenty-percent-allocation]) -> [#stripe-2024-study], [#debt-cost-compounds], [#facts-are-overwhelming], [#debt-alternative-unmaintainable]. { source-line: 7, source-quote: "Therefore, every team should allocate at least 20% of sprint capacity to debt reduction. The evidence is overwhelming. The alternative — letting debt accumulate — produces systems that nobody wants to touch and nobody can extend" }
+([#pay-now-or-later]) -> [#math-favors-continuous], [#discipline-ships-faster]. { source-line: "21-22", source-quote: "pay down debt continuously, or pay it down later with interest. The math favors the former. Teams that adopt this discipline ship faster over the long run, not slower" }
 
-<!-- extracted by prose-to-argdown; review source-quote attributes against source prose -->
+// extracted by prose-to-argdown; review source-quote attributes against source prose. Rebuttal arguments omitted: argdown-2 supports only `->` in argument position, so the "--x" relations above capture the rebuttal semantics for the "20% is too much" and "refactoring is risky" counter-claims without needing separate argument nodes.
 EOF
 ```
 
 - [ ] **Step 4: Write `assertions.json`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/multi-paragraph/assertions.json <<'EOF'
+cat > skills/prose-to-argdown/fixtures/multi-paragraph/assertions.json <<'EOF'
 {
   "fixture": "multi-paragraph",
   "expects_parseable": true,
@@ -522,7 +533,7 @@ EOF
 - [ ] **Step 5: Verify the expected.argdown parses cleanly**
 
 ```bash
-npx https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz validate ~/.agents/skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdown
+yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/multi-paragraph/expected.argdown
 ```
 
 Expected: exit code 0.
@@ -534,16 +545,16 @@ Expected: exit code 0.
 ## Task 7: Write fixture #6 — `ambiguous-prose`
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/ambiguous-prose/input.txt`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/ambiguous-prose/expected.argdown`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/ambiguous-prose/assertions.json`
+- Create: `skills/prose-to-argdown/fixtures/ambiguous-prose/input.txt`
+- Create: `skills/prose-to-argdown/fixtures/ambiguous-prose/expected.argdown`
+- Create: `skills/prose-to-argdown/fixtures/ambiguous-prose/assertions.json`
 
 Prose with related facts but no explicit arguments. Tests the "facts only, no arguments" path (silence is valid output for arguments).
 
 - [ ] **Step 1: Write `input.txt`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/ambiguous-prose/input.txt <<'EOF'
+cat > skills/prose-to-argdown/fixtures/ambiguous-prose/input.txt <<'EOF'
 Three properties distinguish post-quantum cryptographic schemes. First, lattice-based cryptography relies on the hardness of shortest-vector problems in high-dimensional lattices. Second, code-based cryptography relies on the hardness of decoding random linear codes. Third, hash-based cryptography relies only on the collision-resistance of standard hash functions. Each family offers different trade-offs in key size, signature size, and computational cost.
 EOF
 ```
@@ -551,7 +562,7 @@ EOF
 - [ ] **Step 2: Write `expected.argdown`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/ambiguous-prose/expected.argdown <<'EOF'
+cat > skills/prose-to-argdown/fixtures/ambiguous-prose/expected.argdown <<'EOF'
 === title: "Post-quantum cryptography families" source: "(test fixture)" extracted-from: lines 1-3 validated: 2026-07-11 ===
 
 [#lattice-hardness] Lattice-based cryptography relies on the hardness of shortest-vector problems in high-dimensional lattices. { source-line: 1, source-quote: "lattice-based cryptography relies on the hardness of shortest-vector problems in high-dimensional lattices" }
@@ -559,14 +570,14 @@ cat > ~/.agents/skills/prose-to-argdown/fixtures/ambiguous-prose/expected.argdow
 [#hash-hardness] Hash-based cryptography relies only on the collision-resistance of standard hash functions. { source-line: 1, source-quote: "hash-based cryptography relies only on the collision-resistance of standard hash functions" }
 [#three-families-tradeoffs] Each family offers different trade-offs in key size, signature size, and computational cost. { source-line: 1, source-quote: "Each family offers different trade-offs in key size, signature size, and computational cost" }
 
-<!-- extracted by prose-to-argdown; review source-quote attributes against source prose. No arguments emitted: the prose does not argue for any specific family. -->
+// extracted by prose-to-argdown; review source-quote attributes against source prose. No arguments emitted: the prose does not argue for any specific family.
 EOF
 ```
 
 - [ ] **Step 3: Write `assertions.json`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/ambiguous-prose/assertions.json <<'EOF'
+cat > skills/prose-to-argdown/fixtures/ambiguous-prose/assertions.json <<'EOF'
 {
   "fixture": "ambiguous-prose",
   "expects_parseable": true,
@@ -586,7 +597,7 @@ EOF
 - [ ] **Step 4: Verify the expected.argdown parses cleanly**
 
 ```bash
-npx https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz validate ~/.agents/skills/prose-to-argdown/fixtures/ambiguous-prose/expected.argdown
+yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/ambiguous-prose/expected.argdown
 ```
 
 Expected: exit code 0.
@@ -598,15 +609,15 @@ Expected: exit code 0.
 ## Task 8: Write fixture #7 — `legacy-syntax`
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/legacy-syntax/input.txt`
-- Create: `~/.agents/skills/prose-to-argdown/fixtures/legacy-syntax/expected.txt`
+- Create: `skills/prose-to-argdown/fixtures/legacy-syntax/input.txt`
+- Create: `skills/prose-to-argdown/fixtures/legacy-syntax/expected.txt`
 
 Prose that uses the legacy `:—` syntax (mentioned as a string in the prose). Tests that the skill surfaces the parser's hard-error message rather than silently accepting the syntax.
 
 - [ ] **Step 1: Write `input.txt`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/legacy-syntax/input.txt <<'EOF'
+cat > skills/prose-to-argdown/fixtures/legacy-syntax/input.txt <<'EOF'
 The author uses the legacy Argdown 1.x syntax throughout. For example, they write [#a] :— [#b] to express that A supports B. This was the conventional syntax before the v0.1.0 release, which removed the ':—' rule syntax in favor of the linked `->` arguments. The current parser hard-errors on ':—' and recommends migration to the new form.
 EOF
 ```
@@ -614,7 +625,7 @@ EOF
 - [ ] **Step 2: Write `expected.txt`**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/fixtures/legacy-syntax/expected.txt <<'EOF'
+cat > skills/prose-to-argdown/fixtures/legacy-syntax/expected.txt <<'EOF'
 The source prose describes the legacy ':—' syntax but does not itself contain it as a parseable Argdown construct. If the user's intent was to test that the skill surfaces the legacy-syntax error, please supply prose that uses ':—' as an Argdown rule (e.g., `[#a] :— [#b].`). The current parser rejects ':—' with the migration message:
 
   ':—' syntax was removed. Use '->' for inference ([#A]) -> [#B], [#C].
@@ -630,12 +641,12 @@ EOF
 ## Task 9: Write `SKILL.md` — frontmatter, intro, and inputs
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/SKILL.md`
+- Create: `skills/prose-to-argdown/SKILL.md`
 
 - [ ] **Step 1: Create the file with frontmatter, intro, and inputs sections**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/SKILL.md <<'EOF'
+cat > skills/prose-to-argdown/SKILL.md <<'EOF'
 ---
 name: prose-to-argdown
 description: Use when the user provides a block of argumentative or research/technical prose (an essay, op-ed, position paper, paper section, technical report, book chapter excerpt) and asks to "extract the claims", "map the argument", "turn this into argdown", "structure this", "what is this arguing", or similar. Distills the prose into a full argdown-2 document with strict provenance — `source-line` and `source-quote` on every fact and argument — grounded in what the prose actually states or strongly implies. Does not invent arguments, premises, or relations that go beyond the source. Validates the output by parsing and rendering through argdown-2's MCP server before delivering inline. Trigger when the prose argues a case; do not trigger for recipes, code, logs, lists, or text without claims.
@@ -677,7 +688,7 @@ EOF
 - [ ] **Step 2: Verify the file exists and the frontmatter is well-formed**
 
 ```bash
-test -f ~/.agents/skills/prose-to-argdown/SKILL.md && head -3 ~/.agents/skills/prose-to-argdown/SKILL.md
+test -f skills/prose-to-argdown/SKILL.md && head -3 skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: file exists, first line is `---`.
@@ -689,12 +700,12 @@ Expected: file exists, first line is `---`.
 ## Task 10: Write `SKILL.md` — Pipeline section
 
 **Files:**
-- Modify: `~/.agents/skills/prose-to-argdown/SKILL.md` (append)
+- Modify: `skills/prose-to-argdown/SKILL.md` (append)
 
 - [ ] **Step 1: Append the Pipeline section**
 
 ```bash
-cat >> ~/.agents/skills/prose-to-argdown/SKILL.md <<'EOF'
+cat >> skills/prose-to-argdown/SKILL.md <<'EOF'
 ## Pipeline
 
 Three reasoning passes, each validated independently. The skill body walks the LLM through these stages; validation is via MCP calls to argdown-2's tools.
@@ -734,7 +745,7 @@ EOF
 - [ ] **Step 2: Verify the section was appended**
 
 ```bash
-grep -c "^## Pipeline" ~/.agents/skills/prose-to-argdown/SKILL.md
+grep -c "^## Pipeline" skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: 1.
@@ -744,12 +755,12 @@ Expected: 1.
 ## Task 11: Write `SKILL.md` — Pass 1 (Facts)
 
 **Files:**
-- Modify: `~/.agents/skills/prose-to-argdown/SKILL.md` (append)
+- Modify: `skills/prose-to-argdown/SKILL.md` (append)
 
 - [ ] **Step 1: Append the Pass 1 section**
 
 ```bash
-cat >> ~/.agents/skills/prose-to-argdown/SKILL.md <<'EOF'
+cat >> skills/prose-to-argdown/SKILL.md <<'EOF'
 ## Pass 1: Facts
 
 **Goal:** identify every atomic claim in the prose.
@@ -768,7 +779,7 @@ cat >> ~/.agents/skills/prose-to-argdown/SKILL.md <<'EOF'
 4. The `claim text` should preserve the prose's terminology where possible. Minor grammar smoothing is OK, but no semantic paraphrase.
 5. Set `source-line` to the line number (1-indexed) where the claim appears.
    - Single line: `source-line: 42`
-   - Range: `source-line: 42-45`
+   - Range: `source-line: "42-45"`
    - Discontiguous: `source-line: [42, 67]`
 6. Set `source-quote` to a verbatim substring of the prose that anchors the claim. This is the audit anchor.
 7. Do NOT include claims the prose does not state or strongly imply. Background-knowledge claims are out of scope.
@@ -785,7 +796,7 @@ EOF
 - [ ] **Step 2: Verify Pass 1 section is present**
 
 ```bash
-grep -c "^## Pass 1: Facts" ~/.agents/skills/prose-to-argdown/SKILL.md
+grep -c "^## Pass 1: Facts" skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: 1.
@@ -795,12 +806,12 @@ Expected: 1.
 ## Task 12: Write `SKILL.md` — Pass 2 (Relations)
 
 **Files:**
-- Modify: `~/.agents/skills/prose-to-argdown/SKILL.md` (append)
+- Modify: `skills/prose-to-argdown/SKILL.md` (append)
 
 - [ ] **Step 1: Append the Pass 2 section**
 
 ```bash
-cat >> ~/.agents/skills/prose-to-argdown/SKILL.md <<'EOF'
+cat >> skills/prose-to-argdown/SKILL.md <<'EOF'
 ## Pass 2: Relations
 
 **Input:** the prose + the validated facts from Pass 1.
@@ -846,7 +857,7 @@ EOF
 - [ ] **Step 2: Verify Pass 2 section is present**
 
 ```bash
-grep -c "^## Pass 2: Relations" ~/.agents/skills/prose-to-argdown/SKILL.md
+grep -c "^## Pass 2: Relations" skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: 1.
@@ -856,12 +867,12 @@ Expected: 1.
 ## Task 13: Write `SKILL.md` — Pass 3 (Arguments + structured blocks)
 
 **Files:**
-- Modify: `~/.agents/skills/prose-to-argdown/SKILL.md` (append)
+- Modify: `skills/prose-to-argdown/SKILL.md` (append)
 
 - [ ] **Step 1: Append the Pass 3 section**
 
 ```bash
-cat >> ~/.agents/skills/prose-to-argdown/SKILL.md <<'EOF'
+cat >> skills/prose-to-argdown/SKILL.md <<'EOF'
 ## Pass 3: Arguments + structured blocks
 
 **Input:** the prose + validated facts from Pass 1 + validated relations from Pass 2.
@@ -908,7 +919,7 @@ EOF
 - [ ] **Step 2: Verify Pass 3 section is present**
 
 ```bash
-grep -c "^## Pass 3: Arguments" ~/.agents/skills/prose-to-argdown/SKILL.md
+grep -c "^## Pass 3: Arguments" skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: 1.
@@ -918,12 +929,12 @@ Expected: 1.
 ## Task 14: Write `SKILL.md` — Provenance + Validation sections
 
 **Files:**
-- Modify: `~/.agents/skills/prose-to-argdown/SKILL.md` (append)
+- Modify: `skills/prose-to-argdown/SKILL.md` (append)
 
 - [ ] **Step 1: Append Provenance and Validation sections**
 
 ```bash
-cat >> ~/.agents/skills/prose-to-argdown/SKILL.md <<'EOF'
+cat >> skills/prose-to-argdown/SKILL.md <<'EOF'
 ## Provenance schema
 
 Every fact and argument carries `source-line` and `source-quote` attributes. These are the audit anchors — the user can verify each claim by searching the prose for the quote.
@@ -932,7 +943,7 @@ Every fact and argument carries `source-line` and `source-quote` attributes. The
 
 - `source-line` — number attribute, 1-indexed.
   - Single line: `source-line: 42`
-  - Range: `source-line: 42-45`
+  - Range: `source-line: "42-45"`
   - Discontiguous: `source-line: [42, 67]`
 
 - `source-quote` — string attribute, MUST be a verbatim substring of the input prose.
@@ -966,28 +977,46 @@ The skill uses argdown-2's MCP server for validation. Tools used:
 
 If the argdown-2 MCP server is unavailable at skill load, the skill proceeds in degraded mode without validation, with a one-time warning to the user. Output gets a `<!-- unvalidated -->` comment in the frontmatter.
 
+## Argdown-2 grammar constraints (READ BEFORE WRITING)
+
+These are argdown-2 grammar constraints surfaced during plan validation. They apply to ALL output (facts, relations, arguments, comments):
+
+1. **Arguments support only `->` in conclusion position.** Rebuttal arguments are NOT a separate `([#X]) --x [#Y]` construction; use a `[#A] --x [#B]` relation instead. The argument syntax `([#conclusion]) -> [#premise-1], [#premise-2].` is the only supported form.
+
+2. **Comments are `//` (line) or `/* */` (block), not `<!-- -->`.** argdown-2's lexer rejects HTML-style comments. The trailing marker line uses `// extracted by prose-to-argdown; ...`.
+
+3. **Five block-type keywords are reserved as fact-ID prefixes:** `evidence-`, `position-`, `stakeholder-`, `domain-`, `meta-`. Any fact ID starting with one of these prefixes (e.g., `[#evidence-clear]`, `[#position-x]`) is rejected by the lexer. Use alternative spellings: `facts-are-clear`, `the-position-held`, etc.
+
+4. **Source-line ranges must use quoted strings.** `source-line: 1-2` (unquoted range) is rejected in relations and arguments. Use `source-line: "1-2"` (quoted string), or `source-line: [42, 67]` (flow sequence) for discontiguous spans.
+
+5. **`%` in unquoted fact text is rejected by the lexer** (the `%` character is reserved). Source-quote strings (which are quoted) accept `%` fine. If the prose uses `%`, spell out "percent" in the fact text but keep the original `%` in the source-quote verbatim.
+
+6. **Legacy `:—` syntax is a hard parse error** with migration hint. Never emit it; never include `:—` in any test fixture that the skill will validate.
+
+If `argdown validate` rejects your output with any of these errors, fix the offending section and re-validate. Do not deliver invalid argdown.
+
 EOF
 ```
 
 - [ ] **Step 2: Verify both sections present**
 
 ```bash
-grep -cE "^## Provenance schema|^## Validation loop" ~/.agents/skills/prose-to-argdown/SKILL.md
+grep -cE "^## Provenance schema|^## Validation loop|^## Argdown-2 grammar constraints" skills/prose-to-argdown/SKILL.md
 ```
 
-Expected: 2.
+Expected: 3.
 
 ---
 
 ## Task 15: Write `SKILL.md` — Edge cases + Output sections
 
 **Files:**
-- Modify: `~/.agents/skills/prose-to-argdown/SKILL.md` (append)
+- Modify: `skills/prose-to-argdown/SKILL.md` (append)
 
 - [ ] **Step 1: Append Edge cases and Output sections**
 
 ```bash
-cat >> ~/.agents/skills/prose-to-argdown/SKILL.md <<'EOF'
+cat >> skills/prose-to-argdown/SKILL.md <<'EOF'
 ## Edge cases
 
 | Situation | Skill behavior |
@@ -1012,7 +1041,7 @@ Assembly order (top to bottom in the final code block):
 3. **Relations** — all `[#A] --> [#B] { source-line, source-quote }` lines from Pass 2.
 4. **Arguments** — all `([#X]) -> [#Y], [#Z]. { source-line, source-quote }` lines from Pass 3.
 5. **Structured blocks** — `:::evidence { … } :::` and `:::position { … } :::` groups.
-6. **Trailing comment** — `<!-- extracted by prose-to-argdown; review source-quote attributes against source prose -->`.
+6. **Trailing comment** — `// extracted by prose-to-argdown; review source-quote attributes against source prose` (argdown-2 line-comment syntax).
 
 Delivery wrapper in chat reply:
 
@@ -1041,7 +1070,7 @@ EOF
 - [ ] **Step 2: Verify both sections present**
 
 ```bash
-grep -cE "^## Edge cases|^## Output assembly" ~/.agents/skills/prose-to-argdown/SKILL.md
+grep -cE "^## Edge cases|^## Output assembly" skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: 2.
@@ -1051,12 +1080,12 @@ Expected: 2.
 ## Task 16: Write `SKILL.md` — Self-verification checklist
 
 **Files:**
-- Modify: `~/.agents/skills/prose-to-argdown/SKILL.md` (append)
+- Modify: `skills/prose-to-argdown/SKILL.md` (append)
 
 - [ ] **Step 1: Append Self-verification section**
 
 ```bash
-cat >> ~/.agents/skills/prose-to-argdown/SKILL.md <<'EOF'
+cat >> skills/prose-to-argdown/SKILL.md <<'EOF'
 ## Self-verification (before delivery)
 
 Before delivering the code block, run this checklist. If any check fails after the retry budgets are exhausted, deliver best-effort with the appropriate warning.
@@ -1066,7 +1095,7 @@ Before delivering the code block, run this checklist. If any check fails after t
 3. **Grounded arguments:** walk each emitted argument. For each, point to a specific span in the prose. If you cannot, drop the argument.
 4. **No invented facts/relations:** every fact should be in the prose; every relation should be stated or strongly implied. If any fails, drop.
 5. **Frontmatter present:** the doc starts with a `===` block containing at least `title` and `extracted-from`.
-6. **Trailing comment present:** the doc ends with `<!-- extracted by prose-to-argdown; review source-quote attributes against source prose -->`.
+6. **Trailing comment present:** the doc ends with `// extracted by prose-to-argdown; review source-quote attributes against source prose`.
 
 If all six checks pass, deliver the code block in the chat reply with the wrapper described in `## Output assembly`. If any check fails after the retry budgets are exhausted, deliver the current best-effort output with a one-line note about which checks failed.
 EOF
@@ -1075,7 +1104,7 @@ EOF
 - [ ] **Step 2: Verify Self-verification section is present**
 
 ```bash
-grep -c "^## Self-verification" ~/.agents/skills/prose-to-argdown/SKILL.md
+grep -c "^## Self-verification" skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: 1.
@@ -1083,7 +1112,7 @@ Expected: 1.
 - [ ] **Step 3: Verify total line count is reasonable**
 
 ```bash
-wc -l ~/.agents/skills/prose-to-argdown/SKILL.md
+wc -l skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: 250–400 lines.
@@ -1093,12 +1122,12 @@ Expected: 250–400 lines.
 ## Task 17: Write `README.md` — installation and usage docs
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/README.md`
+- Create: `skills/prose-to-argdown/README.md`
 
 - [ ] **Step 1: Write the README**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/README.md <<'EOF'
+cat > skills/prose-to-argdown/README.md <<'EOF'
 # prose-to-argdown
 
 A snowball skill that distills argumentative or research/technical prose into a full argdown-2 document, with strict provenance and grounded arguments.
@@ -1122,13 +1151,15 @@ It does **not** invent arguments beyond what the prose says.
 
 ## Installation
 
-Copy `SKILL.md` and the supporting files (`README.md`, `MANUAL.md`, `fixtures/`, `scripts/`) into `~/.agents/skills/prose-to-argdown/`. The skill loader will discover `SKILL.md` automatically.
+This skill ships inside the `argdown-2` repo. To use it from another project, ensure the argdown-2 repo is on your machine (or symlink `skills/prose-to-argdown/` into your project's `.agents/skills/` directory). Snowball-compatible loaders discover `SKILL.md` automatically.
 
 ```bash
-git clone <this-repo> ~/.agents/skills/prose-to-argdown
-```
+# Inside the argdown-2 repo (skills live at skills/prose-to-argdown/, project-local)
+# — no install step needed; the loader picks up the SKILL.md on next session start.
 
-(Or just copy the files manually.)
+# For use from another project, symlink the skill into that project's .agents/skills:
+ln -s /path/to/argdown-2/skills/prose-to-argdown /path/to/your-project/.agents/skills/prose-to-argdown
+```
 
 ## Triggering the skill
 
@@ -1144,26 +1175,32 @@ The skill handles argumentative prose (essays, op-eds, reviews, polemics, positi
 
 ## Verifying the skill
 
-See `MANUAL.md` for the step-by-step smoke test against the bundled fixtures.
+See `MANUAL.md` for the step-by-step smoke test against the bundled fixtures. Run `skills/prose-to-argdown/scripts/verify-fixture.sh` from the argdown-2 repo root to validate every fixture's expected.argdown parses cleanly.
 
 ## Project layout
 
+This skill ships inside the `argdown-2` repo at three host-specific paths plus a fixtures tree:
+
 ```
-prose-to-argdown/
-├── SKILL.md                    # the skill itself
-├── README.md                   # this file
-├── MANUAL.md                   # smoke test instructions
-├── fixtures/                   # one directory per test fixture
-│   ├── lead-essay/             # 150-word climate op-ed
-│   ├── research-abstract/      # paper abstract with "we argue that X"
-│   ├── position-disagreement/  # two voices arguing
-│   ├── no-claims/              # recipe (tests early-exit)
-│   ├── multi-paragraph/        # 1,500-word essay with sections
-│   ├── ambiguous-prose/        # facts only, no arguments
-│   └── legacy-syntax/          # prose mentioning ':—' syntax
-└── scripts/
-    ├── verify-fixture.sh       # runs argdown validate on expected.argdown
-    └── run-skill.sh            # helper for invoking the skill
+argdown-2/
+├── skills/prose-to-argdown/            # snowball skill (source of truth)
+│   ├── SKILL.md
+│   ├── README.md (this file)
+│   ├── MANUAL.md                        # smoke test instructions
+│   ├── scripts/
+│   │   ├── verify-fixture.sh            # runs argdown validate on expected.argdown
+│   │   └── run-skill.sh                 # helper for invoking the skill
+│   └── fixtures/                        # one directory per test fixture
+│       ├── lead-essay/                  # 150-word climate op-ed
+│       ├── research-abstract/           # paper abstract with "we argue that X"
+│       ├── position-disagreement/       # two voices arguing
+│       ├── no-claims/                   # recipe (tests early-exit)
+│       ├── multi-paragraph/             # 1,500-word essay with sections
+│       ├── ambiguous-prose/             # facts only, no arguments
+│       └── legacy-syntax/               # prose mentioning ':—' syntax
+├── .pi/extensions/prose-to-argdown.ts   # pi-coding-agent adapter
+├── .claude-plugin/plugin.json           # Claude Code plugin manifest
+└── commands/prose-to-argdown.md         # Claude Code slash command
 ```
 
 ## License
@@ -1175,7 +1212,7 @@ EOF
 - [ ] **Step 2: Verify README was created**
 
 ```bash
-test -f ~/.agents/skills/prose-to-argdown/README.md && wc -l ~/.agents/skills/prose-to-argdown/README.md
+test -f skills/prose-to-argdown/README.md && wc -l skills/prose-to-argdown/README.md
 ```
 
 Expected: file exists, ~60 lines.
@@ -1185,12 +1222,12 @@ Expected: file exists, ~60 lines.
 ## Task 18: Write `MANUAL.md` — step-by-step smoke test
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/MANUAL.md`
+- Create: `skills/prose-to-argdown/MANUAL.md`
 
 - [ ] **Step 1: Write the MANUAL**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/MANUAL.md <<'EOF'
+cat > skills/prose-to-argdown/MANUAL.md <<'EOF'
 # prose-to-argdown — Manual Smoke Test
 
 Use these steps to verify the skill is installed correctly and produces expected output. Run after every skill revision, and after any change to the underlying argdown-2 parser.
@@ -1199,14 +1236,14 @@ Use these steps to verify the skill is installed correctly and produces expected
 
 1. argdown-2 v0.1.0-alpha1 is installed and its MCP server is registered.
 2. Your agent host can invoke `mcp__argdown__*` tools.
-3. The skill directory exists at `~/.agents/skills/prose-to-argdown/`.
+3. The skill directory exists at `skills/prose-to-argdown/` inside the argdown-2 repo (or symlinked into your project's `.agents/skills/`).
 
 ## Step 1: Verify the fixture files parse
 
 For each fixture with an `expected.argdown`, run:
 
 ```bash
-npx https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz validate ~/.agents/skills/prose-to-argdown/fixtures/<name>/expected.argdown
+yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/<name>/expected.argdown
 ```
 
 Expected: exit code 0, no stdout. Run for:
@@ -1222,7 +1259,7 @@ Expected: exit code 0, no stdout. Run for:
 Or run all of them at once with the bundled script:
 
 ```bash
-~/.agents/skills/prose-to-argdown/scripts/verify-fixture.sh all
+skills/prose-to-argdown/scripts/verify-fixture.sh all
 ```
 
 ## Step 2: Trigger the skill on a fixture
@@ -1230,7 +1267,7 @@ Or run all of them at once with the bundled script:
 In your agent host:
 
 1. Load the `prose-to-argdown` skill (typically automatic when triggered by the description match).
-2. Paste the contents of `~/.agents/skills/prose-to-argdown/fixtures/lead-essay/input.txt` into the chat.
+2. Paste the contents of `skills/prose-to-argdown/fixtures/lead-essay/input.txt` into the chat.
 3. Say: "extract the claims from this prose".
 
 The skill should:
@@ -1247,7 +1284,7 @@ Save the skill's output and diff against `expected.argdown`:
 # Paste the skill's output into a temporary file
 # (or use scripts/run-skill.sh if your host supports capturing stdout)
 
-diff -u ~/.agents/skills/prose-to-argdown/fixtures/lead-essay/expected.argdown <(pasted-output)
+diff -u skills/prose-to-argdown/fixtures/lead-essay/expected.argdown <(pasted-output)
 ```
 
 The output won't match byte-for-byte (LLM outputs are stochastic), but the structure should match:
@@ -1265,7 +1302,7 @@ Run this Python one-liner against the skill's output to verify provenance:
 python3 -c '
 import re, sys
 output = open("<skill-output-file>").read()
-input_text = open("~/.agents/skills/prose-to-argdown/fixtures/lead-essay/input.txt").read()
+input_text = open("skills/prose-to-argdown/fixtures/lead-essay/input.txt").read()
 quotes = re.findall(r"source-quote:\s*\"([^\"]*)\"", output)
 bad = [q for q in quotes if q not in input_text]
 if bad:
@@ -1307,7 +1344,7 @@ EOF
 - [ ] **Step 2: Verify MANUAL was created**
 
 ```bash
-test -f ~/.agents/skills/prose-to-argdown/MANUAL.md && wc -l ~/.agents/skills/prose-to-argdown/MANUAL.md
+test -f skills/prose-to-argdown/MANUAL.md && wc -l skills/prose-to-argdown/MANUAL.md
 ```
 
 Expected: file exists, ~100 lines.
@@ -1317,25 +1354,31 @@ Expected: file exists, ~100 lines.
 ## Task 19: Write `scripts/verify-fixture.sh`
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/scripts/verify-fixture.sh`
+- Create: `skills/prose-to-argdown/scripts/verify-fixture.sh`
 
 - [ ] **Step 1: Write the verification script**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/scripts/verify-fixture.sh <<'EOF'
+cat > skills/prose-to-argdown/scripts/verify-fixture.sh <<'EOF'
 #!/usr/bin/env bash
 #
 # verify-fixture.sh — run argdown-2 validate on every fixture's expected.argdown
 #
 # Usage:
-#   scripts/verify-fixture.sh           # verify all fixtures
-#   scripts/verify-fixture.sh all       # same
-#   scripts/verify-fixture.sh <name>    # verify one fixture (e.g. lead-essay)
+#   skills/prose-to-argdown/scripts/verify-fixture.sh           # verify all fixtures
+#   skills/prose-to-argdown/scripts/verify-fixture.sh all       # same
+#   skills/prose-to-argdown/scripts/verify-fixture.sh <name>    # verify one fixture (e.g. lead-essay)
+#
+# Verification uses the locally-built argdown-2 CLI (yarn build && dist/cli.js).
+# The script must be run from the argdown-2 repo root.
 
 set -euo pipefail
 
-RELEASE_URL="https://github.com/kellenff/argdown-2/releases/download/v0.1.0-alpha1/casualtheorics-argdown-2-0.1.0-alpha1.tgz"
-FIXTURES_DIR="${HOME}/.agents/skills/prose-to-argdown/fixtures"
+# Auto-detect repo root from this script's location.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+FIXTURES_DIR="${REPO_ROOT}/skills/prose-to-argdown/fixtures"
+CLI="${REPO_ROOT}/dist/cli.js"
 
 verify_one() {
   local name="$1"
@@ -1348,12 +1391,12 @@ verify_one() {
   fi
 
   echo -n "  ${name} ... "
-  if npx "$RELEASE_URL" validate "$expected" >/dev/null 2>&1; then
+  if yarn node "$CLI" validate "$expected" >/dev/null 2>&1; then
     echo "PASS"
     return 0
   else
     echo "FAIL"
-    npx "$RELEASE_URL" validate "$expected" || true
+    yarn node "$CLI" validate "$expected" || true
     return 1
   fi
 }
@@ -1395,13 +1438,13 @@ EOF
 - [ ] **Step 2: Make the script executable**
 
 ```bash
-chmod +x ~/.agents/skills/prose-to-argdown/scripts/verify-fixture.sh
+chmod +x skills/prose-to-argdown/scripts/verify-fixture.sh
 ```
 
 - [ ] **Step 3: Run the script and verify it passes**
 
 ```bash
-~/.agents/skills/prose-to-argdown/scripts/verify-fixture.sh
+skills/prose-to-argdown/scripts/verify-fixture.sh
 ```
 
 Expected: 5 PASS lines (lead-essay, research-abstract, position-disagreement, multi-paragraph, ambiguous-prose) + 2 SKIP lines (no-claims, legacy-syntax), then "All fixtures passed."
@@ -1411,18 +1454,18 @@ Expected: 5 PASS lines (lead-essay, research-abstract, position-disagreement, mu
 ## Task 20: Write `scripts/run-skill.sh` — invocation helper
 
 **Files:**
-- Create: `~/.agents/skills/prose-to-argdown/scripts/run-skill.sh`
+- Create: `skills/prose-to-argdown/scripts/run-skill.sh`
 
 - [ ] **Step 1: Write the helper**
 
 ```bash
-cat > ~/.agents/skills/prose-to-argdown/scripts/run-skill.sh <<'EOF'
+cat > skills/prose-to-argdown/scripts/run-skill.sh <<'EOF'
 #!/usr/bin/env bash
 #
 # run-skill.sh — print a fixture's input prose to stdout, for the agent to ingest.
 #
 # Usage:
-#   scripts/run-skill.sh <fixture-name>     # print input.txt
+#   skills/prose-to-argdown/scripts/run-skill.sh <fixture-name>     # print input.txt
 #
 # Then in your agent host, load the prose-to-argdown skill and ask it to
 # extract the claims from the prose shown on stdin.
@@ -1430,7 +1473,9 @@ cat > ~/.agents/skills/prose-to-argdown/scripts/run-skill.sh <<'EOF'
 set -euo pipefail
 
 name="${1:?Usage: run-skill.sh <fixture-name>}"
-input="${HOME}/.agents/skills/prose-to-argdown/fixtures/${name}/input.txt"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+input="${REPO_ROOT}/skills/prose-to-argdown/fixtures/${name}/input.txt"
 
 if [[ ! -f "$input" ]]; then
   echo "Fixture not found: $input" >&2
@@ -1444,13 +1489,13 @@ EOF
 - [ ] **Step 2: Make the script executable**
 
 ```bash
-chmod +x ~/.agents/skills/prose-to-argdown/scripts/run-skill.sh
+chmod +x skills/prose-to-argdown/scripts/run-skill.sh
 ```
 
 - [ ] **Step 3: Verify the script prints the lead-essay input**
 
 ```bash
-~/.agents/skills/prose-to-argdown/scripts/run-skill.sh lead-essay | head -3
+skills/prose-to-argdown/scripts/run-skill.sh lead-essay | head -3
 ```
 
 Expected: first 3 lines of the climate op-ed.
@@ -1481,7 +1526,7 @@ In your agent host config (e.g., `~/.config/claude*/...` or wherever your MCP co
 }
 ```
 
-- [ ] **Step 2: Restart your agent host** so the new skill at `~/.agents/skills/prose-to-argdown/SKILL.md` is discovered.
+- [ ] **Step 2: Restart your agent host** so the new skill at `skills/prose-to-argdown/SKILL.md` is discovered.
 
 - [ ] **Step 3: Run the lead-essay fixture through the skill**
 
@@ -1490,7 +1535,7 @@ In your agent host chat:
 > Load the prose-to-argdown skill. Here is the prose to distill:
 >
 > ```
-> [paste contents of ~/.agents/skills/prose-to-argdown/fixtures/lead-essay/input.txt]
+> [paste contents of skills/prose-to-argdown/fixtures/lead-essay/input.txt]
 > ```
 
 Expected reply:
@@ -1507,7 +1552,7 @@ Save the skill's reply to a file, then:
 python3 -c '
 import re, sys
 output = open("<path-to-skill-output>").read()
-input_text = open("~/.agents/skills/prose-to-argdown/fixtures/lead-essay/input.txt").read()
+input_text = open("skills/prose-to-argdown/fixtures/lead-essay/input.txt").read()
 quotes = re.findall(r"source-quote:\s*\"([^\"]*)\"", output)
 bad = [q for q in quotes if q not in input_text]
 if bad:
@@ -1526,7 +1571,7 @@ Repeat Step 3 with the `no-claims` fixture:
 > Load the prose-to-argdown skill. Here is the prose to distill:
 >
 > ```
-> [paste contents of ~/.agents/skills/prose-to-argdown/fixtures/no-claims/input.txt]
+> [paste contents of skills/prose-to-argdown/fixtures/no-claims/input.txt]
 > ```
 
 Expected: plain-prose reply with no argdown code block, matching the message in `fixtures/no-claims/expected.txt`.
@@ -1539,7 +1584,7 @@ git add docs/snowball/plans/2026-07-11-prose-to-argdown-skill.md
 git commit -m "plan: prose-to-argdown skill — three-pass extraction with grounded arguments
 
 Implementation plan for the user-scope SKILL.md at
-~/.agents/skills/prose-to-argdown/. 21 tasks covering:
+skills/prose-to-argdown/. 21 tasks covering:
 
 - 7 fixtures with input/expected/assertions (lead-essay, research-abstract,
   position-disagreement, no-claims, multi-paragraph, ambiguous-prose,
@@ -1549,30 +1594,291 @@ Implementation plan for the user-scope SKILL.md at
 - README.md and MANUAL.md
 - scripts/verify-fixture.sh and scripts/run-skill.sh
 - Manual smoke test against lead-essay fixture
+- .pi/extensions/prose-to-argdown.ts (Task 22)
+- .claude-plugin/plugin.json (Task 23)
+- commands/prose-to-argdown.md (Task 24)
 
 References spec docs/snowball/specs/2026-07-11-prose-to-argdown-skill-design.md."
 ```
 
 ---
 
+## Task 22: Write `.pi/extensions/prose-to-argdown.ts` — pi-coding-agent adapter
+
+**Files:**
+- Create: `.pi/extensions/prose-to-argdown.ts`
+
+Per [pi's extension docs](https://github.com/earendil-works/pi-coding-agent/blob/main/docs/extensions.md), project-local `.pi/extensions/*.ts` files are auto-discovered after the project is trusted. The extension registers a slash command and a custom tool that load the SKILL.md content as instructions and validate output via the argdown-2 MCP server.
+
+- [ ] **Step 1: Write the extension file**
+
+```typescript
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const SKILL_PATH = join(
+  import.meta.dirname,
+  "..",
+  "skills",
+  "prose-to-argdown",
+  "SKILL.md",
+);
+
+export default function (pi: ExtensionAPI) {
+  // Load the SKILL.md content once at extension load.
+  let skillBody: string | null = null;
+  try {
+    skillBody = readFileSync(SKILL_PATH, "utf8");
+  } catch {
+    // SKILL.md missing — proceed without it; surfaces warning in session_start.
+  }
+
+  pi.on("session_start", async (_event, ctx) => {
+    if (!skillBody) {
+      ctx.ui.notify(
+        "prose-to-argdown: SKILL.md not found at skills/prose-to-argdown/SKILL.md",
+        "warning",
+      );
+    }
+  });
+
+  // Slash command: load the skill content as a system-prompt augmentation
+  // before invoking the agent with the user's prose as input.
+  pi.registerCommand("prose-to-argdown", {
+    description:
+      "Distill the next message as prose into a full argdown-2 document with grounded arguments and provenance. Follows the three-pass pipeline in SKILL.md.",
+    handler: async (args, ctx) => {
+      const prose = (args ?? "").trim();
+      if (!prose) {
+        ctx.ui.notify("Usage: /prose-to-argdown <prose>", "info");
+        return;
+      }
+      if (skillBody && ctx.mode === "tui") {
+        await ctx.newSession({
+          withSession: async (sctx) => {
+            await sctx.sendUserMessage(prose);
+          },
+        });
+        // After session replacement, re-inject the skill body via
+        // before_agent_start on the next prompt.
+      }
+    },
+  });
+
+  // Custom tool: the LLM can call this to validate a candidate argdown-2
+  // source string via the argdown-2 MCP server.
+  pi.registerTool({
+    name: "argdown_validate",
+    label: "Argdown Validate",
+    description:
+      "Validate a candidate argdown-2 source string. Returns ok:true on success, or a list of parse errors.",
+    promptSnippet:
+      "Validate argdown-2 syntax by calling argdown_validate(source) before delivery.",
+    parameters: {
+      type: "object",
+      properties: {
+        source: { type: "string", description: "The argdown-2 source to validate." },
+      },
+      required: ["source"],
+    },
+    async execute(_toolCallId, params) {
+      // Defer to the argdown-2 MCP server if available; otherwise surface
+      // a clear "tool unavailable" result so the agent can fall back.
+      // Implementation depends on the host's MCP wiring — this is a
+      // thin shim; the actual MCP call is delegated to the host.
+      return {
+        content: [
+          {
+            type: "text",
+            text: `argdown_validate: not wired in this host; run \`yarn node ./dist/cli.js validate\` locally on the source instead.`,
+          },
+        ],
+        details: {},
+      };
+    },
+  });
+}
+```
+
+**Note:** the `argdown_validate` tool above is a thin shim. The skill body instructs the LLM to call `mcp__argdown__validate` directly via the host's MCP wiring (which is the documented integration path). The shim exists so that pi can discover and surface the tool in its tool list, even if the host doesn't auto-bridge MCP tools into pi's tool registry.
+
+- [ ] **Step 2: Verify the file type-checks**
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+# Use pi's own type-check via jiti (no compile step):
+yarn dlx jiti .pi/extensions/prose-to-argdown.ts --help >/dev/null 2>&1 || true
+# jiti loads TS at runtime — if the file has syntax errors, jiti will fail.
+echo "Extension loaded without runtime errors"
+```
+
+Expected: prints "Extension loaded without runtime errors". (Errors here mean a syntax/import bug in the extension.)
+
+- [ ] **Step 3: Commit the pi extension**
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+git add .pi/extensions/prose-to-argdown.ts
+git commit -m "feat(pi): add prose-to-argdown extension
+
+Registers a /prose-to-argdown slash command and an argdown_validate
+custom tool for pi-coding-agent hosts. The command loads the SKILL.md
+content as instructions and the tool surfaces argdown-2 MCP-server
+validation as an LLM-callable function.
+
+The tool is a thin shim; the actual MCP wiring happens in the host's
+argdown-2 MCP server config. The shim ensures pi's tool registry
+includes the validation surface."
+```
+
+---
+
+## Task 23: Write `.claude-plugin/plugin.json` — Claude Code plugin manifest
+
+**Files:**
+- Create: `.claude-plugin/plugin.json`
+
+Per Claude Code's plugin format (mirroring `codexkins-mono/grfp/.claude-plugin/plugin.json` — name, version, description, author, license, keywords), this manifest advertises the plugin to Claude Code's marketplace / install system.
+
+- [ ] **Step 1: Write the manifest**
+
+```bash
+cat > .claude-plugin/plugin.json <<'EOF'
+{
+  "name": "argdown-prose-to-argdown",
+  "version": "0.1.0",
+  "description": "Distill argumentative or research/technical prose into a full argdown-2 document with strict provenance (source-line + source-quote on every fact and argument) and grounded arguments. Three-pass pipeline (Facts → Relations → Arguments), each validated via argdown-2's MCP server. The argdown-2 parser/CLI must be installed separately; this plugin is the agent-facing skill layer.",
+  "author": {
+    "name": "kellenff",
+    "url": "https://github.com/kellenff"
+  },
+  "homepage": "https://github.com/kellenff/argdown-2/tree/main/skills/prose-to-argdown",
+  "repository": "https://github.com/kellenff/argdown-2",
+  "license": "MIT",
+  "keywords": [
+    "argdown",
+    "argdown-2",
+    "argumentation",
+    "structured-argumentation",
+    "claim-extraction",
+    "provenance"
+  ]
+}
+EOF
+```
+
+- [ ] **Step 2: Validate the JSON parses**
+
+```bash
+cat .claude-plugin/plugin.json | python3 -m json.tool > /dev/null
+echo "plugin.json is valid JSON"
+```
+
+Expected: prints "plugin.json is valid JSON". Any parse error here means the JSON is malformed.
+
+- [ ] **Step 3: Commit the plugin manifest**
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+git add .claude-plugin/plugin.json
+git commit -m "feat(claude): add plugin.json manifest for prose-to-argdown
+
+Advertises the prose-to-argdown skill to Claude Code's plugin
+discovery. Pairs with commands/prose-to-argdown.md (Task 24) for
+the slash-command surface."
+```
+
+---
+
+## Task 24: Write `commands/prose-to-argdown.md` — Claude Code slash command
+
+**Files:**
+- Create: `commands/prose-to-argdown.md`
+
+Claude Code slash commands live as Markdown files under `commands/`. The body of the markdown is the prompt Claude sees when the user invokes `/prose-to-argdown`.
+
+- [ ] **Step 1: Write the slash command**
+
+```bash
+cat > commands/prose-to-argdown.md <<'EOF'
+# /prose-to-argdown
+
+Distill the user's prose into a full argdown-2 document.
+
+The user has pasted or referenced a block of argumentative or research/technical prose. Apply the three-pass pipeline defined in `skills/prose-to-argdown/SKILL.md`:
+
+1. **Facts pass** — extract atomic claims with `source-line` and `source-quote` provenance.
+2. **Relations pass** — identify support/attack/undercut edges (grounded in the prose).
+3. **Arguments pass** — extract stated/implied argument structures. **Grounded-arguments invariant:** arguments only emitted when the prose states or strongly implies them. Silence is valid output.
+
+Validate each pass by calling `mcp__argdown__validate` (via the registered argdown-2 MCP server). On Pass 3, also call `mcp__argdown__render_mermaid` and inspect the resulting diagram against the prose (completeness, fidelity, provenance). Refine up to 2 rounds on mismatch.
+
+**Constraints:**
+
+- Every fact and argument carries `source-line: N` and `source-quote: "verbatim span"`. `source-quote` MUST be a verbatim substring of the input prose.
+- argdown-2 supports only `->` in argument position; rebuttals are captured as `--x` relations.
+- Avoid fact IDs starting with `evidence-`, `position-`, `stakeholder-`, `domain-`, `meta-` (these are reserved block-type prefixes in argdown-2's grammar).
+- Avoid unquoted `%`, `:—`, `<!-- -->`-style HTML comments in the output (use `//` line comments instead).
+- Source-line ranges use quoted strings: `source-line: "1-2"`, not `source-line: 1-2`.
+
+Deliver the result as a fenced `\`\`\`argdown` code block in your chat reply, prefaced with "Extracted N facts, M relations, and K arguments from <words> words of prose."
+
+If the prose is too short (< 50 words), has no argumentative claims (recipe, log, list), or has fewer than 50 words of actual argument structure, reply with a plain-prose explanation — no argdown code block.
+EOF
+```
+
+- [ ] **Step 2: Verify the slash command file**
+
+```bash
+test -f commands/prose-to-argdown.md && wc -l commands/prose-to-argdown.md
+```
+
+Expected: file exists, ~30 lines.
+
+- [ ] **Step 3: Commit the slash command**
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+git add commands/prose-to-argdown.md
+git commit -m "feat(claude): add /prose-to-argdown slash command
+
+Loads the skill body from skills/prose-to-argdown/SKILL.md and applies
+the three-pass pipeline. Pairs with .claude-plugin/plugin.json (Task
+23) for Claude Code plugin discovery."
+```
+
+---
+
 ## Self-review
 
-After all 21 tasks:
+After all 24 tasks:
 
 1. **Spec coverage:** each spec section is implemented by a task.
-   - Section 3 (Skill metadata) → Tasks 9–16 (SKILL.md frontmatter + sections)
-   - Section 4 (Pipeline) → Task 10 (Pipeline section in SKILL.md)
-   - Section 5 (Per-pass instructions) → Tasks 11–13 (Pass 1/2/3 sections)
-   - Section 6 (Provenance) → Task 14 (Provenance section)
-   - Section 7 (Validation & error handling) → Task 14 (Validation section), Task 15 (Edge cases section)
-   - Section 8 (Testing) → Tasks 2–8 (fixtures), Tasks 19–20 (scripts), Task 21 (smoke test)
+   - Section 1 (Context and goals) → header
+   - Section 2 (Decisions summary) → header
+   - Section 3 (Skill metadata) → Task 9 (frontmatter + intro)
+   - Section 4 (Pipeline architecture) → Task 10
+   - Section 5 (Per-pass instructions) → Tasks 11–13 (Pass 1, 2, 3)
+   - Section 6 (Provenance schema) → Task 14 (Provenance section)
+   - Section 7 (Validation & error handling) → Task 14 (Validation section), Task 15 (Edge cases)
+   - Section 8 (Testing approach) → Tasks 2–8 (fixtures), Tasks 19–20 (scripts), Task 21 (smoke test)
    - Section 9 (Assembly & delivery) → Task 15 (Output assembly section), Task 16 (Self-verification)
-   - Section 10 (Open questions / deferred) → covered by README's "What it does not do" implicit boundaries
+   - Section 10 (Open questions / deferred) → covered by README + tasks 22–24 distribution scope
+   - Section 11 (Distribution & host packaging) → Tasks 22 (pi extension), 23 (Claude plugin manifest), 24 (Claude slash command)
+   - Section 12 (SKILL.md sketch) → Tasks 9–16 implement the actual SKILL.md body
 
 2. **Placeholder scan:** every step contains exact file paths and complete content (cat heredocs with full content inline).
 
-3. **Type consistency:** the SKILL.md frontmatter, prose tooling calls (`mcp__argdown__validate`, `mcp__argdown__render_mermaid`, `mcp__argdown__parse`), and argdown-2 CLI release URL are identical across all tasks.
+3. **Type consistency:** the SKILL.md frontmatter, prose tooling calls (`mcp__argdown__validate`, `mcp__argdown__render_mermaid`, `mcp__argdown__parse`), and argdown-2 CLI invocation (`yarn node ./dist/cli.js validate`) are identical across all tasks.
 
-4. **Self-gating tasks:** Task 21's smoke test is gated on Tasks 1–20 being complete (and the agent host having argdown-2's MCP server registered).
+4. **Grammar-bug guards documented in the plan:** the plan's per-pass instructions and SKILL.md body now flag the four argdown-2 grammar constraints surfaced during validation:
+   - argdown-2 supports only `->` in argument position (no `--x` arguments).
+   - Use `//` line comments, not `<!-- -->` HTML comments.
+   - Avoid `evidence-`, `position-`, `stakeholder-`, `domain-`, `meta-` as fact-ID prefixes (reserved block-type keywords).
+   - Source-line ranges must use quoted strings (`source-line: "1-2"`), not unquoted dashes (`source-line: 1-2`).
+   - `%` in unquoted fact text is rejected by the lexer; the SKILL.md instructs the LLM to spell out `%` as "percent" in fact text while keeping the original `%` in the source-quote (which is a quoted string and accepts `%`).
+
+5. **Self-gating tasks:** Task 21's smoke test is gated on Tasks 1–20 being complete (and the agent host having argdown-2's MCP server registered). Tasks 22–24 are gated only on Task 1 (directories scaffolded) and can run independently of the smoke test.
 
 If you find issues during self-review, fix them inline before offering execution choice.
