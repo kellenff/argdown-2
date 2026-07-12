@@ -279,3 +279,15 @@ Review the `source-quote` attributes against the source to verify each claim is 
 - MCP tool outputs (parse errors, Mermaid strings)
 - Refinement history
 
+## Self-verification (before delivery)
+
+Before delivering the code block, run this checklist. If any check fails after the retry budgets are exhausted, deliver best-effort with the appropriate warning.
+
+1. **Parseable:** call `mcp__argdown__validate(source)` on the full assembled doc. Must return `ok: true`.
+2. **Provenance integrity:** for every fact and argument, verify `source-quote` is a verbatim substring of the input prose. If any fails, fix the quote by re-extracting from the prose, or drop the fact/argument.
+3. **Grounded arguments:** walk each emitted argument. For each, point to a specific span in the prose. If you cannot, drop the argument.
+4. **No invented facts/relations:** every fact should be in the prose; every relation should be stated or strongly implied. If any fails, drop.
+5. **Frontmatter present:** the doc starts with a `===` block containing at least `title` and `extracted-from`.
+6. **Trailing comment present:** the doc ends with `// extracted by prose-to-argdown; review source-quote attributes against source prose`.
+
+If all six checks pass, deliver the code block in the chat reply with the wrapper described in `## Output assembly`. If any check fails after the retry budgets are exhausted, deliver the current best-effort output with a one-line note about which checks failed.
