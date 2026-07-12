@@ -329,7 +329,9 @@ describe('consolidated CLI — subcommands', () => {
     // Race the child against a 10s wall clock; SIGKILL on timeout.
     const exit = await new Promise<number | null>((resolve) => {
       const timer = setTimeout(() => {
-        try { child.kill('SIGKILL'); } catch {}
+        try {
+          child.kill('SIGKILL');
+        } catch {}
         resolve(null);
       }, 10_000);
       child.on('exit', (code) => {
@@ -347,10 +349,14 @@ describe('consolidated CLI — subcommands', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stderr = '';
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
     const exit = await new Promise<number | null>((resolve) => {
       const timer = setTimeout(() => {
-        try { child.kill('SIGKILL'); } catch {}
+        try {
+          child.kill('SIGKILL');
+        } catch {}
         resolve(null);
       }, 10_000);
       child.on('exit', (code) => {
