@@ -213,7 +213,16 @@ yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/lead-essay/exp
 
 Expected: exit code 0, no output on stdout.
 
-(No git commit — fixture is outside the repo.)
+- [ ] **Step 6: Commit the fixture**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/fixtures/lead-essay
+git rm -f skills/prose-to-argdown/fixtures/lead-essay/.gitkeep 2>/dev/null || true
+git commit -m "test(fixture): add lead-essay fixture (climate op-ed, 13 facts, 9 relations, 1 argument)"
+```
+
+(Removes the Task 1 `.gitkeep` placeholder now that the directory has real content.)
 
 ---
 
@@ -293,7 +302,16 @@ yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/research-abstr
 
 Expected: exit code 0.
 
-(No git commit.)
+- [ ] **Step N+1: Commit the fixture**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/fixtures/research-abstract
+git rm -f skills/prose-to-argdown/fixtures/research-abstract/.gitkeep 2>/dev/null || true
+git commit -m "test(fixture): add research-abstract fixture (paper-abstract prose with 'we argue that X')"
+```
+
+(Removes the Task 1 `.gitkeep` placeholder now that the directory has real content.)
 
 ---
 
@@ -383,7 +401,16 @@ yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/position-disag
 
 Expected: exit code 0.
 
-(No git commit.)
+- [ ] **Step N+1: Commit the fixture**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/fixtures/position-disagreement
+git rm -f skills/prose-to-argdown/fixtures/position-disagreement/.gitkeep 2>/dev/null || true
+git commit -m "test(fixture): add position-disagreement fixture (two voices arguing across paragraphs)"
+```
+
+(Removes the Task 1 `.gitkeep` placeholder now that the directory has real content.)
 
 ---
 
@@ -425,7 +452,16 @@ EOF
 
 The skill does not produce argdown for this case, so there's no parseable output to assert against. The expected.txt IS the assertion.
 
-(No git commit.)
+- [ ] **Step 5: Commit the fixture**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/fixtures/no-claims
+git rm -f skills/prose-to-argdown/fixtures/no-claims/.gitkeep 2>/dev/null || true
+git commit -m "test(fixture): add no-claims early-exit fixture (recipe prose, no argdown output)"
+```
+
+(Removes the Task 1 `.gitkeep` placeholder now that the directory has real content.)
 
 ---
 
@@ -538,7 +574,16 @@ yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/multi-paragrap
 
 Expected: exit code 0.
 
-(No git commit.)
+- [ ] **Step N+1: Commit the fixture**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/fixtures/multi-paragraph
+git rm -f skills/prose-to-argdown/fixtures/multi-paragraph/.gitkeep 2>/dev/null || true
+git commit -m "test(fixture): add multi-paragraph fixture (1,500-word climate essay with sections)"
+```
+
+(Removes the Task 1 `.gitkeep` placeholder now that the directory has real content.)
 
 ---
 
@@ -602,7 +647,16 @@ yarn node ./dist/cli.js validate skills/prose-to-argdown/fixtures/ambiguous-pros
 
 Expected: exit code 0.
 
-(No git commit.)
+- [ ] **Step N+1: Commit the fixture**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/fixtures/ambiguous-prose
+git rm -f skills/prose-to-argdown/fixtures/ambiguous-prose/.gitkeep 2>/dev/null || true
+git commit -m "test(fixture): add ambiguous-prose fixture (facts only, no arguments)"
+```
+
+(Removes the Task 1 `.gitkeep` placeholder now that the directory has real content.)
 
 ---
 
@@ -634,7 +688,16 @@ No argdown-2 document was produced.
 EOF
 ```
 
-(No git commit.)
+- [ ] **Step 4: Commit the fixture**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/fixtures/legacy-syntax
+git rm -f skills/prose-to-argdown/fixtures/legacy-syntax/.gitkeep 2>/dev/null || true
+git commit -m "test(fixture): add legacy-syntax parser-error fixture (prose mentions ':—' syntax)"
+```
+
+(Removes the Task 1 `.gitkeep` placeholder now that the directory has real content.)
 
 ---
 
@@ -693,7 +756,16 @@ test -f skills/prose-to-argdown/SKILL.md && head -3 skills/prose-to-argdown/SKIL
 
 Expected: file exists, first line is `---`.
 
-(No git commit.)
+- [ ] **Step 4: Commit the SKILL.md frontmatter**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/SKILL.md
+git rm -f skills/prose-to-argdown/.gitkeep 2>/dev/null || true
+git commit -m "feat(skill): add prose-to-argdown SKILL.md frontmatter and intro"
+```
+
+(Removes the Task 1 `.gitkeep` placeholder now that the directory has real content.)
 
 ---
 
@@ -750,6 +822,14 @@ grep -c "^## Pipeline" skills/prose-to-argdown/SKILL.md
 
 Expected: 1.
 
+- [ ] **Step 2: Commit the section**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/SKILL.md
+git commit -m "feat(skill): add Pipeline section to SKILL.md"
+```
+
 ---
 
 ## Task 11: Write `SKILL.md` — Pass 1 (Facts)
@@ -800,6 +880,14 @@ grep -c "^## Pass 1: Facts" skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: 1.
+
+- [ ] **Step 2: Commit the section**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/SKILL.md
+git commit -m "feat(skill): add Pass 1 (Facts) section to SKILL.md"
+```
 
 ---
 
@@ -862,6 +950,14 @@ grep -c "^## Pass 2: Relations" skills/prose-to-argdown/SKILL.md
 
 Expected: 1.
 
+- [ ] **Step 2: Commit the section**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/SKILL.md
+git commit -m "feat(skill): add Pass 2 (Relations) section to SKILL.md"
+```
+
 ---
 
 ## Task 13: Write `SKILL.md` — Pass 3 (Arguments + structured blocks)
@@ -923,6 +1019,14 @@ grep -c "^## Pass 3: Arguments" skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: 1.
+
+- [ ] **Step 2: Commit the section**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/SKILL.md
+git commit -m "feat(skill): add Pass 3 (Arguments) section to SKILL.md"
+```
 
 ---
 
@@ -1006,6 +1110,14 @@ grep -cE "^## Provenance schema|^## Validation loop|^## Argdown-2 grammar constr
 
 Expected: 3.
 
+- [ ] **Step 3: Commit the section**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/SKILL.md
+git commit -m "feat(skill): add Provenance + Validation + Grammar constraints sections to SKILL.md"
+```
+
 ---
 
 ## Task 15: Write `SKILL.md` — Edge cases + Output sections
@@ -1075,6 +1187,14 @@ grep -cE "^## Edge cases|^## Output assembly" skills/prose-to-argdown/SKILL.md
 
 Expected: 2.
 
+- [ ] **Step 2: Commit the section**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/SKILL.md
+git commit -m "feat(skill): add Edge cases + Output assembly sections to SKILL.md"
+```
+
 ---
 
 ## Task 16: Write `SKILL.md` — Self-verification checklist
@@ -1108,6 +1228,14 @@ grep -c "^## Self-verification" skills/prose-to-argdown/SKILL.md
 ```
 
 Expected: 1.
+
+- [ ] **Step 2: Commit the section**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/SKILL.md
+git commit -m "feat(skill): add Self-verification checklist to SKILL.md"
+```
 
 - [ ] **Step 3: Verify total line count is reasonable**
 
@@ -1216,6 +1344,14 @@ test -f skills/prose-to-argdown/README.md && wc -l skills/prose-to-argdown/READM
 ```
 
 Expected: file exists, ~60 lines.
+
+- [ ] **Step 3: Commit the README**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/README.md
+git commit -m "docs: add prose-to-argdown README (installation and usage)"
+```
 
 ---
 
@@ -1349,6 +1485,14 @@ test -f skills/prose-to-argdown/MANUAL.md && wc -l skills/prose-to-argdown/MANUA
 
 Expected: file exists, ~100 lines.
 
+- [ ] **Step 3: Commit the MANUAL**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/MANUAL.md
+git commit -m "docs: add prose-to-argdown MANUAL (step-by-step smoke test instructions)"
+```
+
 ---
 
 ## Task 19: Write `scripts/verify-fixture.sh`
@@ -1449,6 +1593,15 @@ skills/prose-to-argdown/scripts/verify-fixture.sh
 
 Expected: 5 PASS lines (lead-essay, research-abstract, position-disagreement, multi-paragraph, ambiguous-prose) + 2 SKIP lines (no-claims, legacy-syntax), then "All fixtures passed."
 
+- [ ] **Step 4: Commit the script**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/scripts/verify-fixture.sh
+git rm -f skills/prose-to-argdown/scripts/.gitkeep 2>/dev/null || true
+git commit -m "feat(scripts): add verify-fixture.sh (runs argdown validate on every fixture)"
+```
+
 ---
 
 ## Task 20: Write `scripts/run-skill.sh` — invocation helper
@@ -1499,6 +1652,14 @@ skills/prose-to-argdown/scripts/run-skill.sh lead-essay | head -3
 ```
 
 Expected: first 3 lines of the climate op-ed.
+
+- [ ] **Step 4: Commit the script**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git add skills/prose-to-argdown/scripts/run-skill.sh
+git commit -m "feat(scripts): add run-skill.sh (prints fixture input for the agent to ingest)"
+```
 
 ---
 
@@ -1576,29 +1737,26 @@ Repeat Step 3 with the `no-claims` fixture:
 
 Expected: plain-prose reply with no argdown code block, matching the message in `fixtures/no-claims/expected.txt`.
 
-- [ ] **Step 6: Commit the plan (only git-tracked artifact)**
+- [ ] **Step 6: Verify all 23 prior tasks are committed**
 
 ```bash
 cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
-git add docs/snowball/plans/2026-07-11-prose-to-argdown-skill.md
-git commit -m "plan: prose-to-argdown skill — three-pass extraction with grounded arguments
+git status
+git log --oneline | head -30
+```
 
-Implementation plan for the user-scope SKILL.md at
-skills/prose-to-argdown/. 21 tasks covering:
+Expected: `git status` shows a clean working tree; `git log` shows ≥ 23 commits on top of the plan commit (`3911fd6`), one per task.
 
-- 7 fixtures with input/expected/assertions (lead-essay, research-abstract,
-  position-disagreement, no-claims, multi-paragraph, ambiguous-prose,
-  legacy-syntax)
-- SKILL.md in 8 sections (frontmatter, intro, inputs, pipeline, 3 passes,
-  provenance, validation, edge cases, output, self-verification)
-- README.md and MANUAL.md
-- scripts/verify-fixture.sh and scripts/run-skill.sh
-- Manual smoke test against lead-essay fixture
-- .pi/extensions/prose-to-argdown.ts (Task 22)
-- .claude-plugin/plugin.json (Task 23)
-- commands/prose-to-argdown.md (Task 24)
+If anything is uncommitted, commit it now with an appropriate message — each per-task commit step in this plan may have failed if the implementer skipped it.
 
-References spec docs/snowball/specs/2026-07-11-prose-to-argdown-skill-design.md."
+- [ ] **Step 7: Final summary commit (if any drift was caught in Step 6)**
+
+```bash
+cd /Users/kellen/.paseo/worktrees/0qttwpw6/homeless-flamingo
+git status  # should be clean — only commit if Step 6 surfaced drift
+```
+
+No commit message is prescribed for this step; if drift exists, the implementer chooses an appropriate chore-style message. If `git status` was clean in Step 6, this step is a no-op.
 ```
 
 ---
