@@ -210,7 +210,7 @@ Every fact and argument carries two attributes:
 
 | Fixture | What it stresses |
 | --- | --- |
-| `lead-essay.argdown` | A 300-word op-ed on climate policy. Tests complete pipeline; expects ≥ 6 facts, ≥ 4 relations, ≥ 2 arguments. |
+| `lead-essay.argdown` | A 300-word op-ed on climate policy. Tests complete pipeline; expects ≥ 6 facts, ≥ 4 relations, ≥ 1 argument (rebuttal pairs collapsed into --x relations; see fixture notes). |
 | `research-abstract.argdown` | A 150-word paper abstract with explicit "we argue that X because Y" structure. Tests argument extraction. |
 | `position-disagreement.argdown` | Two voices arguing against each other. Tests `--x` relations and multi-source `:::position` blocks. |
 | `no-claims.txt` | A recipe. Tests the "no claims detected" early-exit. |

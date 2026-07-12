@@ -9,5 +9,6 @@
   "provenance_required": true,
   "every_quote_must_be_substring": true,
   "grounded_arguments_only": true,
-  "notes": "One main `->` argument for the comprehensive-approach conclusion; rebuttal semantics captured via `--x` relations (argdown-2 supports only `->` in argument position, so rebuttal arguments are not emitted). The fixture still exercises the full three-pass pipeline even with one argument."
+  "source_line_matches_quote": true,
+  "notes": "One main `->` argument for the comprehensive-approach conclusion; rebuttal semantics captured via `--x` relations (argdown-2 supports only `->` in argument position, so rebuttal arguments are not emitted). The fixture still exercises the full three-pass pipeline even with one argument. `source_line_matches_quote` is enabled so every `source-quote` is verified to be a substring of the prose line it references."
 }

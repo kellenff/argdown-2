@@ -1,7 +1,7 @@
-=== title: "The case for climate action" source: "(test fixture)" extracted-from: lines 1-15 validated: 2026-07-11 ===
+=== title: "The case for climate action" source: "(test fixture)" extracted-from: lines 1-14 validated: 2026-07-11 ===
 
-[#co2-primary-cause] Human CO2 emissions are the primary driver of current warming trends. { source-line: 1, source-quote: "According to the IPCC's Sixth Assessment Report, human CO2 emissions are the primary driver of current warming trends" }
-[#impacts-observable] Current warming trends have observable impacts on ecosystems worldwide. { source-line: "1-2", source-quote: "with observable impacts on ecosystems worldwide" }
+[#co2-primary-cause] Human CO2 emissions are the primary driver of current warming trends. { source-line: 2, source-quote: "According to the IPCC's Sixth Assessment Report, human CO2 emissions are the primary driver of current warming trends" }
+[#impacts-observable] Current warming trends have observable impacts on ecosystems worldwide. { source-line: 2, source-quote: "with observable impacts on ecosystems worldwide" }
 [#impacts-will-escalate] Without coordinated international response, these impacts will continue to escalate. { source-line: 3, source-quote: "Without coordinated international response, these impacts will continue to escalate" }
 [#skeptics-economic-harm] Some skeptics argue that climate action would harm economic growth. { source-line: 5, source-quote: "Some skeptics argue that climate action would harm economic growth" }
 [#stern-review-costs] The Stern Review demonstrated that the costs of inaction far exceed the costs of transition. { source-line: 6, source-quote: "the Stern Review demonstrated decades ago that the costs of inaction far exceed the costs of transition" }
@@ -15,7 +15,8 @@
 [#urgency-cannot-be-denied] The urgency cannot be denied. { source-line: 14, source-quote: "the urgency cannot be denied" }
 
 [#co2-primary-cause] --> [#comprehensive-approach] { source-line: 1, source-quote: "The climate crisis demands urgent action" }
-[#impacts-observable] --> [#comprehensive-approach] { source-line: "1-2", source-quote: "with observable impacts on ecosystems worldwide" }
+[#impacts-observable] --> [#comprehensive-approach] { source-line: 2, source-quote: "with observable impacts on ecosystems worldwide" }
+[#impacts-will-escalate] --> [#comprehensive-approach] { source-line: 3, source-quote: "Without coordinated international response, these impacts will continue to escalate" }
 [#stern-review-costs] --x [#skeptics-economic-harm] { source-line: 6, source-quote: "However, the Stern Review demonstrated decades ago that the costs of inaction far exceed the costs of transition" }
 [#renewables-more-jobs] --x [#skeptics-economic-harm] { source-line: 7, source-quote: "Renewable energy investments have already created more jobs than the fossil fuel sector in many economies" }
 [#market-signals-corporate] --x [#individual-futile-claim] { source-line: 10, source-quote: "consumer choices drive market signals, and market signals drive corporate behavior" }
@@ -24,6 +25,6 @@
 [#economics-support] --> [#comprehensive-approach] { source-line: 14, source-quote: "the economics support it" }
 [#urgency-cannot-be-denied] --> [#comprehensive-approach] { source-line: 14, source-quote: "the urgency cannot be denied" }
 
-([#comprehensive-approach]) -> [#co2-primary-cause], [#impacts-observable], [#stern-review-costs], [#renewables-more-jobs], [#market-signals-corporate], [#ev-manufacturer-response], [#facts-are-clear], [#economics-support], [#urgency-cannot-be-denied]. { source-line: 13, source-quote: "Therefore, a comprehensive approach combining policy reform, technological investment, and behavioral change offers the best path forward" }
+([#comprehensive-approach]) -> [#co2-primary-cause], [#impacts-observable], [#impacts-will-escalate], [#stern-review-costs], [#renewables-more-jobs], [#market-signals-corporate], [#ev-manufacturer-response], [#facts-are-clear], [#economics-support], [#urgency-cannot-be-denied]. { source-line: 13, source-quote: "Therefore, a comprehensive approach combining policy reform, technological investment, and behavioral change offers the best path forward" }
 
 // extracted by prose-to-argdown; review source-quote attributes against source prose. Rebuttal arguments omitted: argdown-2 supports only `->` in argument position, so the "[#stern-review-costs] --x [#skeptics-economic-harm]" and "[#market-signals-corporate] --x [#individual-futile-claim]" relations above capture the rebuttal semantics without needing separate argument nodes.
