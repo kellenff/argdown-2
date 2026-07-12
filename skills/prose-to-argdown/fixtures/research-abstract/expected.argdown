@@ -1,0 +1,16 @@
+=== title: "Attention as soft database lookup" source: "(test fixture)" extracted-from: lines 1-3 validated: 2026-07-11 ===
+
+[#transformer-attention-lookup] Transformer attention heads can be interpreted as soft database lookups. { source-line: 1, source-quote: "transformer attention heads can be interpreted as soft database lookups" }
+[#attention-knn-approximation] Attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation. { source-line: 1, source-quote: "attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation" }
+[#experiments-benchmarks] Experiments on three benchmarks demonstrate that 64-head attention recovers ninety-one percent of exact-match queries on synthetic lookup tasks. { source-line: 1, source-quote: "Our experiments on three benchmarks demonstrate that 64-head attention recovers ninety-one percent of exact-match queries on synthetic lookup tasks" }
+[#attention-as-index] Future architectures should treat attention as a learned index rather than a sequence mixer. { source-line: 1, source-quote: "future architectures should treat attention as a learned index rather than a sequence mixer" }
+[#memory-bound-reduction] Treating attention as an index produces consequent reductions in parameter count for memory-bound workloads. { source-line: 1, source-quote: "with consequent reductions in parameter count for memory-bound workloads" }
+
+[#experiments-benchmarks] --> [#transformer-attention-lookup] { source-line: 1, source-quote: "Our experiments on three benchmarks demonstrate that 64-head attention recovers ninety-one percent of exact-match queries on synthetic lookup tasks" }
+[#attention-knn-approximation] --> [#transformer-attention-lookup] { source-line: 1, source-quote: "attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation" }
+[#attention-as-index] --> [#memory-bound-reduction] { source-line: 1, source-quote: "future architectures should treat attention as a learned index rather than a sequence mixer, with consequent reductions in parameter count for memory-bound workloads" }
+
+([#transformer-attention-lookup]) -> [#attention-knn-approximation], [#experiments-benchmarks]. { source-line: 1, source-quote: "We argue that transformer attention heads can be interpreted as soft database lookups. Specifically, attention patterns over a key-value store approximate nearest-neighbor retrieval in expectation. Our experiments on three benchmarks demonstrate that 64-head attention recovers ninety-one percent of exact-match queries on synthetic lookup tasks" }
+([#memory-bound-reduction]) -> [#attention-as-index]. { source-line: 1, source-quote: "future architectures should treat attention as a learned index rather than a sequence mixer, with consequent reductions in parameter count for memory-bound workloads" }
+
+// extracted by prose-to-argdown; review source-quote attributes against source prose
