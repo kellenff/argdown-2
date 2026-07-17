@@ -37,11 +37,28 @@ describe('groundedLabels', () => {
   });
 
   it('labels mutual and odd cycles UNDEC', () => {
-    expect(labelsOf(['a', 'b'], [['a', 'b'], ['b', 'a']])).toEqual({
+    expect(
+      labelsOf(
+        ['a', 'b'],
+        [
+          ['a', 'b'],
+          ['b', 'a'],
+        ],
+      ),
+    ).toEqual({
       a: 'undec',
       b: 'undec',
     });
-    expect(labelsOf(['a', 'b', 'c'], [['a', 'b'], ['b', 'c'], ['c', 'a']])).toEqual({
+    expect(
+      labelsOf(
+        ['a', 'b', 'c'],
+        [
+          ['a', 'b'],
+          ['b', 'c'],
+          ['c', 'a'],
+        ],
+      ),
+    ).toEqual({
       a: 'undec',
       b: 'undec',
       c: 'undec',
@@ -63,7 +80,15 @@ describe('groundedLabels', () => {
   });
 
   it('labels a node IN only after all of its attackers become OUT', () => {
-    expect(labelsOf(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']])).toEqual({
+    expect(
+      labelsOf(
+        ['a', 'b', 'c'],
+        [
+          ['a', 'b'],
+          ['b', 'c'],
+        ],
+      ),
+    ).toEqual({
       a: 'in',
       b: 'out',
       c: 'in',

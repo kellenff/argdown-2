@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type {
-  EntityId,
-  GroundedDocument,
-  InferenceId,
-  TheoryElement,
-} from './model.js';
+import type { EntityId, GroundedDocument, InferenceId, TheoryElement } from './model.js';
 import { GROUNDED_SOLVER_TAG } from './model.js';
 import { reduceToDung } from './reduce-dung.js';
 
@@ -25,26 +20,22 @@ function document(...elements: readonly TheoryElement[]): GroundedDocument {
 describe('reduceToDung', () => {
   it('includes statements and arguments but not inference ids as nodes', () => {
     const result = reduceToDung(
-      document(
-        statement('p'),
-        statement('c'),
-        {
-          extra: [],
-          id: id('a'),
-          inferences: [
-            {
-              conclusion: id('c'),
-              extra: [],
-              id: inferenceId('i'),
-              kind: 'inference',
-              premises: [id('p')],
-              rules: [],
-            },
-          ],
-          kind: 'argument',
-          tags: [],
-        },
-      ),
+      document(statement('p'), statement('c'), {
+        extra: [],
+        id: id('a'),
+        inferences: [
+          {
+            conclusion: id('c'),
+            extra: [],
+            id: inferenceId('i'),
+            kind: 'inference',
+            premises: [id('p')],
+            rules: [],
+          },
+        ],
+        kind: 'argument',
+        tags: [],
+      }),
     );
     expect([...result.framework.nodes]).toEqual([id('p'), id('c'), id('a')]);
   });

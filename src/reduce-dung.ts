@@ -1,10 +1,4 @@
-import type {
-  Diagnostic,
-  DungFramework,
-  EntityId,
-  GroundedDocument,
-  Relation,
-} from './model.js';
+import type { Diagnostic, DungFramework, EntityId, GroundedDocument, Relation } from './model.js';
 
 export type ReduceResult = {
   framework: DungFramework;
