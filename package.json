@@ -20,8 +20,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "format": "oxfmt src",
-    "format:check": "oxfmt --check src",
+    "format": "oxfmt --threads=1 src",
+    "format:check": "oxfmt --check --threads=1 src",
     "lint": "oxlint src",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",

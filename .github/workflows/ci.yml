@@ -226,9 +226,12 @@ jobs:
           echo
           echo "Required files check:"
           REQUIRED=("package/package.json" "package/README.md" "package/dist/index.js" "package/dist/index.d.ts")
+          # List once: with pipefail, `tar | grep -qx` false-negatives when grep
+          # exits early and tar receives SIGPIPE.
+          TAR_LIST=$(tar -tzf "$TARBALL")
           MISSING=0
           for f in "${REQUIRED[@]}"; do
-            if tar -tzf "$TARBALL" | grep -qx "$f"; then
+            if echo "$TAR_LIST" | grep -qx "$f"; then
               echo "  ✓ $f"
             else
               echo "  ✗ $f MISSING"
