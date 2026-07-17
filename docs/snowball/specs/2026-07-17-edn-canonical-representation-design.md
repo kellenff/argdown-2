@@ -52,8 +52,8 @@ Original Argdown 1.x examples, especially [A first example](https://argdown.org/
 | Theory vocabulary | Argdown 1.x-shaped statements, arguments, inferences, and relations |
 | Tag namespace | Reverse-DNS-style `casualtheorics.argdown2.*` |
 | Identity | Unique EDN keyword IDs |
-| Reader | `edn-data`, using its default full-fidelity representation |
-| Structural validation | Zod over the raw `edn-data` value |
+| Reader | Patched `edn-parser-js` 2.0.2, using `ednParseMulti()` |
+| Structural validation | Zod over the raw `edn-parser-js` value |
 | Semantic validation | Explicit identity and reference-resolution pass |
 | Internal solver input | Reduced Dung framework |
 | Grounded behavior | Attack edges retained; contradiction becomes mutual attack; support and undercut omitted with warnings |
@@ -170,41 +170,39 @@ IDs are unique across statements, arguments, and inferences so every reference i
 - Additive fields may be introduced compatibly.
 - A breaking change to a tag's meaning requires a new namespaced tag; an existing tag is never silently reinterpreted.
 
-## 7. `edn-data` reader contract
+## 7. `edn-parser-js` reader contract
 
-This contract was checked against `edn-data` 1.2.1. Implementation installs the latest release and reruns the reader characterization suite before relying on these behaviors.
+The target reader is `edn-parser-js` 2.0.2. Its generated Peggy parser strictly rejects the malformed EDN cases listed below and preserves tags, keywords, maps, sets, and vectors as typed data.
 
-The reader adapter uses `edn-data`'s default, lossless, JSON-compatible representation:
+The adapter uses the library's lossless representation:
 
-| EDN value | `edn-data` representation |
+| EDN value | `edn-parser-js` representation |
 |---|---|
-| Tagged value | `{ tag: string, val: EDNVal }` |
-| Map | `{ map: [EDNVal, EDNVal][] }` |
-| Keyword | `{ key: string }` |
-| Set | `{ set: EDNVal[] }` |
-| Vector | `EDNVal[]` |
+| Tagged value | `{ tag: { symbol: string; ns?: string }, value: EDN }` |
+| Map | `{ map: [EDN, EDN][] }` |
+| Keyword | `{ keyword: string; ns?: string }` |
+| Set | `{ set: EDN[] }` |
+| Vector | `EDN[]` |
 
-The adapter does not use `mapAs: 'object'` or `keywordAs: 'string'`. Those conveniences can coerce rich keys or erase distinctions needed for arbitrary EDN metadata.
-
-The adapter does not register `tagHandlers`. Unknown tagged values are naturally retained as `{ tag, val }`, allowing one validation path to recognize supported tags and reject unsupported tags.
-
-`parseEDNString()` returns the first top-level form. To enforce the one-root contract without writing a lexer, the adapter encloses the source in a vector, reads that vector, and requires exactly one member:
+`ednParseMulti()` reads all top-level forms. The adapter requires exactly one:
 
 ```ts
-const forms = parseEDNString(`[${source}\n]`);
+const forms = ednParseMulti(source);
 
-if (!Array.isArray(forms) || forms.length !== 1) {
+if (forms.length !== 1) {
   return readFailure('Expected exactly one top-level EDN value');
 }
 ```
 
-If output generation is added later, it should use `toEDNString()` with the same full-fidelity representation. A custom EDN stringifier is out of scope.
+Output generation remains out of scope.
 
 ### 7.1 Reader limitations
 
-`edn-data` does not expose source positions or structured parser errors, and its parser is permissive around some malformed input. The package therefore cannot promise line or column diagnostics.
+The published ESM entry in `edn-parser-js` 2.0.2 imports `./parser` without the `.js` extension required by Node ESM. The dependency is therefore pinned to 2.0.2 with a checked-in Yarn patch that changes only that import to `./parser.js`. Application code imports the documented `ednParseMulti()` function from the package root.
 
-Before depending on the reader, characterization tests must cover at least:
+The generated parser provides syntax-error locations at runtime, but the package declarations expose them only as `Error`. This package promises the reader's error message, not stable line or column fields.
+
+Characterization tests lock the following strict failures:
 
 - unbalanced collections;
 - unterminated strings;
@@ -214,7 +212,7 @@ Before depending on the reader, characterization tests must cover at least:
 - invalid numeric tokens;
 - unexpected trailing delimiters.
 
-If the reader silently accepts a malformed case that cannot be identified from the returned value, the implementation must reopen EDN reader selection. It must not compensate by creating a custom lexer, because doing so would undermine the goal of relying on a standard format and reader.
+The reader decision was made after `edn-data` 1.2.1 silently accepted an odd map and discarded its trailing key, which Zod could not recover. If a future `edn-parser-js` upgrade weakens these strict guarantees, the implementation must retain 2.0.2 or reopen reader selection rather than adding a custom lexer.
 
 ## 8. Validation and transformation
 
@@ -222,7 +220,7 @@ Validation has two layers after EDN reading.
 
 ### 8.1 Zod wire validation
 
-Zod validates the raw `edn-data` representation and transforms it into ergonomic domain data:
+Zod validates the raw `edn-parser-js` representation and transforms it into ergonomic domain data:
 
 - the exact solver root tag;
 - one vector as the root value;
@@ -235,7 +233,7 @@ Zod validates the raw `edn-data` representation and transforms it into ergonomic
 
 Schemas preserve unrecognized fields on recognized tagged maps. They do not assign semantic meaning to those fields.
 
-Zod is not a lexer. It sees only the value returned by `edn-data` and cannot detect source text that the reader has already discarded or normalized.
+Zod is not a lexer. It sees only the value returned by `edn-parser-js`; lexical and grammatical correctness remains the reader's responsibility.
 
 ### 8.2 Semantic validation
 
@@ -281,7 +279,7 @@ The exact internal TypeScript spelling may be refined during implementation, but
 - solver and element kinds are discriminated;
 - identity is independent of vector order;
 - unknown recognized-map fields and metadata remain lossless EDN values;
-- solver code does not depend on the raw `edn-data` representation.
+- solver code does not depend on the raw `edn-parser-js` representation.
 
 ## 10. Dung reduction and grounded solving
 
@@ -318,7 +316,7 @@ function solve(document: GroundedDocument): SolveResult;
 
 `load()` reads EDN and delegates to `validate()`.
 
-`validate()` accepts the raw full-fidelity value produced by `edn-data`, applies Zod decoding, resolves references, and returns a validated document.
+`validate()` accepts the raw full-fidelity value produced by `edn-parser-js`, applies Zod decoding, resolves references, and returns a validated document.
 
 `solve()` dispatches from the document's root solver tag. Callers do not supply a separate semantics option.
 
@@ -350,7 +348,7 @@ The implementation should preserve the repository's responsibility-based module 
 
 ```text
 src/
-  edn.ts                 # edn-data adapter; one-root enforcement
+  edn.ts                 # edn-parser-js adapter; one-root enforcement
   schema.ts              # Zod wire schemas and transformations
   model.ts               # domain and result types
   validate.ts            # cross-element identity/reference validation
@@ -386,7 +384,7 @@ Checked-in EDN fixtures should cite their corresponding official example and kee
 
 ## 15. Testing strategy
 
-1. **Reader characterization:** establish precisely which malformed forms `edn-data` accepts or rejects.
+1. **Reader characterization:** lock strict `edn-parser-js` behavior for malformed forms and multiple roots.
 2. **Wire-schema tests:** one valid and invalid case for every tag, field, and raw EDN representation.
 3. **Semantic-validation tests:** duplicate IDs, missing references, endpoint-kind errors, and multi-error collection.
 4. **Reduction tests:** nodes, directed attacks, mutual contradiction attacks, and warnings for omitted support/undercut.
@@ -403,7 +401,7 @@ This is a full replacement:
 
 - delete the custom lexer, parser, parser helpers, visitors, source AST, stringifier, CLI, Mermaid renderer, and `.argdown` fixtures;
 - remove Chevrotain, binary packaging, parser benchmarks, obsolete baselines, and their configuration;
-- add the latest `edn-data` and update the existing Zod dependency through the package manager;
+- add patched `edn-parser-js` 2.0.2 and update the existing Zod dependency through the package manager;
 - adapt only the generic grounded-labeling kernel to the new internal framework;
 - delete old AST-coupled advanced solver modules and tests from the active source tree; git history remains the reference when those mathematical implementations are ported later;
 - rewrite package exports and documentation around the EDN library API;
