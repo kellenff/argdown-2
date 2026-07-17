@@ -1,7 +1,7 @@
 # EDN Canonical Representation Design
 
 **Date:** 2026-07-17
-**Status:** Approved in discussion; pending review of this written specification
+**Status:** Approved
 **Scope:** Replace the custom Argdown Extended syntax and source-oriented AST with an EDN-only, solver-rooted data model. The first cycle supports Argdown 1.x-shaped argument maps evaluated with grounded Dung semantics through a library API.
 
 ## 1. Context
@@ -27,7 +27,7 @@ Original Argdown 1.x examples, especially [A first example](https://argdown.org/
 - Give every semantic form a collision-resistant, namespaced EDN tag.
 - Represent the entities and premise-conclusion structures used by the canonical Argdown 1.x examples.
 - Separate EDN reading, structural decoding, reference validation, mathematical reduction, and solving.
-- Reuse the existing grounded-labeling mathematics behind a new internal Dung framework.
+- Implement formally correct grounded Dung labeling behind a small internal framework.
 - Produce typed, validated domain data before any solver runs.
 - Make future solver and theory families additive through new namespaced tags.
 
@@ -302,7 +302,9 @@ Reduction rules:
 6. Inferences do not become Dung nodes.
 7. No relation is derived implicitly from an argument's premises or conclusion.
 
-The existing grounded fixpoint mathematics is retained behind this framework. Its implementation no longer imports the old source AST.
+The current `label()` implementation is not retained: it labels a target OUT only when all attackers are IN and labels it IN when any attacker is OUT. Caminada's complete-labeling conditions require a target to be OUT when any attacker is IN and IN only when all attackers are OUT. The current special case that labels a self-attacking node OUT is likewise replaced; a lone self-attacker is UNDEC under grounded semantics.
+
+The new fixpoint implements those formal conditions over the internal framework and does not import the old source AST.
 
 This reduction intentionally matches the current solver's pure-attack boundary. The cycle does not invent a bipolar interpretation of support or an ASPIC+ interpretation of inference and undercut.
 
@@ -402,7 +404,7 @@ This is a full replacement:
 - delete the custom lexer, parser, parser helpers, visitors, source AST, stringifier, CLI, Mermaid renderer, and `.argdown` fixtures;
 - remove Chevrotain, binary packaging, parser benchmarks, obsolete baselines, and their configuration;
 - add patched `edn-parser-js` 2.0.2 and update the existing Zod dependency through the package manager;
-- adapt only the generic grounded-labeling kernel to the new internal framework;
+- replace the current labeling kernel with a formally correct grounded Dung fixpoint over the new internal framework;
 - delete old AST-coupled advanced solver modules and tests from the active source tree; git history remains the reference when those mathematical implementations are ported later;
 - rewrite package exports and documentation around the EDN library API;
 - retain historical design and plan documents as project history, while clearly marking the old grammar documentation obsolete or removing it from user-facing navigation.
