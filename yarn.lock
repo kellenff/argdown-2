@@ -2046,8 +2046,8 @@ __metadata:
 
 "edn-parser-js@patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch::locator=%40casualtheorics%2Fargdown-2%40workspace%3A.":
   version: 2.0.2
-  resolution: "edn-parser-js@patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch::version=2.0.2&hash=627822&locator=%40casualtheorics%2Fargdown-2%40workspace%3A."
-  checksum: 10c0/a1907249739b947fff6143ce2dd0f8d012d1c0e23c80c4df915fee916fa60ccb0cf10fe7e9a44d0c0ba8781cce82a268173e9391ff748f4a9df9b8bdf7f9459e
+  resolution: "edn-parser-js@patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch::version=2.0.2&hash=5ba8d9&locator=%40casualtheorics%2Fargdown-2%40workspace%3A."
+  checksum: 10c0/7fcc13696ffa97d2116f150002138ec3a15ede8c86569937560ac258a50e97463f8e04913096c1757e03626211495d0f3243e09455d40ddc75dd31e364339cb0
   languageName: node
   linkType: hard
 

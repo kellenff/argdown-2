@@ -8,3 +8,37 @@ index 3c8d9bc..33ce491 100644
  export const ednParseMulti = (s) => {
      return parse(s);
  };
+diff --git a/lib/parser.js b/lib/parser.js
+index a75ed695dd92271cd38ff91c06bd1f98cb55554f..36676d7f5fcdc24af7ebd98c5f4ef219af7b8d4c 100644
+--- a/lib/parser.js
++++ b/lib/parser.js
+@@ -1909,7 +1909,7 @@ function peg$parse(input, options) {
+         return s0;
+     }
+     function peg$parsetag() {
+-        var s0, s1, s2, s3;
++        var s0, s1, s2, s3, s4;
+         s0 = peg$currPos;
+         if (input.charCodeAt(peg$currPos) === 35) {
+             s1 = peg$c31;
+@@ -1924,7 +1924,19 @@ function peg$parse(input, options) {
+         if (s1 !== peg$FAILED) {
+             s2 = peg$parsesymbol();
+             if (s2 !== peg$FAILED) {
+-                s3 = peg$parseedn();
++                s3 = peg$currPos;
++                s4 = peg$parsews();
++                if (s4 === peg$FAILED) {
++                    s4 = null;
++                }
++                s4 = peg$parsevalue();
++                if (s4 === peg$FAILED) {
++                    peg$currPos = s3;
++                    s3 = peg$FAILED;
++                }
++                else {
++                    s3 = s4;
++                }
+                 if (s3 !== peg$FAILED) {
+                     peg$savedPos = s0;
+                     s0 = peg$f25(s2, s3);
