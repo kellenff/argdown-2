@@ -45,7 +45,11 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "chevrotain": "^11.0.3",
-    "zod": "^3.25.0"
+    "edn-parser-js": "2.0.2",
+    "zod": "^4.4.3"
+  },
+  "resolutions": {
+    "edn-parser-js@npm:2.0.2": "patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch"
   },
   "devDependencies": {
     "@stryker-mutator/core": "8.7.1",

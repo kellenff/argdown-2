@@ -410,13 +410,14 @@ __metadata:
     "@stryker-mutator/vitest-runner": "npm:8.7.1"
     "@types/node": "npm:^20.12.0"
     chevrotain: "npm:^11.0.3"
+    edn-parser-js: "npm:2.0.2"
     oxfmt: "npm:^0.6.0"
     oxlint: "npm:^0.6.0"
     tinybench: "npm:^2.6.0"
     tsx: "npm:^4.22.4"
     typescript: "npm:^5.4.5"
     vitest: "npm:^1.6.0"
-    zod: "npm:^3.25.0"
+    zod: "npm:^4.4.3"
   bin:
     argdown: ./dist/cli.js
     argdown-mermaid: ./dist/cli.js
@@ -2033,6 +2034,20 @@ __metadata:
     es-errors: "npm:^1.3.0"
     gopd: "npm:^1.2.0"
   checksum: 10c0/199f2a0c1c16593ca0a145dbf76a962f8033ce3129f01284d48c45ed4e14fea9bbacd7b3610b6cdc33486cef20385ac054948fefc6272fcce645c09468f93031
+  languageName: node
+  linkType: hard
+
+"edn-parser-js@npm:2.0.2":
+  version: 2.0.2
+  resolution: "edn-parser-js@npm:2.0.2"
+  checksum: 10c0/fb443b7c432518cbbac1534ae186e1b13ec192cf7bad77b0b85735c3ce4edaf82c7357faed373e3434eac72bda8640ba2ed98945c727d7f0f51621566cff0ccb
+  languageName: node
+  linkType: hard
+
+"edn-parser-js@patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch::locator=%40casualtheorics%2Fargdown-2%40workspace%3A.":
+  version: 2.0.2
+  resolution: "edn-parser-js@patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch::version=2.0.2&hash=627822&locator=%40casualtheorics%2Fargdown-2%40workspace%3A."
+  checksum: 10c0/a1907249739b947fff6143ce2dd0f8d012d1c0e23c80c4df915fee916fa60ccb0cf10fe7e9a44d0c0ba8781cce82a268173e9391ff748f4a9df9b8bdf7f9459e
   languageName: node
   linkType: hard
 
@@ -4171,16 +4186,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zod@npm:^3.25 || ^4.0":
+"zod@npm:^3.25 || ^4.0, zod@npm:^4.4.3":
   version: 4.4.3
   resolution: "zod@npm:4.4.3"
   checksum: 10c0/7ea31b558e88f9faf44f31dd185e2e1cbf51fed3081787fb96cc2534749b50c0acfc6da7f0922a7353ed092dd358c7d50c28ea96c94d04af64191bd33152eca3
-  languageName: node
-  linkType: hard
-
-"zod@npm:^3.25.0":
-  version: 3.25.76
-  resolution: "zod@npm:3.25.76"
-  checksum: 10c0/5718ec35e3c40b600316c5b4c5e4976f7fee68151bc8f8d90ec18a469be9571f072e1bbaace10f1e85cf8892ea12d90821b200e980ab46916a6166a4260a983c
   languageName: node
   linkType: hard
