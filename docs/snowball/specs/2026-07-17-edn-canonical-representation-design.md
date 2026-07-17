@@ -1,7 +1,7 @@
 # EDN Canonical Representation Design
 
-**Date:** 2026-07-17  
-**Status:** Approved in discussion; pending review of this written specification  
+**Date:** 2026-07-17
+**Status:** Approved in discussion; pending review of this written specification
 **Scope:** Replace the custom Argdown Extended syntax and source-oriented AST with an EDN-only, solver-rooted data model. The first cycle supports Argdown 1.x-shaped argument maps evaluated with grounded Dung semantics through a library API.
 
 ## 1. Context
@@ -421,4 +421,3 @@ Future semantics add solver-root and theory tags without changing existing meani
 - `#casualtheorics.argdown2.evidential/support`
 
 Multiple semantic subgraphs or multiple evaluation lenses may later require a composition root above solver values. That shape is deliberately not pre-built in this cycle. V1 has exactly one solver-rooted document.
-
