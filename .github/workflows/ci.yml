@@ -91,8 +91,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    # Fuzz + cross-validate can run 10+ minutes on cold runners.
-    timeout-minutes: 30
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -226,7 +225,7 @@ jobs:
           tar -tzf "$TARBALL" | sort
           echo
           echo "Required files check:"
-          REQUIRED=("package/package.json" "package/README.md" "package/dist/cli.js")
+          REQUIRED=("package/package.json" "package/README.md" "package/dist/index.js" "package/dist/index.d.ts")
           MISSING=0
           for f in "${REQUIRED[@]}"; do
             if tar -tzf "$TARBALL" | grep -qx "$f"; then
