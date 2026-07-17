@@ -58,7 +58,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: '.node-version'
           # Don't try to authenticate to npm from this workflow; we only
           # publish to GitHub Releases.
           registry-url: ""
