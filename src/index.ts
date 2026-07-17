@@ -1,74 +1,42 @@
-// src/index.ts
-// Public API surface.
-
-export { parse, formatError } from './parser.js';
-export type { ParseResult, ParseOptions, ParseError, ParseErrorCode } from './parser.js';
-
-export { renderMermaid } from './mermaid.js';
-
-export { stringify } from './stringifier.js';
-export type { StringifyOptions } from './stringifier.js';
-
-export {
-  solve,
-  solveBipolar,
-  solveEvidential,
-  solvePreferred,
-  solvePreferredBipolar,
-  solvePreferredEvidential,
-  solveStable,
-  solveStableBipolar,
-  solveStableEvidential,
-  solveComplete,
-  solveCompleteBipolar,
-  solveCompleteEvidential,
-  type MultiSolveResult,
-} from './solver.js';
-export { solveAspic } from './solver-aspic.js';
-export {
-  solvePreferredAspic,
-  solveStableAspic,
-  solveCompleteAspic,
-} from './solver-aspic.js';
-export type { SolveResult, Label } from './solver.js';
+import { readEdn } from './edn.js';
+import { groundedLabels } from './grounded.js';
+import type { GroundedDocument, LoadResult, SolveResult, ValidationResult } from './model.js';
+import { reduceToDung } from './reduce-dung.js';
+import { decodeWire } from './schema.js';
+import { validateCandidate } from './validate.js';
 
 export type {
-  Document,
-  Frontmatter,
-  Heading,
-  Block,
-  BlockLine,
-  BlockTitle,
-  ListItem,
-  FactStatement,
-  RelationStatement,
-  Fact,
-  FactRef,
-  FactHead,
-  IdentifierHead,
-  TitleHead,
   Argument,
-  Conclusion,
-  Premise,
+  Diagnostic,
+  DungFramework,
+  EntityId,
+  GroundedDocument,
+  Inference,
+  InferenceId,
+  Label,
+  LoadResult,
   Relation,
-  RelationEndpoint,
-  Arrow,
-  AttributeBlock,
-  Value,
-  StringValue,
-  NumberValue,
-  BooleanValue,
-  NullValue,
-  FlowSequence,
-  FlowMapping,
-  FlowScalar,
-  YamlLine,
-  YamlValue,
-  PlainScalar,
-  LineComment,
-  BlockComment,
-  BlockType,
-  Element,
-  SourceLocation,
-  Position,
-} from './ast.js';
+  SolveResult,
+  Statement,
+  TheoryElement,
+  ValidationResult,
+} from './model.js';
+
+export function validate(value: unknown): ValidationResult {
+  const decoded = decodeWire(value);
+  return decoded.ok ? validateCandidate(decoded.document) : decoded;
+}
+
+export function load(source: string): LoadResult {
+  const read = readEdn(source);
+  return read.ok ? validate(read.value) : read;
+}
+
+export function solve(document: GroundedDocument): SolveResult {
+  const reduced = reduceToDung(document);
+  return {
+    labels: groundedLabels(reduced.framework),
+    solver: document.solver,
+    warnings: reduced.warnings,
+  };
+}
