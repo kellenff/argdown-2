@@ -403,7 +403,7 @@ This is a full replacement:
 
 - delete the custom lexer, parser, parser helpers, visitors, source AST, stringifier, CLI, Mermaid renderer, and `.argdown` fixtures;
 - remove Chevrotain, binary packaging, parser benchmarks, obsolete baselines, and their configuration;
-- add the latest `edn-data` and Zod versions through the package manager;
+- add the latest `edn-data` and update the existing Zod dependency through the package manager;
 - adapt only the generic grounded-labeling kernel to the new internal framework;
 - delete old AST-coupled advanced solver modules and tests from the active source tree; git history remains the reference when those mathematical implementations are ported later;
 - rewrite package exports and documentation around the EDN library API;
