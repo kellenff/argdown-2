@@ -117,3 +117,98 @@ describe('apply statements and arguments', () => {
     });
   });
 });
+
+describe('apply relations and remove', () => {
+  it('adds attack with resolved ids and warns on missing endpoint', () => {
+    let doc = emptyDocument();
+    doc = apply(doc, {
+      type: 'add_statement',
+      id: 'a',
+      text: 'A',
+    }).document;
+    const withWarn = apply(doc, {
+      type: 'add_relation',
+      kind: 'attack',
+      from: 'a',
+      to: 'missing-target',
+    });
+    expect(withWarn.refused).toBeUndefined();
+    expect(withWarn.warnings.some((w) => w.code === 'builder/unresolved-ref')).toBe(
+      true,
+    );
+    expect(withWarn.document.elements.some((e) => e.kind === 'attack')).toBe(true);
+  });
+
+  it('adds undercut to inference id', () => {
+    let doc = emptyDocument();
+    doc = apply(doc, { type: 'add_statement', id: 'p', text: 'P' }).document;
+    doc = apply(doc, { type: 'add_statement', id: 'c', text: 'C' }).document;
+    doc = apply(doc, {
+      type: 'add_argument',
+      id: 'arg',
+      description: 'Arg',
+    }).document;
+    doc = apply(doc, {
+      type: 'add_inference',
+      argumentId: 'arg',
+      id: 'inf1',
+      premises: ['p'],
+      conclusion: 'c',
+    }).document;
+    doc = apply(doc, {
+      type: 'add_statement',
+      id: 'attacker',
+      text: 'Attacker',
+    }).document;
+    const result = apply(doc, {
+      type: 'add_relation',
+      kind: 'undercut',
+      from: 'attacker',
+      to: 'inf1',
+    });
+    expect(result.refused).toBeUndefined();
+    expect(result.warnings).toEqual([]);
+    expect(result.document.elements.at(-1)).toMatchObject({
+      kind: 'undercut',
+      from: 'attacker',
+      to: 'inf1',
+    });
+  });
+
+  it('removes statement by id', () => {
+    const base = apply(emptyDocument(), {
+      type: 'add_statement',
+      id: 'a',
+      text: 'A',
+    });
+    const removed = apply(base.document, { type: 'remove_element', id: 'a' });
+    expect(removed.document.elements).toEqual([]);
+  });
+
+  it('removes relation by kind+from+to', () => {
+    let doc = emptyDocument();
+    doc = apply(doc, { type: 'add_statement', id: 'a', text: 'A' }).document;
+    doc = apply(doc, { type: 'add_statement', id: 'b', text: 'B' }).document;
+    doc = apply(doc, {
+      type: 'add_relation',
+      kind: 'attack',
+      from: 'a',
+      to: 'b',
+    }).document;
+    const removed = apply(doc, {
+      type: 'remove_relation',
+      kind: 'attack',
+      from: 'a',
+      to: 'b',
+    });
+    expect(removed.document.elements.every((e) => e.kind !== 'attack')).toBe(true);
+  });
+
+  it('refuses remove of unknown id', () => {
+    const result = apply(emptyDocument(), {
+      type: 'remove_element',
+      id: 'nope',
+    });
+    expect(result.refused?.code).toBe('builder/missing-id');
+  });
+});
