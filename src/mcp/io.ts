@@ -6,9 +6,7 @@ import { softParse } from '../builder/soft-parse.js';
 import { writeEdn } from '../edn-write.js';
 import type { CandidateDocument, Diagnostic } from '../model.js';
 
-export type DocumentRef =
-  | { path: string; text?: undefined }
-  | { text: string; path?: undefined };
+export type DocumentRef = { path: string; text?: undefined } | { text: string; path?: undefined };
 
 export type LoadDocResult =
   | { ok: true; document: CandidateDocument; ref: DocumentRef }

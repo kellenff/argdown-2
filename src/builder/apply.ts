@@ -37,11 +37,7 @@ function refused(doc: CandidateDocument, code: string, message: string): ApplyRe
   return { document: doc, warnings: [], refused: { code, message }, diff: [] };
 }
 
-function resolveRefOrRaw(
-  doc: CandidateDocument,
-  raw: string,
-  warnings: BuilderWarning[],
-): string {
+function resolveRefOrRaw(doc: CandidateDocument, raw: string, warnings: BuilderWarning[]): string {
   const resolution = resolveRef(doc, raw);
   if (resolution.ok) {
     return resolution.id;
@@ -186,12 +182,7 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
     case 'add_relation': {
       const warnings: BuilderWarning[] = [];
       const from = resolveRefOrRaw(doc, edit.from, warnings);
-      const to = resolveRelationEndpoint(
-        doc,
-        edit.to,
-        warnings,
-        edit.kind === 'undercut',
-      );
+      const to = resolveRelationEndpoint(doc, edit.to, warnings, edit.kind === 'undercut');
       const relation: CandidateRelation = {
         kind: edit.kind,
         from,
@@ -252,12 +243,7 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
     case 'remove_relation': {
       const warnings: BuilderWarning[] = [];
       const from = resolveRefOrRaw(doc, edit.from, warnings);
-      const to = resolveRelationEndpoint(
-        doc,
-        edit.to,
-        warnings,
-        edit.kind === 'undercut',
-      );
+      const to = resolveRelationEndpoint(doc, edit.to, warnings, edit.kind === 'undercut');
       const relIdx = doc.elements.findIndex(
         (e) =>
           (e.kind === 'support' ||

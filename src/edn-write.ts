@@ -73,8 +73,7 @@ export function printWire(value: unknown): string {
   }
   if ('tag' in obj) {
     const tag = obj.tag as { ns?: string; symbol: string };
-    const tagStr =
-      tag.ns === undefined ? `#${tag.symbol}` : printTag(tag.ns, tag.symbol);
+    const tagStr = tag.ns === undefined ? `#${tag.symbol}` : printTag(tag.ns, tag.symbol);
     return `${tagStr}\n${printWire(obj.value)}`;
   }
   if ('meta' in obj && 'value' in obj) {
@@ -164,12 +163,8 @@ function printArgument(arg: CandidateArgument, baseIndent: number): string {
 
   const mapEntries = [...entries];
   if (arg.inferences.length > 0) {
-    const inferenceBlocks = arg.inferences.map((inf) =>
-      printInference(inf, baseIndent + 2),
-    );
-    mapEntries.push(
-      `:inferences\n${innerPad}[${inferenceBlocks.join('\n')}\n${innerPad}]`,
-    );
+    const inferenceBlocks = arg.inferences.map((inf) => printInference(inf, baseIndent + 2));
+    mapEntries.push(`:inferences\n${innerPad}[${inferenceBlocks.join('\n')}\n${innerPad}]`);
   }
 
   if (mapEntries.length === 1) {

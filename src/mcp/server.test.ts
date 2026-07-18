@@ -54,9 +54,7 @@ describe('argdown-2 mcp registration', () => {
       name: 'create_document',
       arguments: { path },
     });
-    expect(parseToolResult(created as { content: { type: string; text: string }[] }).ok).toBe(
-      true,
-    );
+    expect(parseToolResult(created as { content: { type: string; text: string }[] }).ok).toBe(true);
 
     const added = await client.callTool({
       name: 'add_statement',

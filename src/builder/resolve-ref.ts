@@ -41,10 +41,7 @@ export function resolveRef(doc: CandidateDocument, idOrText: string): RefResolut
 }
 
 /** Resolve an inference id (id-only; text lookup is not used for inferences). */
-export function resolveInferenceRef(
-  doc: CandidateDocument,
-  idOrText: string,
-): RefResolution {
+export function resolveInferenceRef(doc: CandidateDocument, idOrText: string): RefResolution {
   const needle = stripKeywordColon(idOrText.trim());
   for (const el of doc.elements) {
     if (el.kind !== 'argument') continue;

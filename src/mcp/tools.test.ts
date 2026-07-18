@@ -35,7 +35,7 @@ describe('mcp tool handlers', () => {
     expect(disk).toContain(':a');
   });
 
-  it('text mode: create, add_statement, validate', async () => {
+  it('source mode: create, add_statement, validate', async () => {
     const created = await runCreateDocument({ source: '' });
     const createBody = parseBody(created);
     expect(createBody.ok).toBe(true);
@@ -51,5 +51,45 @@ describe('mcp tool handlers', () => {
 
     const validated = await runValidate({ source: addedBody.source as string });
     expect(parseBody(validated).ok).toBe(true);
+  });
+
+  it('source mode: censorship-shaped build with prose text threading', async () => {
+    const created = await runCreateDocument({ source: '' });
+    let source = parseBody(created).source as string;
+
+    const addCensorship = await runAddStatement({
+      source,
+      id: 'censorship',
+      text: 'Censorship is not wrong in principle.',
+    });
+    source = parseBody(addCensorship).source as string;
+
+    const addFreedom = await runAddStatement({
+      source,
+      id: 'absolute-freedom',
+      text: 'Freedom of speech is an absolute right.',
+    });
+    source = parseBody(addFreedom).source as string;
+
+    const addAttack = await runAddRelation({
+      source,
+      kind: 'attack',
+      from: 'absolute-freedom',
+      to: 'censorship',
+    });
+    source = parseBody(addAttack).source as string;
+
+    const validated = await runValidate({ source });
+    expect(parseBody(validated).ok).toBe(true);
+
+    const solved = await runSolve({ source });
+    const body = parseBody(solved);
+    expect(body.ok).toBe(true);
+    expect(body.labels).toMatchObject({
+      censorship: 'out',
+      'absolute-freedom': 'in',
+    });
+    expect(source).toContain('Censorship is not wrong in principle.');
+    expect(source).toContain('Freedom of speech is an absolute right.');
   });
 });

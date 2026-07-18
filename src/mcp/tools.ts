@@ -4,12 +4,7 @@ import { apply } from '../builder/apply.js';
 import type { DocumentEdit } from '../builder/types.js';
 import { load, solve } from '../index.js';
 import type { CandidateDocument, Diagnostic, RelationKind } from '../model.js';
-import {
-  createDocumentRef,
-  loadDocumentRef,
-  saveDocumentRef,
-  type DocumentRef,
-} from './io.js';
+import { createDocumentRef, loadDocumentRef, saveDocumentRef, type DocumentRef } from './io.js';
 
 type DocRefInput = { path?: string | undefined; source?: string | undefined };
 
@@ -34,9 +29,9 @@ function toTextRef(source: string): DocumentRef {
   return { text: source };
 }
 
-function normalizeDocRef(input: DocRefInput):
-  | { ok: true; ref: DocumentRef }
-  | { ok: false; errors: readonly Diagnostic[] } {
+function normalizeDocRef(
+  input: DocRefInput,
+): { ok: true; ref: DocumentRef } | { ok: false; errors: readonly Diagnostic[] } {
   const hasPath = input.path !== undefined;
   const hasSource = input.source !== undefined;
   if (hasPath === hasSource) {
@@ -68,9 +63,9 @@ function normalizeStatementDocRef(
   return { ok: false, errors: [INVALID_REF_ERROR] };
 }
 
-function normalizeCreateDocRef(input: DocRefInput):
-  | { ok: true; ref: DocumentRef }
-  | { ok: false; errors: readonly Diagnostic[] } {
+function normalizeCreateDocRef(
+  input: DocRefInput,
+): { ok: true; ref: DocumentRef } | { ok: false; errors: readonly Diagnostic[] } {
   const hasPath = input.path !== undefined;
   const hasSource = input.source !== undefined;
   if (hasPath && hasSource) {
@@ -80,9 +75,10 @@ function normalizeCreateDocRef(input: DocRefInput):
   return { ok: true, ref: toTextRef(input.source ?? '') };
 }
 
-async function readSource(input: DocRefInput): Promise<
-  | { ok: true; source: string }
-  | { ok: false; errors: readonly Diagnostic[]; isError?: boolean }
+async function readSource(
+  input: DocRefInput,
+): Promise<
+  { ok: true; source: string } | { ok: false; errors: readonly Diagnostic[]; isError?: boolean }
 > {
   const refResult = normalizeDocRef(input);
   if (!refResult.ok) {
@@ -104,10 +100,7 @@ async function readSource(input: DocRefInput): Promise<
   return { ok: true, source: refResult.ref.text };
 }
 
-async function applyMutation(
-  ref: DocumentRef,
-  edit: DocumentEdit,
-): Promise<McpResult> {
+async function applyMutation(ref: DocumentRef, edit: DocumentEdit): Promise<McpResult> {
   const loaded = await loadDocumentRef(ref);
   if (!loaded.ok) {
     return jsonResult({ ok: false, errors: loaded.errors }, loaded.isError ?? false);
@@ -280,9 +273,7 @@ export async function runAddRelation(
   return applyMutation(refResult.ref, edit);
 }
 
-export async function runRemoveElement(
-  args: DocRefInput & { id: string },
-): Promise<McpResult> {
+export async function runRemoveElement(args: DocRefInput & { id: string }): Promise<McpResult> {
   const refResult = normalizeDocRef(args);
   if (!refResult.ok) {
     return jsonResult({ ok: false, errors: refResult.errors }, true);
@@ -328,10 +319,7 @@ export async function runListElements(args: DocRefInput): Promise<McpResult> {
 export async function runValidate(args: DocRefInput): Promise<McpResult> {
   const sourceResult = await readSource(args);
   if (!sourceResult.ok) {
-    return jsonResult(
-      { ok: false, errors: sourceResult.errors },
-      sourceResult.isError ?? false,
-    );
+    return jsonResult({ ok: false, errors: sourceResult.errors }, sourceResult.isError ?? false);
   }
   const result = load(sourceResult.source);
   if (!result.ok) {
@@ -343,10 +331,7 @@ export async function runValidate(args: DocRefInput): Promise<McpResult> {
 export async function runSolve(args: DocRefInput): Promise<McpResult> {
   const sourceResult = await readSource(args);
   if (!sourceResult.ok) {
-    return jsonResult(
-      { ok: false, errors: sourceResult.errors },
-      sourceResult.isError ?? false,
-    );
+    return jsonResult({ ok: false, errors: sourceResult.errors }, sourceResult.isError ?? false);
   }
   const result = load(sourceResult.source);
   if (!result.ok) {

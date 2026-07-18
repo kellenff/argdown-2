@@ -8,10 +8,7 @@ import { softParse } from './soft-parse.js';
 import { writeEdn } from '../edn-write.js';
 import { load } from '../index.js';
 
-const fixture = join(
-  dirname(fileURLToPath(import.meta.url)),
-  'fixtures/two-statements-attack.edn',
-);
+const fixture = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/two-statements-attack.edn');
 
 describe('softParse', () => {
   it('decodes fixture without semantic validate', () => {

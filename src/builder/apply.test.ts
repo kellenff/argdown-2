@@ -133,9 +133,7 @@ describe('apply relations and remove', () => {
       to: 'missing-target',
     });
     expect(withWarn.refused).toBeUndefined();
-    expect(withWarn.warnings.some((w) => w.code === 'builder/unresolved-ref')).toBe(
-      true,
-    );
+    expect(withWarn.warnings.some((w) => w.code === 'builder/unresolved-ref')).toBe(true);
     expect(withWarn.document.elements.some((e) => e.kind === 'attack')).toBe(true);
   });
 

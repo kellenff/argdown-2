@@ -75,8 +75,7 @@ export function buildServer(): McpServer {
     'add_inference',
     {
       title: 'Add inference',
-      description:
-        'Add an inference under an argument; premises/conclusion are id-or-prose refs.',
+      description: 'Add an inference under an argument; premises/conclusion are id-or-prose refs.',
       inputSchema: {
         ...docRefSchema,
         argumentId: z.string(),
@@ -93,8 +92,7 @@ export function buildServer(): McpServer {
     'add_relation',
     {
       title: 'Add relation',
-      description:
-        'Add support|attack|contradiction|undercut (from/to are id-or-prose refs).',
+      description: 'Add support|attack|contradiction|undercut (from/to are id-or-prose refs).',
       inputSchema: {
         ...docRefSchema,
         kind: z.enum(['support', 'attack', 'contradiction', 'undercut']),
