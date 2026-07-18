@@ -91,7 +91,8 @@ yarn format:check
 yarn typecheck
 yarn test
 yarn build
+yarn knip
 yarn mutate
 ```
 
-`yarn mutate` runs [Stryker](https://stryker-mutator.io/) against `edn`, `grounded`, `reduce-dung`, and `validate` (declarative Zod schemas and benches are excluded). It fails if the mutation score drops below 80%. HTML reports land in `reports/mutation/`.
+`yarn knip` fails if `package.json` lists unused or missing dependencies. `yarn mutate` runs [Stryker](https://stryker-mutator.io/) against `edn`, `grounded`, `reduce-dung`, and `validate` (declarative Zod schemas and benches are excluded). It fails if the mutation score drops below 80%. HTML reports land in `reports/mutation/`.

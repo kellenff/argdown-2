@@ -25,6 +25,7 @@
     "build": "tsc",
     "format": "oxfmt --threads=1 src",
     "format:check": "oxfmt --check --threads=1 src",
+    "knip": "knip --dependencies",
     "lint": "oxlint src",
     "mutate": "stryker run",
     "test": "vitest run --passWithNoTests",
@@ -36,18 +37,26 @@
     "zod": "^4.4.3"
   },
   "resolutions": {
-    "edn-parser-js@npm:2.0.2": "patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch"
+    "edn-parser-js@npm:2.0.2": "patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch",
+    "knip@npm:6.27.0": "patch:knip@npm%3A6.27.0#./.yarn/patches/knip-npm-6.27.0-648296b906.patch"
   },
   "devDependencies": {
+    "@stryker-mutator/api": "^9.6.1",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/typescript-checker": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^20.12.0",
+    "knip": "6.27.0",
     "oxfmt": "^0.6.0",
     "oxlint": "^0.6.0",
     "tinybench": "^2.6.0",
     "tsx": "^4.0.0",
     "typescript": "^5.4.5",
     "vitest": "^3"
+  },
+  "dependenciesMeta": {
+    "oxc-parser@0.137.0": {
+      "unplugged": true
+    }
   }
 }
