@@ -5,10 +5,11 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
 > **Distribution:** the package is not yet on npm. Install a tagged library
-> tarball from GitHub Releases, then import the package in your project:
+> tarball from GitHub Releases with Yarn (required for the `edn-parser-js`
+> patch protocol), then import the package in your project:
 >
 > ```bash
-> npm install https://github.com/kellenff/argdown-2/releases/download/<TAG>/casualtheorics-argdown-2-<VERSION>.tgz
+> yarn add https://github.com/kellenff/argdown-2/releases/download/<TAG>/casualtheorics-argdown-2-<VERSION>.tgz
 > ```
 >
 > ```ts
@@ -21,12 +22,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0-alpha2] - 2026-07-18
+
 ### Added
 
+- Cursor plugin (`.cursor-plugin/plugin.json` + root `mcp.json`) for one-click MCP install.
+- Project-local `.cursor/mcp.json` that launches the server via `yarn node` after build.
 - Stryker mutation testing (`yarn mutate`) with Vitest runner, TypeScript checker, and an 80% break threshold on `edn`, `grounded`, `reduce-dung`, and `validate`.
 
 ### Changed
 
+- MCP one-click config uses `corepack yarn dlx` (not `npx` / bare `yarn`) so Yarn 2+ runs even when PATH `yarn` is classic 1.x, and the Yarn `patch:` dependency on `edn-parser-js` is applied.
+- Declare `edn-parser-js` via the Yarn `patch:` protocol in `dependencies` (not only `resolutions`) so consumers and `yarn dlx` get the ESM fix.
+- `prepare` runs `husky || true` so local installs succeed without husky on the PATH.
 - Upgraded Vitest from 1.x to 3.x (required by `@stryker-mutator/vitest-runner` 9.x).
 
 ## [0.2.0-alpha1] - 2026-07-17
@@ -149,3 +157,4 @@ backward-compatibility promises yet — the language surface is frozen (see
 
 [0.1.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.1.0-alpha1
 [0.2.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha1
+[0.2.0-alpha2]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha2
