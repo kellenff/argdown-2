@@ -104,9 +104,7 @@ describe('mcp tool handlers', () => {
     const refused = await runAddStatement({ path, id: 'a', text: 'B' });
     const body = parseBody(refused);
     expect(body.ok).toBe(false);
-    expect((body.refused as { code?: string } | undefined)?.code).toBe(
-      'builder/duplicate-id',
-    );
+    expect((body.refused as { code?: string } | undefined)?.code).toBe('builder/duplicate-id');
     expect(await readFile(path, 'utf8')).toBe(before);
   });
 
