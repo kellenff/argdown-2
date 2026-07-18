@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  runAddArgument,
+  runAddInference,
   runAddRelation,
   runAddStatement,
   runCreateDocument,
@@ -91,5 +93,39 @@ describe('mcp tool handlers', () => {
     });
     expect(source).toContain('Censorship is not wrong in principle.');
     expect(source).toContain('Freedom of speech is an absolute right.');
+  });
+
+  it('source mode: unresolved prose refs round-trip and allow follow-up mutation', async () => {
+    const created = await runCreateDocument({ source: '' });
+    let source = parseBody(created).source as string;
+
+    const addArg = await runAddArgument({
+      source,
+      id: 'freedom',
+      description: 'Freedom argument',
+    });
+    source = parseBody(addArg).source as string;
+
+    const addInf = await runAddInference({
+      source,
+      argumentId: 'freedom',
+      id: 'freedom-main',
+      premises: ['Absolute freedom is a right'],
+      conclusion: 'Censorship is wrong',
+    });
+    const infBody = parseBody(addInf);
+    expect(infBody.ok).toBe(true);
+    source = infBody.source as string;
+    expect(source).toContain(':absolute-freedom-is-a-right');
+    expect(source).toContain(':censorship-is-wrong');
+
+    const addStatement = await runAddStatement({
+      source,
+      id: 'absolute-freedom-is-a-right',
+      text: 'Absolute freedom is a right',
+    });
+    const stmtBody = parseBody(addStatement);
+    expect(stmtBody.ok).toBe(true);
+    expect(typeof stmtBody.source).toBe('string');
   });
 });

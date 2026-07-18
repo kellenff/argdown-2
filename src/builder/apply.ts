@@ -18,6 +18,16 @@ function stripColon(id: string): string {
   return id.startsWith(':') ? id.slice(1) : id;
 }
 
+function softRefId(raw: string): string {
+  const stripped = raw.startsWith(':') ? raw.slice(1) : raw.trim();
+  if (/^[A-Za-z_][A-Za-z0-9_-]*$/.test(stripped)) return stripped;
+  const slug = stripped
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug.length > 0 ? slug : 'unresolved';
+}
+
 function collectIds(doc: CandidateDocument): Set<string> {
   const ids = new Set<string>();
   for (const el of doc.elements) {
@@ -42,11 +52,12 @@ function resolveRefOrRaw(doc: CandidateDocument, raw: string, warnings: BuilderW
   if (resolution.ok) {
     return resolution.id;
   }
+  const storedId = softRefId(raw);
   warnings.push({
     code: 'builder/unresolved-ref',
-    message: resolution.message,
+    message: `${resolution.message}; stored as id "${storedId}"`,
   });
-  return stripColon(raw.trim());
+  return storedId;
 }
 
 function resolveInferenceRefOrRaw(
@@ -58,11 +69,12 @@ function resolveInferenceRefOrRaw(
   if (resolution.ok) {
     return resolution.id;
   }
+  const storedId = softRefId(raw);
   warnings.push({
     code: 'builder/unresolved-ref',
-    message: resolution.message,
+    message: `${resolution.message}; stored as id "${storedId}"`,
   });
-  return stripColon(raw.trim());
+  return storedId;
 }
 
 function resolveRelationEndpoint(

@@ -79,10 +79,28 @@ describe('apply statements and arguments', () => {
     });
     expect(withInf.refused).toBeUndefined();
     expect(withInf.warnings.length).toBeGreaterThan(0);
+    expect(withInf.warnings.every((w) => w.message.includes('stored as id'))).toBe(true);
     const arg = withInf.document.elements.find((e) => e.kind === 'argument');
     expect(arg && arg.kind === 'argument' && arg.inferences[0]?.premises[0]).toBe(
-      'Absolute freedom is a right',
+      'absolute-freedom-is-a-right',
     );
+    expect(arg && arg.kind === 'argument' && arg.inferences[0]?.conclusion).toBe(
+      'censorship-is-wrong',
+    );
+  });
+
+  it('keeps already-valid keyword ids when resolution fails', () => {
+    let doc = emptyDocument();
+    doc = apply(doc, { type: 'add_statement', id: 'a', text: 'A' }).document;
+    const result = apply(doc, {
+      type: 'add_relation',
+      kind: 'attack',
+      from: 'a',
+      to: 'missing-target',
+    });
+    expect(result.refused).toBeUndefined();
+    const attack = result.document.elements.find((e) => e.kind === 'attack');
+    expect(attack && attack.kind === 'attack' && attack.to).toBe('missing-target');
   });
 
   it('resolves premise refs to ids when statements exist', () => {
