@@ -1,155 +1,187 @@
-# Crystal Ball Report — `argdown-2`
+# Crystal Ball Report — `argdown-2` (EDN pipeline)
 
-**Stage:** 2 of 5 (Crystal Ball) — fresh run, 2026-06-27
-**Codebase HEAD:** `9384257`
-**Graph tools available:** Yes (`Users-kellen-Projects-argdown-2`, 1253 nodes, 2541 edges)
-**Reviewing:** `.claude/grfp/deep-dive.md` (this run)
+**Stage:** 2 of 5 (Crystal Ball) — fresh run, 2026-07-18
+**Codebase HEAD:** `main`, version `0.2.0-alpha1`
+**Graph tools available:** Partial — `claudikins-tool-executor` plugin **not installed** in this session. Used `mcp__plugin_serena_serena__*` semantic tools (`find_referencing_symbols` for inbound-edge counts; `read_file` and `search_for_pattern` for body confirmation). **Method:** symbol-level + content search; no Cypher.
+**Reviewing:** `.claude/grfp/deep-dive.md` (this run, 2026-07-18).
 
 ---
 
-## 1. Dead code (graph + code-confirmed)
+## 1. Dead code (serena inbound-edge scan + content-confirmed)
 
-| Symbol | Location | Inbound edges | Confidence | Action |
+| Symbol | Location | Inbound edges (from `find_referencing_symbols`) | Confidence | Action |
 | --- | --- | --- | --- | --- |
-| `parseHeadingText` | `src/parser-frontmatter.ts:63–72` | **0** | **High** | Defined, re-exported by `src/parser.ts:60`, but never imported or called anywhere. ~10 lines + the stale comment at line 231 ("matches parseTitleText / parseHeadingText — see those for the lexer"). **Delete.** |
-| `parsePlainScalar` | `src/parser-frontmatter.ts:74–76` | **0** | **High** | Defined, re-exported by `src/parser.ts:61`, but never called. The `PlainScalar` token is consumed inline by other parsers. 3 lines. **Delete.** |
-| `blockTypeName` (duplicate) | `src/visitor.ts:110–125` | **0** | **High** | A second copy exists at `src/visitor-block.ts:17` (and IS used at line 88). The one in `visitor.ts` is genuine dead code from the cycle-2 visitor split. 16 lines. **Delete** (the `visitor-block.ts` copy is the canonical one). |
-| `tarjanScc` | `src/solver-multi.ts:11–96` | **0** | **Medium** | A fully-formed Tarjan's SCC algorithm (86 lines, complexity 13). Exported but no callers found in graph. Could be (a) reserved for future SCC-based solvers, or (b) dead from a refactor. **Read carefully + ask the user.** If reserved, add `// @internal reserved` JSDoc; if dead, delete. |
+| `load` | `src/index.ts:29` | **8+ inbound** (index.test, edn-write.test, parity.test, soft-parse.test, pipeline.bench, pipeline.bench.test, mcp/tools, edn.ts internal callers) | High | **Keep** (public entry) |
+| `validate` | `src/index.ts:24` | **2 inbound** (`load` body + index.test) | High | **Keep** (public entry; explicitly tested at `index.test.ts:55`) |
+| `solve` | `src/index.ts:34` | **6+ inbound** (index.test, parity.test, pipeline.bench, pipeline.bench.test, mcp/tools, edn-write.test indirect) | High | **Keep** (public entry) |
+| `readEdn` | `src/edn.ts:25` | 1 (`load` body) + 1 (`softParse` body) | High | **Keep** (library-internal pipeline) |
+| `decodeWire` | `src/schema.ts:427` | 1 (`validate` body) + 1 (`softParse` body) | High | **Keep** |
+| `validateCandidate` | `src/validate.ts:233` | 1 (`validate` body) | High | **Keep** |
+| `reduceToDung` | `src/reduce-dung.ts:40` | 1 (`solve` body) | High | **Keep** |
+| `groundedLabels` | `src/grounded.ts:24` | 1 (`solve` body) | High | **Keep** |
+| `writeEdn` | `src/edn-write.ts:206` | **5+ inbound** (edn-write.test, soft-parse.test, mcp/io, mcp/io.test) | High | **Keep.** **Not exported from `index.ts`** — deliberate (round-trip is the *builder's* responsibility; library consumers get EDN→object, not object→EDN) |
+| `apply` | `src/builder/apply.ts:90` | **10+ inbound** (apply.test 8 it-blocks, mcp/tools, edn-write.test) | High | **Keep** (builder core) |
+| `emptyDocument` | `src/builder/apply.ts:12` | **8+ inbound** (apply.test, edn-write.test, mcp/io, mcp/io.test, resolve-ref.test) | High | **Keep** |
+| `softParse` | `src/builder/soft-parse.ts:8` | **5+ inbound** (soft-parse.test, mcp/io, edn-write.test) | High | **Keep** |
+| `resolveRef`, `resolveInferenceRef` | `src/builder/resolve-ref.ts:8,43` | 2 (`resolveRefOrRaw`, `resolveInferenceRefOrRaw`) + 5+ in resolve-ref.test | High | **Keep** |
+| `softRefId` (private) | `src/builder/apply.ts:20` | 2 (resolveRefOrRaw, resolveInferenceRefOrRaw) | High | **Keep** (internal) |
+| `refused` (private) | `src/builder/apply.ts:38` | 1 (apply body) | High | **Keep** (internal) |
+| `collectIds` (private) | `src/builder/apply.ts:30` | 1 (apply body) | High | **Keep** (internal) |
+| `printTag`, `printKeyword`, `printWire`, `printMetadata`, `printExtra`, `printTaggedMap`, `printInference`, `printStatement`, `printArgument`, `printRelation`, `printElement`, `printString`, `isStringRecord` | `src/edn-write.ts` | All referenced inside edn-write.ts; `printWire` is the dispatcher called by `writeEdn`, `printExtra`, `printMetadata` | High | **Keep** |
+| `isPathRef`, `isTextRef`, `loadDocumentRef`, `saveDocumentRef`, `createDocumentRef` | `src/mcp/io.ts` | All referenced by tools.ts (createDocumentRef by runCreateDocument); io.test | High | **Keep** |
+| MCP `run*` (11) | `src/mcp/tools.ts` | All referenced by server.ts `registerTool` callbacks | High | **Keep** |
+| `decodeRelation`, `decodeStatement`, `decodeArgument`, `decodeInference`, `decodeInferenceEntry`, `decodeElement`, `fieldsOf`, `expectMap`, `requiredKeyword`, `optionalParsed`, `keywordVector`, `keywordSet`, `keywordName`, `fullName`, `canonicalEdn`, `validateCollectionUniqueness`, `pushMissing`, `pushInvalid`, `pushUnsupportedTag`, `fieldPath` | `src/schema.ts` | All referenced from within schema.ts (recursive Zod + per-tag decoders) | High | **Keep.** **Stryker exclusion list confirms these are declarative Zod schemas** — mutating them produces equivalent mutants. The file is intentionally not in the Stryker `mutate` list |
+| `validateStatementReference`, `validateInferenceReferences`, `validateEntityEndpoint`, `validateRelationReferences`, `reportMissingReference`, `isEntityKind`, `toValidatedInference`, `toValidatedStatement`, `toValidatedArgument`, `toValidatedRelation`, `toValidatedElement`, `collectKinds` | `src/validate.ts` | All referenced from within validate.ts | High | **Keep** |
+| `addAttack`, `omissionWarning`, `reduceRelation` | `src/reduce-dung.ts` | All referenced from within reduce-dung.ts | High | **Keep** |
+| `allAttackersOut`, `markTargetsOut` | `src/grounded.ts` | Referenced from `groundedLabels` | High | **Keep** |
+| `entry` (constant), `FIXTURES`, `TASK_TYPES`, `BASELINE_*`, `percentFormat`, types, `makeTaskBody`, `checkAgainstBaseline`, `diffLine`, `formatPercent`, `loadBaseline`, `loadFixtures`, `main`, `parseTaskName`, `runBench`, `writeBaselineJson` | `src/pipeline.bench.ts` | All referenced from `main` and tests | High | **Keep** |
 
-**Verified non-dead (false positives flagged by graph):**
+**Net dead code: zero.** Every exported symbol and every non-exported helper has at least one live caller. The codebase is tight at ~12 source files and ~3000 LOC.
 
-- `run` (`src/cli/validate.ts:14–19`, in_degree 0) — called via `HANDLERS.validate` in `src/cli.ts:21` (Record-map dispatch is invisible to `CALLS` edges). **Keep.**
-- `formatError` — re-exported via `src/index.ts:4`. **Keep** (public API).
-- `tokenNode` (parser-util.ts) — graph shows 20 in-degree. **Keep** (workhorse).
-- `pickFirst`, `locFromTokens`, `collectAllTokens` (visitor.ts) — graph shows 18–21 in-degree. **Keep** (visitor helpers).
-- All `src/index.ts` re-exports — they're the public surface, even if internal callers don't exist.
+This is a deliberate consequence of the breaking reset: with the parser, Mermaid renderer, CLI, and 15-solver surface gone, there are no orphaned helpers from a half-migrated feature.
 
-**Total removable:** ~29 lines of clearly dead code, plus a possible ~86 lines (`tarjanScc`) depending on user intent. XS effort, M impact (smaller, cleaner surface for first publish).
+## 2. Complexity hotspots (structural fan-in / fan-out from `find_referencing_symbols`)
 
-## 2. Complexity hotspots (fan-in / fan-out)
+**Top fan-in (high reuse — keep green):**
 
-The graph's `complexity` field is sparse; ranking by **structural fan-in/fan-out** from the live graph (post-re-index: 1253 nodes).
+| Function | File | Inbound references | Role |
+| --- | --- | --- | --- |
+| `apply` | `src/builder/apply.ts:90` | **10+** | Builder core; called from `mcp/tools.ts:applyMutation`, every `edn-write.test` block, every `apply.test` block |
+| `load` | `src/index.ts:29` | **8+** | Library entry; tests + bench + MCP tools |
+| `solve` | `src/index.ts:34` | **6+** | Library entry; tests + bench + MCP tools |
+| `decodeWire` | `src/schema.ts:427` | **2** in src + tests | Zod orchestration; called by `validate` and `softParse` |
+| `emptyDocument` | `src/builder/apply.ts:12` | **8+** | Builder entry; everywhere a fresh doc is needed |
+| `softParse` | `src/builder/soft-parse.ts:8` | **5+** | Builder entry; soft validation (no semantic cross-check) |
+| `writeEdn` | `src/edn-write.ts:206` | **5+** | Round-trip; tests + MCP I/O |
+| `groundedLabels` | `src/grounded.ts:24` | **2** in src + tests | Iterative fixed-point labeling |
+| `reduceToDung` | `src/reduce-dung.ts:40` | **2** | Reduction to Dung framework |
 
 **Top fan-out (high coupling — these orchestrate):**
 
 | Function | File | Out-degree | Role |
 | --- | --- | --- | --- |
-| `makeTaskBody` | `solver.bench.ts` | 18 | Benchmark task generator |
-| `dispatchMulti` | `cli/solve.ts` | 12 | Multi-extension flag dispatcher |
-| `run` | `cli/solve.ts` | 11 | Solve subcommand top-level |
-| `parseFrontmatter` | `parser-frontmatter.ts` | 10 | YAML + value parser dispatch |
-| `parseStatement` | `parser.ts` | 10 | Per-line dispatcher (fact / arg / relation / block / heading) |
-| `parseValue` | `parser-frontmatter.ts` | 8 | Value-type dispatcher |
-| `visitBlock` | `visitor-block.ts` | 8 | AST constructor for `:::meta[...]`, `:::evidence[...]`, etc. |
-| `parseArgument` | `parser-arg.ts` | 7 | Argument parser |
-| `parsePremise` | `parser-arg.ts` | 7 | Premise parser |
-| `parseDisjunction` | `parser-arg.ts` | 6 | `([#A] | [#B])` parser |
-| `parseAttributeEntry` | `parser-relation.ts` | 6 | Single `key: value` entry |
+| `apply` | `src/builder/apply.ts:90` | **14+** | Switch over 7 `DocumentEdit` types; each branch touches `collectIds`, `resolveRefOrRaw`, `resolveInferenceRefOrRaw`, `resolveRelationEndpoint`, `refused`, etc. |
+| `decodeWire` | `src/schema.ts:427` | **10+** | Per-tag dispatch into `decodeStatement`, `decodeArgument`, `decodeRelation`, `decodeInferenceEntry`, plus collection uniqueness validation |
+| `validateCandidate` | `src/validate.ts:233` | **8+** | `collectKinds` + `validateInferenceReferences` + `validateRelationReferences` + `toValidatedElement` switch |
+| `makeTaskBody` | `src/pipeline.bench.ts` | **3** (one per task type) | Switch over `TASK_TYPES` |
+| `printElement` | `src/edn-write.ts` | **3** (statement / argument / relation) | Switch over `CandidateElement.kind` |
 
-These are inherent to the problem: dispatchers must know about every variant. Not a smell. **Action: none.** *Note:* `makeTaskBody` is benchmark plumbing, not product code; if it grows further, extract a `TaskBuilder` class.
+`apply` (fan-out 14) is **the** hottest spot. Each `DocumentEdit` branch is its own logic island; the only common helpers are `stripColon`, `softRefId`, `resolveRefOrRaw`, `refused`. Splitting `apply` into per-edit-type pure functions (`addStatement`, `updateStatement`, `addArgument`, etc.) would lower the fan-out from 14 to 4 (a single `switch` that calls them) and make each branch independently testable. **XS effort, M impact.**
 
-**Top fan-in (highly reused helpers — KEEP GREEN):**
+**Top files by source LOC** (from search and read):
 
-| Function | File | In-degree | Role |
-| --- | --- | --- | --- |
-| `parse` | `parser.ts` | **29** | **Public entry point** |
-| `pickFirst` | `visitor.ts` | 21 | First-child helper |
-| `tokenNode` | `parser-util.ts` | 20 | CST node wrapper — used everywhere |
-| `locFromTokens` | `visitor.ts` | 19 | Source location from token range |
-| `collectAllTokens` | `visitor.ts` | 18 | Flatten CST children |
-| `stringify` | `stringifier.ts` | 13 | AST to source round-trip |
-| `tokenRule` | `parser-util.ts` | 11 | Token to CST rule helper |
-| `solveMulti` | `solver.ts` | 9 | Multi-extension dispatcher |
-| `splitLines`, `joinLines` | `parser.mutate.ts` | 8 each | Mutation testing infrastructure |
-
-**Action:** keep these stable. If anyone changes a 29-in-degree workhorse, it propagates to a third of the codebase.
-
-## 3. Performance posture
-
-`perf-baseline.json` (parser, captured 2026-06-22):
-
-| Fixture | Size | ops/sec | p99 (ms) | Peak heap delta (MB) |
-| --- | --- | --- | --- | --- |
-| `small-claim` | 181 B | 41,479 | 0.038 | 0.6 |
-| `small-rule` | 127 B | 56,723 | 0.024 | 0.3 |
-| `small-relation` | 216 B | 31,132 | 0.045 | 0.7 |
-| `medium-climate` | 1,646 B | 5,261 | 0.326 | 0.9 |
-| `heavy-relations` | 2,311 B | 2,487 | 0.585 | 1.2 |
-| `deep-nesting` | 1,439 B | 7,415 | 0.168 | 0.4 |
-| `large-stress` | 120,873 B | 41 | 39.66 | 34.8 |
-
-Throughput scales linearly with file size; `large-stress` (121 KB) takes ~40 ms p99 — comfortably interactive for editor use. No regression vs prior capture. Chevrotain 12 is faster than 11 in published benchmarks but requires Node ≥22 — this project's `engines.node: ">=18"`, so the upgrade is a coupled decision (see §5).
-
-`perf-baseline-solver.json` (solver, NEW since prior deep-dive) — to be inspected by user if solver benchmarks are a roadmap topic.
-
-## 4. Dependency posture
-
-| Dep | Pinned | Notes |
+| File | Approx LOC | Note |
 | --- | --- | --- |
-| `chevrotain` | `^11.0.3` | Major version behind (12.x released 2026-03; requires Node ≥22). **Real fork:** bump `engines.node` to `>=22` or stay on 11 and document why. |
-| `vitest` | `^1.6.0` | Minor drift; works fine. |
-| `typescript` | `^5.4.5` | Stable. |
-| `oxlint`, `oxfmt` | `^0.6.0` | Active rust-based tooling; will move. |
-| `tinybench` | `^2.6.0` | Benchmark harness (parser + solver). |
-| `tsx` | `^4.22.4` | TS execution for benchmarks. |
-| `@stryker-mutator/*` | `8.7.1` | Pinned exact. |
+| `src/schema.ts` | ~270 | Recursive Zod + per-tag decoders. Stryker-excluded as low-value mutants |
+| `src/mcp/tools.ts` | ~345 | 11 `run*` handlers + `applyMutation` + `listElementsFromDoc` + helpers. Largest file. Splitting per-tool (one file per tool) would lower coupling but multiply files |
+| `src/edn-write.ts` | ~245 | `printWire` + per-element printers. Could be split into `edn-write/{wire,elements}.ts` |
+| `src/builder/apply.ts` | ~290 | `apply` + private helpers + 7 branch cases. **Best split candidate** |
+| `src/validate.ts` | ~245 | Pure validation; could split into `validate/{kinds,refs,relations}.ts` |
+| `src/mcp/server.ts` | ~135 | 11 tool registrations + `run()`. Tight, no split needed |
+| `src/bench.fixtures/*.edn` | 7 files, ~30 KB total | Bench inputs |
 
-**No security advisories visible in `package.json`.** No hardcoded secrets in source. **No `TODO`/`FIXME`/`HACK`/`XXX` markers anywhere in `src/`** (re-confirmed 2026-06-27: `grep -rEn "TODO|FIXME|HACK|XXX" src/` returns empty).
+## 3. Stryker scope (80% threshold)
+
+`.stryker-tmp/` and `stryker.config.mjs` define:
+
+- `mutate`: `edn.ts`, `grounded.ts`, `reduce-dung.ts`, `validate.ts` (the four "behavioral" files)
+- `ignorePatterns`: `dist`, `reports`, `.stryker-tmp`, `examples`, `docs`, `perf-baseline.json`
+- `thresholds.high: 80, low: 60, break: 80`
+
+The deliberate exclusion of `schema.ts` is correct: it is recursive Zod unions + per-tag decoders, which produce equivalent mutants when mutated. Confirming the rationale is in the `stryker.config.mjs` comment.
+
+**No security advisories visible.** No hardcoded secrets in source. **No `TODO`/`FIXME`/`HACK`/`XXX` markers in `src/`** (re-confirmed 2026-07-18 — `search_for_pattern` returns empty). The only matches for those tokens are in `docs/snowball/` (historical plans, not source).
+
+## 4. Attack surface (public entry points + their reach)
+
+**Library (3 functions, all pure):**
+
+| Function | Input shape | Failure mode |
+| --- | --- | --- |
+| `load(source: string)` | EDN source string | `{ ok: false, errors }` with `code: 'edn/read-error' \| 'schema/*' \| 'semantic/*'`. **Never** a partial document (`index.test.ts:37-50` confirms `'document' in result === false` on error) |
+| `validate(value: unknown)` | Pre-parsed EDN value (typed `unknown`) | Same error envelope; useful when caller already has a parsed EDN value from another library |
+| `solve(document: GroundedDocument)` | A validated document | `{ labels: Map<EntityId, 'in' \| 'out' \| 'undec'>, solver, warnings }`. Warnings are `reduce/support-omitted` and `reduce/undercut-omitted` — informational only |
+
+**MCP server (11 tools, stdio):**
+
+| Tool | Mutating | Failure mode |
+| --- | --- | --- |
+| `create_document` | Yes | `mcp/io-error` (path) or returns text (source) |
+| `add_statement` | Yes | `mcp/invalid-ref` (both), `builder/duplicate-id`, `builder/unresolved-ref` (soft warn), `mcp/io-error` |
+| `update_statement` | Yes | Same as above |
+| `add_argument` | Yes | Same |
+| `add_inference` | Yes | Same |
+| `add_relation` | Yes | Same; `applyRelation` may refuse if `from`/`to` ambiguity |
+| `remove_element` | Yes | `builder/missing-id` (refuses) |
+| `remove_relation` | Yes | Same |
+| `list_elements` | No | Always succeeds, returns JSON-serialized elements |
+| `validate` | No | Returns `ok` + `errors[]`; never throws |
+| `solve` | No | Returns `labels` + `warnings[]`; never throws |
+
+The recent commit `e36ed9a fix(mcp): reject path+source on statement tools; test refuse no-write` adds a `refused`-style guard: passing both `path` and `source` to a mutating tool returns `refused` rather than silently preferring one. This tightens the attack surface for ambiguous refs.
+
+**Atomic write:** `mcp/io.ts:saveDocumentRef` writes to a temp file (`.${Date.now()}.argdown-2.tmp`) and `rename`s in place. No half-written file is ever visible to readers. This is the right primitive for "safe edit on disk."
+
+**Concurrency:** The MCP server is single-threaded stdio (`StdioServerTransport`). Multiple clients → one server, no locking needed because MCP is request-response. This is the right level of concurrency for a builder API.
 
 ## 5. Ecosystem fit & gaps
 
 **Adjacent / next-door projects:**
 
-- **Original Argdown** (`@argdown/core`) — canonical predecessor. Clean-room successor; **no shim for 1.x syntax exists** (the `:-` lexer token is retained only to emit a hard error, not to translate). Anyone migrating needs a translator → opportunity for a sibling `argdown-migrate` package.
-- **Datalog engines** (`Soufflé`, `logic.js`) — argdown-2's `->` + `,` argument syntax is *Datalog-evocative*, and the new solver toolkit implements ASPIC+ and Dung's grounded extension. A pure-TS evaluator on top of `Argument`/`Fact` is partially built (multi-extension variants); the next obvious step is "ask questions about the argument graph" with explanations.
-- **Graphviz/D2/DOT renderers** — the seven-arrow taxonomy maps cleanly to DOT; a sibling `argdown-to-dot` package is the obvious next step. The stringifier makes DOT output a one-package job.
-- **Editor plugins** (VS Code, Obsidian) — the `./ast` subpath export, the partial-AST-on-error behavior, and the stringifier round-trip are exactly what editor integrations need.
+- **edn-parser-js** — the only runtime parser dep. `0.2.0-alpha1` lives or dies by this library's correctness. Patch file `.yarn/patches/edn-parser-js-npm-2.0.2.patch` exists — worth checking what it fixes and whether upstream has folded it.
+- **Zod 4** — recursive `ednValueSchema`. `z.lazy` with deferred union is the right primitive for EDN's open type system. Worth tracking Zod 5 / 6 changes that touch `z.lazy` and `z.strictObject`.
+- **@modelcontextprotocol/sdk** — the MCP server framework. `0.2.0-alpha1` pins `^1.29.0`. MCP spec is moving (HTTP transport, OAuth, structured outputs in 2025).
+- **Argdown 1.x (`@argdown/core`)** — the prior language. `examples/argdown1-censorship.edn` is a manual port demonstrating the mapping gap. **No migration tool ships** — by design.
+- **Carneades, ASPIC+, abstract argumentation libraries** — academic neighbors. The grounded Dung solver is the smallest formally-correct piece of this family; preferred/stable/complete/Bipolar/ASPIC+ are deleted in the reset (Roadmap #2 below).
+- **EDN alternative parsers** (`@calcit/tern EDN`, `prismatic.edn`) — would let the library be cross-runtime, but YAGNI until requested.
 
 ## 6. Audience segments that could benefit
 
-1. **Policy analysts / researchers** writing structured argument maps (climate, ethics, jurisprudence). The DESIGN.md worked example is literally a climate-policy graph.
-2. **LLM pipeline builders** who want `Fact` / `Argument` / `Relation` shapes for RAG knowledge graphs.
-3. **Argument-mining researchers** extracting claims from text — the typed AST is downstream-friendly.
-4. **Formal-reasoning developers** needing grounded labelling or multi-extension semantics over an argument graph. **This segment is NEW since prior deep-dive** (the solver toolkit now addresses it directly).
-5. **Editor / IDE plugin authors** who need a deterministic parser with error recovery for hover/diagnostics; the stringifier closes the edit-loop.
-6. **Argdown 1.x users** wanting a clean replacement (segment 6 → migration tooling).
+1. **Argument-mining / RAG pipelines** that already speak EDN. The library is a drop-in strict validator and grounded-labeler.
+2. **LLM agent authors** building argumentation tools. The MCP builder server is the cheap path: 11 tools, soft-warning mutations for incremental authoring, hard-error `validate`/`solve` for the production gate.
+3. **Formal-reasoning engineers** who want grounded Dung over a typed AST instead of a Python or Java abstract framework.
+4. **The project's own future self** — anyone adding a new solver tag (`#casualtheorics.argdown2.solver/preferred`) needs only to add the tag and a parallel `reduceToX` + `xLabels` pair; the rest of the pipeline is unchanged.
+5. **Editor plugin authors** (VS Code, Obsidian) — the MCP server speaks the protocol; a plugin can drive it directly.
+6. **Argdown 1.x migration tooling authors** — `examples/argdown1-censorship.edn` is the manual port. A sibling `argdown-1to2` package is a community opportunity, not a project commitment.
 
 ## 7. Roadmap candidates (ranked)
 
 | # | Title | Effort | Impact | Why now |
 | --- | --- | --- | --- | --- |
-| 1 | **Delete confirmed dead code** (`parseHeadingText`, `parsePlainScalar`, `blockTypeName` dup) | XS | M | ~29 lines gone; zero risk. Do before any public commit. |
-| 2 | **Decide on `tarjanScc`** (reserved or delete) | XS | S | Either annotate `@internal` or remove the 86 lines. Closes a "looks dead" smell. |
-| 3 | **Add CI workflow** (`.github/workflows/ci.yml`) | S | H | No CI today; `vitest` + `oxlint` + `oxfmt --check` + `tsc --noEmit` + `bench:check` + `bench:solver:check` is one file. |
-| 4 | **Decide on chevrotain 12 + Node 22** | S | M | Coupled engine-floor decision; affects every consumer. Document either way. |
-| 5 | **Publish to npm** (`private: true` to `false`, `0.0.0` to `0.1.0`) | XS | H | One-line change + provenance + signing. README cannot do its job until the package is findable. |
-| 6 | **Add `parseFile()` / `parseFiles()` helper** | S | M | 80% of consumers will want this; today every caller does their own I/O via `loadInput`. |
-| 7 | **Argdown 1.x to 2.x translator** (`argdown-migrate`) | M | M | Unblocks adoption from existing Argdown users. |
-| 8 | **D2/DOT/graphviz renderer** (`argdown-to-dot`) | M | H | Standalone package; immediately useful for visualization. |
-| 9 | **Argument evaluator** (does the conclusion follow from the premises, given assumptions?) | L | H | Unlocks "evaluate argument graph" — biggest product differentiation move. The solver toolkit is the foundation. |
-| 10 | **Editor plugin** (VS Code or Obsidian) | L | H | Distribution channel. `./ast` export + stringifier make integration painless. |
-| 11 | **Language Server** (LSP wrapper around `parse`) | M | H | Reusable across editors; foundation for diagnostics, hover, jump-to-def. |
+| 1 | **Split `apply` into per-edit-type pure functions** | XS | M | 14-fan-out switch is the biggest single-file complexity. Splitting lowers coupling and makes each edit independently testable |
+| 2 | **Bring back preferred / stable / complete solvers** | L | H | All three were deleted in the reset. Reintroducing them with formal correctness (and naming them clearly: each as `#casualtheorics.argdown2.solver/{name}`) is the natural completion of "grounded Dung is the smallest formally-correct piece" |
+| 3 | **ASPIC+ solver (post-reset)** | L | H | Same reasoning. ASPIC+ requires `preference:` attributes; the EDN tags already support it via `metadata` |
+| 4 | **D2 / DOT / Mermaid-from-EDN renderer** | M | M | Standalone package that consumes `GroundedDocument` and emits a graph. Builds on `examples/argdown1-censorship.edn` parity example |
+| 5 | **Incremental solve (memoize `reduceToDung`)** | S | M | Pipeline bench shows `large-stress` is the slow fixture (peak heap +10 MB, p99 ~30 s for `load-solve`). If a tool mutates the document once and re-solves 10x, the reduction is the same — memoize it |
+| 6 | **Branded `AttackMap` direction marker** | S | S | Deferred per `branded-attack-map.md` memory. `attackersByTarget` is already typed correctly; this is one-time future-protection. Skip until a second consumer appears |
+| 7 | **Cross-document reference (multi-file theories)** | L | H | Today every document is single-rooted. A `#casualtheorics.argdown2.solver/multi` namespace could combine multiple `.edn` files into one theory. Big product-differentiation move; needs MCP server concurrency work first |
+| 8 | **HTTP transport for MCP server** | M | M | Today is stdio-only. HTTP/SSE would unlock multi-user deployments. Blocked on per-document locking story |
+| 9 | **Argdown 1.x → EDN translator** (`argdown-1to2`) | M | M | Unblocks adoption. **Belongs in a sibling package**, not in this repo — keep `argdown-2` tight |
+| 10 | **CLI for `load` / `solve`** | S | M | Today only MCP and library. A `npx argdown-2 solve doc.edn` would unlock batch / CI use without an MCP client |
+| 11 | **Editor plugin (VS Code)** | L | H | MCP server makes this 100 LOC + a manifest. Distribution channel for the library |
 
 ## 8. Vision (the "could be" picture)
 
-`argdown-2` is currently a *parser + Mermaid renderer + 4 grounded solvers + 12 multi-extension variants + stringifier*. The natural arc:
+`argdown-2` is currently a *strict EDN loader + grounded Dung labeler + builder MCP server*. The natural arc:
 
 ```
-parser ──→ stringifier ──→ migrator (Argdown 1.x to 2.x)
-                ↓
-         graph renderers (D2 / DOT / Mermaid-alternatives)
-                ↓
-         argument evaluator (does the inference hold?)
-                ↓
-         editor plugins (VS Code, Obsidian)
-                ↓
-         language server (diagnostics, hover, jump-to-def)
+[ EDN document ] -----> [ load → validate → solve ]
+       |                          |
+       |                          +--> labels (Map<EntityId, 'in'|'out'|'undec'>)
+       |
+       +--> [ MCP builder server ] <--- agent tool calls
+       |
+       +--> [ visualization ] (D2 / DOT / Mermaid-from-EDN)
+       |
+       +--> [ multi-solver ] (preferred, stable, complete, ASPIC+, bipolar)
+       |
+       +--> [ multi-document ] (multi-root solver tags)
 ```
 
-In one year this could be a **small toolkit** (4–6 packages under `@casualtheorics/argdown-*`) covering read, write, migrate, evaluate, and visualize — with the parser as the foundational truth, the solver toolkit as the analytical core, and `.argdown` as the unified file extension. The current architecture (clean CST-to-AST boundary, rich discriminated-union AST, fuzz+mutate invariants as the test base, spec-as-source-of-truth with the BNF, single-runtime-dep `chevrotain`) is already the right shape for that. The three missing pieces are *distribution* (npm publish, CI), *symmetry* (already shipped: stringifier), and *cross-format renderers* (D2/DOT).
+In one year this could be a **focused toolkit** (2–3 packages under `@casualtheorics/argdown-*`) covering read, write, build, solve, and visualize — with `argdown-2` itself as the foundational strict validator and grounded solver. The current architecture (one strict pipeline + one builder layer + one MCP surface, all EDN-in / typed-object-out) is the right shape for that. The three missing pieces are *multiple solvers* (Roadmap #2/#3), *visualization* (#4), and *multi-document theories* (#7).
 
-**Net drift vs prior crystal-ball:** The stringifier and solver toolkit ship. The roadmap arc is shorter (symmetry done; evaluator is now `solver-multi`'s territory, not a separate package).
+**Net drift vs prior 2026-06-27 crystal-ball:** The parser, Mermaid renderer, CLI, and 15-solver surface are gone. The remaining roadmap is shorter and more focused — the reset removed four categories of work that were speculative or drifted.
 
 ---
 
-**Next stage:** `/claudikins-grfp:think-tank` — research how similar high-star parser/grammar projects write their READMEs.
+**Next stage:** `/claudikins-grfp:brain-jam` — collaborate on README voice + angle for the EDN pipeline.
