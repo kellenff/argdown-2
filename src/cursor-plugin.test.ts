@@ -23,23 +23,33 @@ describe('Cursor plugin MCP config', () => {
     expect(manifest.logo).toBe('assets/logo.svg');
   });
 
-  it('exposes argdown-2 via npx against the release tarball', () => {
+  it('exposes argdown-2 via yarn dlx against the release tarball', () => {
     const mcp = readJson('mcp.json') as {
       mcpServers: {
         'argdown-2': { command: string; args: string[] };
       };
     };
     const server = mcp.mcpServers['argdown-2'];
-    expect(server.command).toBe('npx');
-    expect(server.args[0]).toBe('-y');
-    expect(server.args[1]).toMatch(
-      /^--package=https:\/\/github\.com\/kellenff\/argdown-2\/releases\/download\/v[\w.-]+\/casualtheorics-argdown-2-[\w.-]+\.tgz$/,
+    expect(server.command).toBe('yarn');
+    expect(server.args[0]).toBe('dlx');
+    expect(server.args[1]).toBe('-p');
+    expect(server.args[2]).toMatch(
+      /^https:\/\/github\.com\/kellenff\/argdown-2\/releases\/download\/v[\w.-]+\/casualtheorics-argdown-2-[\w.-]+\.tgz$/,
     );
-    expect(server.args[2]).toBe('argdown-2-mcp');
+    expect(server.args[3]).toBe('argdown-2-mcp');
 
     const version = (readJson('package.json') as { version: string }).version;
-    expect(server.args[1]).toContain(`v${version}`);
-    expect(server.args[1]).toContain(`casualtheorics-argdown-2-${version}.tgz`);
+    expect(server.args[2]).toContain(`v${version}`);
+    expect(server.args[2]).toContain(`casualtheorics-argdown-2-${version}.tgz`);
+  });
+
+  it('declares edn-parser-js via the Yarn patch protocol', () => {
+    const pkg = readJson('package.json') as {
+      dependencies: Record<string, string>;
+    };
+    expect(pkg.dependencies['edn-parser-js']).toMatch(
+      /^patch:edn-parser-js@npm%3A2\.0\.2#\.\/\.yarn\/patches\/edn-parser-js-npm-2\.0\.2\.patch$/,
+    );
   });
 
   it('keeps a yarn-based project MCP config for local clones', () => {

@@ -377,7 +377,7 @@ __metadata:
     "@stryker-mutator/typescript-checker": "npm:^9.6.1"
     "@stryker-mutator/vitest-runner": "npm:^9.6.1"
     "@types/node": "npm:^20.12.0"
-    edn-parser-js: "npm:2.0.2"
+    edn-parser-js: "patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch"
     husky: "npm:^9.1.7"
     knip: "npm:6.27.0"
     lint-staged: "npm:^17.0.8"

@@ -1,10 +1,11 @@
 {
   "mcpServers": {
     "argdown-2": {
-      "command": "npx",
+      "command": "yarn",
       "args": [
-        "-y",
-        "--package=https://github.com/kellenff/argdown-2/releases/download/v0.2.0-alpha2/casualtheorics-argdown-2-0.2.0-alpha2.tgz",
+        "dlx",
+        "-p",
+        "https://github.com/kellenff/argdown-2/releases/download/v0.2.0-alpha2/casualtheorics-argdown-2-0.2.0-alpha2.tgz",
         "argdown-2-mcp"
       ]
     }

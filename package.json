@@ -20,7 +20,6 @@
   },
   "files": [
     "dist",
-    "scripts/apply-edn-parser-patch.mjs",
     ".yarn/patches/edn-parser-js-npm-2.0.2.patch"
   ],
   "scripts": {
@@ -35,18 +34,16 @@
     "mcp": "node ./dist/mcp/cli.js",
     "mutate": "stryker run",
     "prepare": "husky || true",
-    "postinstall": "node ./scripts/apply-edn-parser-patch.mjs",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "edn-parser-js": "2.0.2",
+    "edn-parser-js": "patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch",
     "zod": "^4.4.3"
   },
   "resolutions": {
-    "edn-parser-js@npm:2.0.2": "patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch",
     "knip@npm:6.27.0": "patch:knip@npm%3A6.27.0#./.yarn/patches/knip-npm-6.27.0-648296b906.patch"
   },
   "devDependencies": {

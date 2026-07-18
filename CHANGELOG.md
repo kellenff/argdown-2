@@ -5,10 +5,11 @@ based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
 > **Distribution:** the package is not yet on npm. Install a tagged library
-> tarball from GitHub Releases, then import the package in your project:
+> tarball from GitHub Releases with Yarn (required for the `edn-parser-js`
+> patch protocol), then import the package in your project:
 >
 > ```bash
-> npm install https://github.com/kellenff/argdown-2/releases/download/<TAG>/casualtheorics-argdown-2-<VERSION>.tgz
+> yarn add https://github.com/kellenff/argdown-2/releases/download/<TAG>/casualtheorics-argdown-2-<VERSION>.tgz
 > ```
 >
 > ```ts
@@ -31,7 +32,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- `prepare` runs `husky || true` so local installs succeed without husky on the PATH. `postinstall` applies the checked-in `edn-parser-js` patch for npm/npx consumers (Yarn `resolutions` patches are ignored by npm).
+- MCP one-click config uses `yarn dlx` (not `npx`) so the Yarn `patch:` dependency on `edn-parser-js` is applied.
+- Declare `edn-parser-js` via the Yarn `patch:` protocol in `dependencies` (not only `resolutions`) so consumers and `yarn dlx` get the ESM fix.
+- `prepare` runs `husky || true` so local installs succeed without husky on the PATH.
 - Upgraded Vitest from 1.x to 3.x (required by `@stryker-mutator/vitest-runner` 9.x).
 
 ## [0.2.0-alpha1] - 2026-07-17
