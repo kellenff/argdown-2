@@ -1,0 +1,13 @@
+#casualtheorics.argdown2.solver/grounded
+[
+  #casualtheorics.argdown2.argdown/statement
+  {:id :a
+   :text "Alpha"}
+
+  #casualtheorics.argdown2.argdown/statement
+  {:id :b
+   :text "Beta"}
+
+  #casualtheorics.argdown2.argdown/attack
+  {:from :a :to :b}
+]
