@@ -26,6 +26,7 @@
     "format": "oxfmt --threads=1 src",
     "format:check": "oxfmt --check --threads=1 src",
     "lint": "oxlint src",
+    "mutate": "stryker run",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -38,12 +39,15 @@
     "edn-parser-js@npm:2.0.2": "patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/typescript-checker": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^20.12.0",
     "oxfmt": "^0.6.0",
     "oxlint": "^0.6.0",
     "tinybench": "^2.6.0",
     "tsx": "^4.0.0",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "vitest": "^3"
   }
 }

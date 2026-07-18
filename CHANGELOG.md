@@ -19,6 +19,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 > packs, and publishes the tarball automatically on every push to `main`
 > whose `package.json` `version` differs from the previous commit.
 
+## [Unreleased]
+
+### Added
+
+- Stryker mutation testing (`yarn mutate`) with Vitest runner, TypeScript checker, and an 80% break threshold on `edn`, `grounded`, `reduce-dung`, and `validate`.
+
+### Changed
+
+- Upgraded Vitest from 1.x to 3.x (required by `@stryker-mutator/vitest-runner` 9.x).
+
 ## [0.2.0-alpha1] - 2026-07-17
 
 Breaking pre-1.0 reset.
