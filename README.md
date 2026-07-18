@@ -2,7 +2,7 @@
 
 An EDN argumentation library for validated, solver-rooted theories and grounded Dung evaluation.
 
-> `0.2.0-alpha1` is a breaking pre-1.0 reset. The former custom `.argdown` language and tooling are not supported.
+> `0.2.0-alpha1` is a breaking pre-1.0 reset. The former custom `.argdown` language and parser are not supported; an MCP builder server is available for incremental EDN authoring.
 
 ## Quick start
 
@@ -23,6 +23,51 @@ if (!loaded.ok) {
   console.log(solve(loaded.document).labels);
 }
 ```
+
+## MCP server
+
+Build the package, then start the stdio MCP server:
+
+```bash
+yarn build
+yarn mcp
+# or after install: argdown-2-mcp
+```
+
+**Cursor** (`.cursor/mcp.json` or global MCP settings):
+
+```json
+{
+  "mcpServers": {
+    "argdown-2": {
+      "command": "node",
+      "args": ["/absolute/path/to/argdown-2/dist/mcp/cli.js"]
+    }
+  }
+}
+```
+
+Use the path to `dist/mcp/cli.js` in your clone or `node_modules/@casualtheorics/argdown-2/dist/mcp/cli.js` after install.
+
+### Tools
+
+| Tool | Purpose |
+|---|---|
+| `create_document` | Create an empty grounded document |
+| `add_statement` | Add a statement (`id`, optional `text` prose) |
+| `update_statement` | Update statement prose or tags |
+| `add_argument` | Add an argument (`id`, optional `description`) |
+| `add_inference` | Add an inference under an argument |
+| `add_relation` | Add `support`, `attack`, `contradiction`, or `undercut` |
+| `remove_element` | Remove a statement, argument, or inference |
+| `remove_relation` | Remove a relation by kind and endpoints |
+| `list_elements` | List statements, arguments, inferences, and relations |
+| `validate` | Strict-load; return semantic diagnostics |
+| `solve` | Strict-load and compute grounded labels |
+
+Mutating tools take exactly one of `path` (filesystem `.edn`) or `source` (full document text). Statement prose is the `text` field. Path mode writes in place; source mode returns the updated EDN in `source`.
+
+Builder mutations may succeed with soft warnings (e.g. ambiguous refs). Call `validate` before `solve` when you need a hard gate.
 
 ## Canonical EDN shape
 
@@ -81,7 +126,7 @@ Inferences are logical structure and are not Dung nodes.
 
 ## Breaking reset
 
-This release removes the custom lexer/parser, source AST, formatter, CLI, MCP server, Mermaid renderer, and advanced solver surfaces. There is no compatibility shim or migration parser. Historical designs remain under `docs/snowball/`.
+This release removes the custom lexer/parser, source AST, formatter, CLI, legacy MCP server, Mermaid renderer, and advanced solver surfaces. A new builder MCP server (`yarn mcp`) replaces the old custom-language MCP for incremental EDN authoring. There is no compatibility shim or migration parser. Historical designs remain under `docs/snowball/`.
 
 ## Development
 

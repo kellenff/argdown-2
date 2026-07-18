@@ -9,6 +9,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "argdown-2-mcp": "./dist/mcp/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -27,12 +30,15 @@
     "format:check": "oxfmt --check --threads=1 src",
     "knip": "knip --dependencies",
     "lint": "oxlint src",
+    "mcp": "node ./dist/mcp/cli.js",
     "mutate": "stryker run",
+    "postinstall": "husky",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "edn-parser-js": "2.0.2",
     "zod": "^4.4.3"
   },
@@ -46,7 +52,9 @@
     "@stryker-mutator/typescript-checker": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^20.12.0",
+    "husky": "^9.1.7",
     "knip": "6.27.0",
+    "lint-staged": "^17.0.8",
     "oxfmt": "^0.6.0",
     "oxlint": "^0.6.0",
     "tinybench": "^2.6.0",
@@ -57,6 +65,12 @@
   "dependenciesMeta": {
     "oxc-parser@0.137.0": {
       "unplugged": true
+    },
+    "oxfmt@0.6.0": {
+      "unplugged": true
     }
+  },
+  "lint-staged": {
+    "src/**/*.{ts,js}": "oxfmt --threads=1"
   }
 }
