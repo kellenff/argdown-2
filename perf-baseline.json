@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-18T01:39:05.462Z",
+  "environment": {
+    "nodeVersion": "v22.14.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "fixtures": {
+    "small-minimal": {
+      "sizeBytes": 213,
+      "tasks": {
+        "load": {
+          "opsPerSec": 9688.598136326482,
+          "marginOfError": 2.1715803868570847,
+          "p99Ms": 359.6190000000661,
+          "peakHeapDeltaMB": 0.3347625732421875
+        },
+        "solve": {
+          "opsPerSec": 128614.58123093241,
+          "marginOfError": 0.5613348114101653,
+          "p99Ms": 11.781000000155473,
+          "peakHeapDeltaMB": 0.02752685546875
+        },
+        "load-solve": {
+          "opsPerSec": 11887.88950206602,
+          "marginOfError": 0.6318852475904658,
+          "p99Ms": 261.0430000004271,
+          "peakHeapDeltaMB": 0.3218231201171875
+        }
+      }
+    },
+    "small-relations": {
+      "sizeBytes": 542,
+      "tasks": {
+        "load": {
+          "opsPerSec": 3830.6178728835034,
+          "marginOfError": 2.327183651639047,
+          "p99Ms": 703.302999999778,
+          "peakHeapDeltaMB": 0.6791915893554688
+        },
+        "solve": {
+          "opsPerSec": 122957.82613761927,
+          "marginOfError": 0.41981359953178277,
+          "p99Ms": 13.406000000031781,
+          "peakHeapDeltaMB": 0.02117919921875
+        },
+        "load-solve": {
+          "opsPerSec": 5268.464908361981,
+          "marginOfError": 0.5764920012640116,
+          "p99Ms": 380.98299999910523,
+          "peakHeapDeltaMB": 0.678802490234375
+        }
+      }
+    },
+    "small-argument": {
+      "sizeBytes": 599,
+      "tasks": {
+        "load": {
+          "opsPerSec": 3082.673480142246,
+          "marginOfError": 2.0823143202893943,
+          "p99Ms": 889.2760000003364,
+          "peakHeapDeltaMB": 0.845367431640625
+        },
+        "solve": {
+          "opsPerSec": 141622.9154511921,
+          "marginOfError": 0.34897450638603433,
+          "p99Ms": 10.925000000497676,
+          "peakHeapDeltaMB": 0.01627349853515625
+        },
+        "load-solve": {
+          "opsPerSec": 4405.05733094621,
+          "marginOfError": 0.6792764978348247,
+          "p99Ms": 428.6370000008901,
+          "peakHeapDeltaMB": 0.8227920532226562
+        }
+      }
+    },
+    "medium-censorship": {
+      "sizeBytes": 2792,
+      "tasks": {
+        "load": {
+          "opsPerSec": 1153.9895817820557,
+          "marginOfError": 1.6662534766530432,
+          "p99Ms": 1185.5080000004818,
+          "peakHeapDeltaMB": 2.99908447265625
+        },
+        "solve": {
+          "opsPerSec": 89764.62017878542,
+          "marginOfError": 0.4567981818391145,
+          "p99Ms": 18.524999999499414,
+          "peakHeapDeltaMB": 0.023284912109375
+        },
+        "load-solve": {
+          "opsPerSec": 1165.3034515149707,
+          "marginOfError": 0.6368574914636095,
+          "p99Ms": 1095.7310000012512,
+          "peakHeapDeltaMB": 2.9951400756835938
+        }
+      }
+    },
+    "heavy-attacks": {
+      "sizeBytes": 3648,
+      "tasks": {
+        "load": {
+          "opsPerSec": 566.1093752187481,
+          "marginOfError": 1.2850503233638948,
+          "p99Ms": 2632.7519999995275,
+          "peakHeapDeltaMB": 5.4470977783203125
+        },
+        "solve": {
+          "opsPerSec": 57071.6876466714,
+          "marginOfError": 1.401356961660232,
+          "p99Ms": 30.875999998897896,
+          "peakHeapDeltaMB": 0.0243072509765625
+        },
+        "load-solve": {
+          "opsPerSec": 684.0852446312828,
+          "marginOfError": 0.616298615594525,
+          "p99Ms": 1661.9790000004286,
+          "peakHeapDeltaMB": 5.470237731933594
+        }
+      }
+    },
+    "deep-arguments": {
+      "sizeBytes": 10520,
+      "tasks": {
+        "load": {
+          "opsPerSec": 189.91476720205367,
+          "marginOfError": 3.596557541459121,
+          "p99Ms": 11484.13199999959,
+          "peakHeapDeltaMB": 0.9991531372070312
+        },
+        "solve": {
+          "opsPerSec": 40819.540208687475,
+          "marginOfError": 1.1825366628903016,
+          "p99Ms": 55.44999999983702,
+          "peakHeapDeltaMB": 0.0511322021484375
+        },
+        "load-solve": {
+          "opsPerSec": 192.43402113925245,
+          "marginOfError": 2.3904917226717397,
+          "p99Ms": 8702.232999999978,
+          "peakHeapDeltaMB": 1.039276123046875
+        }
+      }
+    },
+    "large-stress": {
+      "sizeBytes": 27088,
+      "tasks": {
+        "load": {
+          "opsPerSec": 62.9542404817145,
+          "marginOfError": 6.195565709608238,
+          "p99Ms": 29811.77900000057,
+          "peakHeapDeltaMB": 10.360641479492188
+        },
+        "solve": {
+          "opsPerSec": 32262.00765290193,
+          "marginOfError": 1.2171517230353737,
+          "p99Ms": 86.1189999995986,
+          "peakHeapDeltaMB": 0.05519866943359375
+        },
+        "load-solve": {
+          "opsPerSec": 65.07780276134427,
+          "marginOfError": 5.452020954896798,
+          "p99Ms": 30217.037999998865,
+          "peakHeapDeltaMB": 10.733139038085938
+        }
+      }
+    }
+  }
+}
