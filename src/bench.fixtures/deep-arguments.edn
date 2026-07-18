@@ -1,0 +1,303 @@
+#casualtheorics.argdown2.solver/grounded
+[
+  #casualtheorics.argdown2.argdown/statement {:id :p0-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p0-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p0-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-0
+   :description "Argument 0"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-0
+     :premises [:p0-a :p0-b]
+     :conclusion :p0-c
+     :rules [:rule-0]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p1-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p1-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p1-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-1
+   :description "Argument 1"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-1
+     :premises [:p1-a :p1-b]
+     :conclusion :p1-c
+     :rules [:rule-1]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p2-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p2-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p2-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-2
+   :description "Argument 2"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-2
+     :premises [:p2-a :p2-b]
+     :conclusion :p2-c
+     :rules [:rule-2]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p3-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p3-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p3-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-3
+   :description "Argument 3"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-3
+     :premises [:p3-a :p3-b]
+     :conclusion :p3-c
+     :rules [:rule-3]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p4-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p4-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p4-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-4
+   :description "Argument 4"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-4
+     :premises [:p4-a :p4-b]
+     :conclusion :p4-c
+     :rules [:rule-4]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p5-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p5-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p5-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-5
+   :description "Argument 5"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-5
+     :premises [:p5-a :p5-b]
+     :conclusion :p5-c
+     :rules [:rule-5]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p6-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p6-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p6-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-6
+   :description "Argument 6"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-6
+     :premises [:p6-a :p6-b]
+     :conclusion :p6-c
+     :rules [:rule-6]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p7-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p7-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p7-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-7
+   :description "Argument 7"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-7
+     :premises [:p7-a :p7-b]
+     :conclusion :p7-c
+     :rules [:rule-7]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p8-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p8-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p8-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-8
+   :description "Argument 8"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-8
+     :premises [:p8-a :p8-b]
+     :conclusion :p8-c
+     :rules [:rule-8]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p9-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p9-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p9-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-9
+   :description "Argument 9"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-9
+     :premises [:p9-a :p9-b]
+     :conclusion :p9-c
+     :rules [:rule-9]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p10-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p10-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p10-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-10
+   :description "Argument 10"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-10
+     :premises [:p10-a :p10-b]
+     :conclusion :p10-c
+     :rules [:rule-10]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p11-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p11-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p11-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-11
+   :description "Argument 11"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-11
+     :premises [:p11-a :p11-b]
+     :conclusion :p11-c
+     :rules [:rule-11]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p12-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p12-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p12-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-12
+   :description "Argument 12"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-12
+     :premises [:p12-a :p12-b]
+     :conclusion :p12-c
+     :rules [:rule-12]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p13-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p13-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p13-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-13
+   :description "Argument 13"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-13
+     :premises [:p13-a :p13-b]
+     :conclusion :p13-c
+     :rules [:rule-13]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p14-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p14-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p14-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-14
+   :description "Argument 14"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-14
+     :premises [:p14-a :p14-b]
+     :conclusion :p14-c
+     :rules [:rule-14]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p15-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p15-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p15-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-15
+   :description "Argument 15"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-15
+     :premises [:p15-a :p15-b]
+     :conclusion :p15-c
+     :rules [:rule-15]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p16-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p16-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p16-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-16
+   :description "Argument 16"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-16
+     :premises [:p16-a :p16-b]
+     :conclusion :p16-c
+     :rules [:rule-16]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p17-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p17-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p17-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-17
+   :description "Argument 17"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-17
+     :premises [:p17-a :p17-b]
+     :conclusion :p17-c
+     :rules [:rule-17]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p18-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p18-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p18-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-18
+   :description "Argument 18"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-18
+     :premises [:p18-a :p18-b]
+     :conclusion :p18-c
+     :rules [:rule-18]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p19-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p19-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p19-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-19
+   :description "Argument 19"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-19
+     :premises [:p19-a :p19-b]
+     :conclusion :p19-c
+     :rules [:rule-19]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p20-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p20-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p20-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-20
+   :description "Argument 20"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-20
+     :premises [:p20-a :p20-b]
+     :conclusion :p20-c
+     :rules [:rule-20]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p21-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p21-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p21-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-21
+   :description "Argument 21"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-21
+     :premises [:p21-a :p21-b]
+     :conclusion :p21-c
+     :rules [:rule-21]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p22-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p22-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p22-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-22
+   :description "Argument 22"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-22
+     :premises [:p22-a :p22-b]
+     :conclusion :p22-c
+     :rules [:rule-22]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p23-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p23-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p23-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-23
+   :description "Argument 23"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-23
+     :premises [:p23-a :p23-b]
+     :conclusion :p23-c
+     :rules [:rule-23]}]}
+  #casualtheorics.argdown2.argdown/statement {:id :p24-a}
+  #casualtheorics.argdown2.argdown/statement {:id :p24-b}
+  #casualtheorics.argdown2.argdown/statement {:id :p24-c}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :arg-24
+   :description "Argument 24"
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :inf-24
+     :premises [:p24-a :p24-b]
+     :conclusion :p24-c
+     :rules [:rule-24]}]}
+]

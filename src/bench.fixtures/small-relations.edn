@@ -1,0 +1,10 @@
+#casualtheorics.argdown2.solver/grounded
+[
+  #casualtheorics.argdown2.argdown/statement {:id :claim}
+  #casualtheorics.argdown2.argdown/statement {:id :counter}
+  #casualtheorics.argdown2.argdown/statement {:id :support-target}
+  #casualtheorics.argdown2.argdown/argument {:id :pro-arg :description "Pro side"}
+  #casualtheorics.argdown2.argdown/attack {:from :pro-arg :to :counter}
+  #casualtheorics.argdown2.argdown/contradiction {:from :claim :to :counter}
+  #casualtheorics.argdown2.argdown/support {:from :pro-arg :to :support-target}
+]

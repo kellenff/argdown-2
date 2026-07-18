@@ -1,0 +1,6 @@
+#casualtheorics.argdown2.solver/grounded
+[
+  #casualtheorics.argdown2.argdown/statement {:id :a}
+  #casualtheorics.argdown2.argdown/statement {:id :b}
+  #casualtheorics.argdown2.argdown/attack {:from :a :to :b}
+]

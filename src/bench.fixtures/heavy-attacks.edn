@@ -1,0 +1,63 @@
+#casualtheorics.argdown2.solver/grounded
+[
+  #casualtheorics.argdown2.argdown/statement {:id :n0}
+  #casualtheorics.argdown2.argdown/statement {:id :n1}
+  #casualtheorics.argdown2.argdown/statement {:id :n2}
+  #casualtheorics.argdown2.argdown/statement {:id :n3}
+  #casualtheorics.argdown2.argdown/statement {:id :n4}
+  #casualtheorics.argdown2.argdown/statement {:id :n5}
+  #casualtheorics.argdown2.argdown/statement {:id :n6}
+  #casualtheorics.argdown2.argdown/statement {:id :n7}
+  #casualtheorics.argdown2.argdown/statement {:id :n8}
+  #casualtheorics.argdown2.argdown/statement {:id :n9}
+  #casualtheorics.argdown2.argdown/statement {:id :n10}
+  #casualtheorics.argdown2.argdown/statement {:id :n11}
+  #casualtheorics.argdown2.argdown/statement {:id :n12}
+  #casualtheorics.argdown2.argdown/statement {:id :n13}
+  #casualtheorics.argdown2.argdown/statement {:id :n14}
+  #casualtheorics.argdown2.argdown/statement {:id :n15}
+  #casualtheorics.argdown2.argdown/statement {:id :n16}
+  #casualtheorics.argdown2.argdown/statement {:id :n17}
+  #casualtheorics.argdown2.argdown/statement {:id :n18}
+  #casualtheorics.argdown2.argdown/statement {:id :n19}
+  #casualtheorics.argdown2.argdown/statement {:id :n20}
+  #casualtheorics.argdown2.argdown/statement {:id :n21}
+  #casualtheorics.argdown2.argdown/statement {:id :n22}
+  #casualtheorics.argdown2.argdown/statement {:id :n23}
+  #casualtheorics.argdown2.argdown/statement {:id :n24}
+  #casualtheorics.argdown2.argdown/statement {:id :n25}
+  #casualtheorics.argdown2.argdown/statement {:id :n26}
+  #casualtheorics.argdown2.argdown/statement {:id :n27}
+  #casualtheorics.argdown2.argdown/statement {:id :n28}
+  #casualtheorics.argdown2.argdown/statement {:id :n29}
+  #casualtheorics.argdown2.argdown/attack {:from :n0 :to :n7}
+  #casualtheorics.argdown2.argdown/attack {:from :n1 :to :n8}
+  #casualtheorics.argdown2.argdown/attack {:from :n2 :to :n9}
+  #casualtheorics.argdown2.argdown/attack {:from :n3 :to :n10}
+  #casualtheorics.argdown2.argdown/attack {:from :n4 :to :n11}
+  #casualtheorics.argdown2.argdown/attack {:from :n5 :to :n12}
+  #casualtheorics.argdown2.argdown/attack {:from :n6 :to :n13}
+  #casualtheorics.argdown2.argdown/attack {:from :n7 :to :n14}
+  #casualtheorics.argdown2.argdown/attack {:from :n8 :to :n15}
+  #casualtheorics.argdown2.argdown/attack {:from :n9 :to :n16}
+  #casualtheorics.argdown2.argdown/attack {:from :n10 :to :n17}
+  #casualtheorics.argdown2.argdown/attack {:from :n11 :to :n18}
+  #casualtheorics.argdown2.argdown/attack {:from :n12 :to :n19}
+  #casualtheorics.argdown2.argdown/attack {:from :n13 :to :n20}
+  #casualtheorics.argdown2.argdown/attack {:from :n14 :to :n21}
+  #casualtheorics.argdown2.argdown/attack {:from :n15 :to :n22}
+  #casualtheorics.argdown2.argdown/attack {:from :n16 :to :n23}
+  #casualtheorics.argdown2.argdown/attack {:from :n17 :to :n24}
+  #casualtheorics.argdown2.argdown/attack {:from :n18 :to :n25}
+  #casualtheorics.argdown2.argdown/attack {:from :n19 :to :n26}
+  #casualtheorics.argdown2.argdown/attack {:from :n20 :to :n27}
+  #casualtheorics.argdown2.argdown/attack {:from :n21 :to :n28}
+  #casualtheorics.argdown2.argdown/attack {:from :n22 :to :n29}
+  #casualtheorics.argdown2.argdown/attack {:from :n23 :to :n0}
+  #casualtheorics.argdown2.argdown/attack {:from :n24 :to :n1}
+  #casualtheorics.argdown2.argdown/contradiction {:from :n0 :to :n1}
+  #casualtheorics.argdown2.argdown/contradiction {:from :n3 :to :n4}
+  #casualtheorics.argdown2.argdown/contradiction {:from :n6 :to :n7}
+  #casualtheorics.argdown2.argdown/contradiction {:from :n9 :to :n10}
+  #casualtheorics.argdown2.argdown/contradiction {:from :n12 :to :n13}
+]
