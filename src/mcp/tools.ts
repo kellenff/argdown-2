@@ -11,7 +11,7 @@ import {
   type DocumentRef,
 } from './io.js';
 
-type DocRefInput = { path?: string; text?: string };
+type DocRefInput = { path?: string | undefined; source?: string | undefined };
 
 type McpResult = {
   content: [{ type: 'text'; text: string }];
@@ -27,22 +27,28 @@ function jsonResult(body: unknown, isError = false): McpResult {
 
 const INVALID_REF_ERROR: Diagnostic = {
   code: 'mcp/invalid-ref',
-  message: 'Provide exactly one of path or text',
+  message: 'Provide exactly one of path or source',
 };
+
+function toTextRef(source: string): DocumentRef {
+  return { text: source };
+}
 
 function normalizeDocRef(input: DocRefInput):
   | { ok: true; ref: DocumentRef }
   | { ok: false; errors: readonly Diagnostic[] } {
   const hasPath = input.path !== undefined;
-  const hasText = input.text !== undefined;
-  if (hasPath === hasText) {
+  const hasSource = input.source !== undefined;
+  if (hasPath === hasSource) {
     return { ok: false, errors: [INVALID_REF_ERROR] };
   }
   if (hasPath) return { ok: true, ref: { path: input.path! } };
-  return { ok: true, ref: { text: input.text! } };
+  return { ok: true, ref: toTextRef(input.source!) };
 }
 
-function normalizeStatementDocRef(input: DocRefInput):
+function normalizeStatementDocRef(
+  input: DocRefInput & { text?: string | undefined },
+):
   | { ok: true; ref: DocumentRef; statementText?: string }
   | { ok: false; errors: readonly Diagnostic[] } {
   if (input.path !== undefined) {
@@ -52,10 +58,26 @@ function normalizeStatementDocRef(input: DocRefInput):
       ...(input.text !== undefined ? { statementText: input.text } : {}),
     };
   }
-  if (input.text !== undefined) {
-    return { ok: true, ref: { text: input.text } };
+  if (input.source !== undefined) {
+    return {
+      ok: true,
+      ref: toTextRef(input.source),
+      ...(input.text !== undefined ? { statementText: input.text } : {}),
+    };
   }
   return { ok: false, errors: [INVALID_REF_ERROR] };
+}
+
+function normalizeCreateDocRef(input: DocRefInput):
+  | { ok: true; ref: DocumentRef }
+  | { ok: false; errors: readonly Diagnostic[] } {
+  const hasPath = input.path !== undefined;
+  const hasSource = input.source !== undefined;
+  if (hasPath && hasSource) {
+    return { ok: false, errors: [INVALID_REF_ERROR] };
+  }
+  if (hasPath) return { ok: true, ref: { path: input.path! } };
+  return { ok: true, ref: toTextRef(input.source ?? '') };
 }
 
 async function readSource(input: DocRefInput): Promise<
@@ -112,7 +134,7 @@ async function applyMutation(
     diff: applied.diff,
   };
   if ('path' in saved) body.path = saved.path;
-  else body.text = saved.text;
+  else body.source = saved.text;
   return jsonResult(body);
 }
 
@@ -142,7 +164,7 @@ function listElementsFromDoc(doc: CandidateDocument): Record<string, unknown>[] 
 }
 
 export async function runCreateDocument(args: DocRefInput): Promise<McpResult> {
-  const refResult = normalizeDocRef(args);
+  const refResult = normalizeCreateDocRef(args);
   if (!refResult.ok) {
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
@@ -151,11 +173,15 @@ export async function runCreateDocument(args: DocRefInput): Promise<McpResult> {
     return jsonResult({ ok: false, errors: result.errors }, result.isError ?? false);
   }
   if ('path' in result) return jsonResult({ ok: true, path: result.path });
-  return jsonResult({ ok: true, text: result.text });
+  return jsonResult({ ok: true, source: result.text });
 }
 
 export async function runAddStatement(
-  args: DocRefInput & { id: string; tags?: readonly string[] },
+  args: DocRefInput & {
+    id: string;
+    text?: string | undefined;
+    tags?: readonly string[] | undefined;
+  },
 ): Promise<McpResult> {
   const refResult = normalizeStatementDocRef(args);
   if (!refResult.ok) {
@@ -171,7 +197,11 @@ export async function runAddStatement(
 }
 
 export async function runUpdateStatement(
-  args: DocRefInput & { id: string; tags?: readonly string[] },
+  args: DocRefInput & {
+    id: string;
+    text?: string | undefined;
+    tags?: readonly string[] | undefined;
+  },
 ): Promise<McpResult> {
   const refResult = normalizeStatementDocRef(args);
   if (!refResult.ok) {
@@ -189,8 +219,8 @@ export async function runUpdateStatement(
 export async function runAddArgument(
   args: DocRefInput & {
     id: string;
-    description?: string;
-    tags?: readonly string[];
+    description?: string | undefined;
+    tags?: readonly string[] | undefined;
   },
 ): Promise<McpResult> {
   const refResult = normalizeDocRef(args);
@@ -212,7 +242,7 @@ export async function runAddInference(
     id: string;
     premises: readonly string[];
     conclusion: string;
-    rules?: readonly string[];
+    rules?: readonly string[] | undefined;
   },
 ): Promise<McpResult> {
   const refResult = normalizeDocRef(args);

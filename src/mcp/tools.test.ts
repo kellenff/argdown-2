@@ -36,17 +36,20 @@ describe('mcp tool handlers', () => {
   });
 
   it('text mode: create, add_statement, validate', async () => {
-    const created = await runCreateDocument({ text: '' });
+    const created = await runCreateDocument({ source: '' });
     const createBody = parseBody(created);
     expect(createBody.ok).toBe(true);
-    expect(typeof createBody.text).toBe('string');
+    expect(typeof createBody.source).toBe('string');
 
-    const added = await runAddStatement({ text: createBody.text as string, id: 'a' });
+    const added = await runAddStatement({
+      source: createBody.source as string,
+      id: 'a',
+    });
     const addedBody = parseBody(added);
     expect(addedBody.ok).toBe(true);
-    expect(typeof addedBody.text).toBe('string');
+    expect(typeof addedBody.source).toBe('string');
 
-    const validated = await runValidate({ text: addedBody.text as string });
+    const validated = await runValidate({ source: addedBody.source as string });
     expect(parseBody(validated).ok).toBe(true);
   });
 });
