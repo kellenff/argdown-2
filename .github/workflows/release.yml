@@ -1,7 +1,7 @@
 # .github/workflows/release.yml
 #
 # On every push to `main`, if `package.json`'s `version` differs from the
-# previous commit, build the project, run the test/lint/typecheck/format
+# previous commit, build the project, run the test/lint/typecheck/format/knip
 # gates, pack a tarball, extract the matching section from CHANGELOG.md as
 # release notes, and publish a GitHub Release with the tarball attached.
 #
@@ -94,6 +94,9 @@ jobs:
         # `tsc` populates dist/. The subsequent `npm pack` step relies on
         # dist/ existing on disk (the `files` field is `["dist"]`, and
         # npm pack uses the working tree, not git history).
+
+      - name: Knip (unused/missing dependencies)
+        run: yarn knip
 
       - name: Detect version bump vs previous commit
         id: ver

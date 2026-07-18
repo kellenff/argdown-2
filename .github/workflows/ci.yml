@@ -1,7 +1,7 @@
 # .github/workflows/ci.yml
 #
 # PR validation. Mirrors the gates in release.yml (lint, format, typecheck,
-# test, build) and adds a dry-run-deploy that exercises the release
+# test, build, knip) and adds a dry-run-deploy that exercises the release
 # pipeline end-to-end up to `npm pack` — but does not create a GitHub
 # Release or upload the tarball as an asset. The dry-run is the only place
 # to verify the version-detection / CHANGELOG-extraction / pack pipeline
@@ -125,6 +125,25 @@ jobs:
         run: yarn install --immutable
       - name: Build
         run: yarn build
+
+  knip:
+    name: Knip
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.node-version'
+          registry-url: ""
+      - name: Enable corepack
+        run: |
+          corepack enable
+          yarn --version
+      - name: Install dependencies (immutable)
+        run: yarn install --immutable
+      - name: Knip (unused/missing dependencies)
+        run: yarn knip
 
   # Dry-run the publish pipeline. Same setup as release.yml (mirrors
   # Node version, corepack, install flags). Runs version detection and
