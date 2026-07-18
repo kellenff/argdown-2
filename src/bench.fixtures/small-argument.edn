@@ -1,0 +1,16 @@
+#casualtheorics.argdown2.solver/grounded
+[
+  #casualtheorics.argdown2.argdown/statement {:id :premise-a :text "Premise A"}
+  #casualtheorics.argdown2.argdown/statement {:id :premise-b :text "Premise B"}
+  #casualtheorics.argdown2.argdown/statement {:id :conclusion :text "Conclusion"}
+  #casualtheorics.argdown2.argdown/argument
+  {:id :main-argument
+   :description "A simple inference chain"
+   :tags #{:pro}
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :main-inference
+     :premises [:premise-a :premise-b]
+     :conclusion :conclusion
+     :rules [:modus-ponens]}]}
+]
