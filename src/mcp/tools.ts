@@ -46,21 +46,17 @@ function normalizeStatementDocRef(
 ):
   | { ok: true; ref: DocumentRef; statementText?: string }
   | { ok: false; errors: readonly Diagnostic[] } {
-  if (input.path !== undefined) {
-    return {
-      ok: true,
-      ref: { path: input.path },
-      ...(input.text !== undefined ? { statementText: input.text } : {}),
-    };
+  const hasPath = input.path !== undefined;
+  const hasSource = input.source !== undefined;
+  if (hasPath === hasSource) {
+    return { ok: false, errors: [INVALID_REF_ERROR] };
   }
-  if (input.source !== undefined) {
-    return {
-      ok: true,
-      ref: toTextRef(input.source),
-      ...(input.text !== undefined ? { statementText: input.text } : {}),
-    };
-  }
-  return { ok: false, errors: [INVALID_REF_ERROR] };
+  const ref: DocumentRef = hasPath ? { path: input.path! } : toTextRef(input.source!);
+  return {
+    ok: true,
+    ref,
+    ...(input.text !== undefined ? { statementText: input.text } : {}),
+  };
 }
 
 function normalizeCreateDocRef(

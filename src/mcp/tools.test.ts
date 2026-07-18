@@ -95,6 +95,33 @@ describe('mcp tool handlers', () => {
     expect(source).toContain('Freedom of speech is an absolute right.');
   });
 
+  it('path mode: refuse duplicate id does not rewrite the file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'argdown-mcp-'));
+    const path = join(dir, 'doc.edn');
+    await runCreateDocument({ path });
+    await runAddStatement({ path, id: 'a', text: 'A' });
+    const before = await readFile(path, 'utf8');
+    const refused = await runAddStatement({ path, id: 'a', text: 'B' });
+    const body = parseBody(refused);
+    expect(body.ok).toBe(false);
+    expect((body.refused as { code?: string } | undefined)?.code).toBe(
+      'builder/duplicate-id',
+    );
+    expect(await readFile(path, 'utf8')).toBe(before);
+  });
+
+  it('rejects path and source together on add_statement', async () => {
+    const refused = await runAddStatement({
+      path: '/tmp/unused.edn',
+      source: '#casualtheorics.argdown2.solver/grounded\n[]',
+      id: 'a',
+      text: 'A',
+    });
+    const body = parseBody(refused);
+    expect(body.ok).toBe(false);
+    expect(refused.isError).toBe(true);
+  });
+
   it('source mode: unresolved prose refs round-trip and allow follow-up mutation', async () => {
     const created = await runCreateDocument({ source: '' });
     let source = parseBody(created).source as string;
