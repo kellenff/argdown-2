@@ -12,21 +12,22 @@ Single-plugin layout at the repository root (same pattern as the official plugin
 - `mcp.json` — MCP server entry (`mcpServers.argdown-2`)
 - `assets/logo.svg` — marketplace logo
 
-Launch command uses `yarn dlx` against the GitHub Releases tarball so Yarn applies the checked-in `edn-parser-js` patch:
+Launch command uses `corepack yarn dlx` against the GitHub Releases tarball so Yarn 2+ is used (PATH `yarn` is often classic 1.x) and the checked-in `edn-parser-js` patch applies:
 
 ```json
 {
-  "command": "yarn",
+  "command": "corepack",
   "args": [
+    "yarn",
     "dlx",
     "-p",
-    "https://github.com/kellenff/argdown-2/releases/download/v0.2.0-alpha2/casualtheorics-argdown-2-0.2.0-alpha2.tgz",
+    "@casualtheorics/argdown-2@https://github.com/kellenff/argdown-2/releases/download/v0.2.0-alpha2/casualtheorics-argdown-2-0.2.0-alpha2.tgz",
     "argdown-2-mcp"
   ]
 }
 ```
 
-Requires Yarn 2+ on the PATH (this repo pins `packageManager: yarn@4.17.0`).
+Requires Node with Corepack (Node 18+). Yarn requires the package name before `https:` URLs (`name@https://...`).
 
 ## Supporting fixes
 
@@ -43,5 +44,5 @@ Requires Yarn 2+ on the PATH (this repo pins `packageManager: yarn@4.17.0`).
 ## Success criteria
 
 - Plugin files validate as JSON and match Cursor’s plugin reference shape
-- `yarn dlx -p <tarball> argdown-2-mcp` starts the stdio MCP server with the patch applied
+- `corepack yarn dlx -p <tarball> argdown-2-mcp` starts the stdio MCP server with the patch applied (verified outside the repo cwd, where PATH `yarn` is classic 1.x)
 - README documents plugin install and the MCP deeplink

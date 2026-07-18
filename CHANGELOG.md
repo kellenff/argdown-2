@@ -32,7 +32,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- MCP one-click config uses `yarn dlx` (not `npx`) so the Yarn `patch:` dependency on `edn-parser-js` is applied.
+- MCP one-click config uses `corepack yarn dlx` (not `npx` / bare `yarn`) so Yarn 2+ runs even when PATH `yarn` is classic 1.x, and the Yarn `patch:` dependency on `edn-parser-js` is applied.
 - Declare `edn-parser-js` via the Yarn `patch:` protocol in `dependencies` (not only `resolutions`) so consumers and `yarn dlx` get the ESM fix.
 - `prepare` runs `husky || true` so local installs succeed without husky on the PATH.
 - Upgraded Vitest from 1.x to 3.x (required by `@stryker-mutator/vitest-runner` 9.x).
