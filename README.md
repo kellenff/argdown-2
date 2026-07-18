@@ -82,33 +82,38 @@ Eleven tools, stdio transport, single binary `argdown-2-mcp`. Every mutating too
 | `validate` | Strict-load and return semantic diagnostics |
 | `solve` | Strict-load and compute grounded labels |
 
-**Cursor** (`.cursor/mcp.json` or global MCP settings):
+### One-click install (Cursor plugin)
+
+This repo is a Cursor plugin. Installing it registers the `argdown-2` MCP server automatically.
+
+1. In Cursor, open **Customize** → add this repository as a plugin / team marketplace source, **or** symlink it for local testing:
+   ```bash
+   ln -s /absolute/path/to/argdown-2 ~/.cursor/plugins/local/argdown-2
+   ```
+2. Reload the window. Toggle **argdown-2** on under Tools & MCP if needed.
+
+You can also use the [MCP install deeplink](cursor://anysphere.cursor-deeplink/mcp/install?name=argdown-2&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIi0tcGFja2FnZT1odHRwczovL2dpdGh1Yi5jb20va2VsbGVuZmYvYXJnZG93bi0yL3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC1hbHBoYTIvY2FzdWFsdGhlb3JpY3MtYXJnZG93bi0yLTAuMi4wLWFscGhhMi50Z3oiLCJhcmdkb3duLTItbWNwIl19) (opens Cursor’s install prompt with the same `npx` config as [`mcp.json`](mcp.json)).
+
+The plugin launches the server from the GitHub Releases tarball via `npx` (no absolute path required). From a source clone of this repo, prefer the committed [`.cursor/mcp.json`](.cursor/mcp.json) which runs `yarn node ./dist/mcp/cli.js` after `yarn build`.
+
+**Claude Desktop** (`claude_desktop_config.json`) or manual Cursor config:
 
 ```json
 {
   "mcpServers": {
     "argdown-2": {
-      "command": "node",
-      "args": ["/absolute/path/to/argdown-2/dist/mcp/cli.js"]
+      "command": "npx",
+      "args": [
+        "-y",
+        "--package=https://github.com/kellenff/argdown-2/releases/download/v0.2.0-alpha2/casualtheorics-argdown-2-0.2.0-alpha2.tgz",
+        "argdown-2-mcp"
+      ]
     }
   }
 }
 ```
 
-**Claude Desktop** (`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "argdown-2": {
-      "command": "node",
-      "args": ["/absolute/path/to/argdown-2/dist/mcp/cli.js"]
-    }
-  }
-}
-```
-
-Use the path to `dist/mcp/cli.js` in your clone, or `node_modules/@casualtheorics/argdown-2/dist/mcp/cli.js` after install. Call `validate` before `solve` when you need a hard gate on incremental authoring.
+Call `validate` before `solve` when you need a hard gate on incremental authoring.
 
 ## Canonical EDN shape
 

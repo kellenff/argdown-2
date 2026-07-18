@@ -1,6 +1,6 @@
 {
   "name": "@casualtheorics/argdown-2",
-  "version": "0.2.0-alpha1",
+  "version": "0.2.0-alpha2",
   "private": true,
   "type": "module",
   "packageManager": "yarn@4.17.0",
@@ -19,7 +19,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "scripts/apply-edn-parser-patch.mjs",
+    ".yarn/patches/edn-parser-js-npm-2.0.2.patch"
   ],
   "scripts": {
     "bench": "tsx src/pipeline.bench.ts",
@@ -32,7 +34,8 @@
     "lint": "oxlint src",
     "mcp": "node ./dist/mcp/cli.js",
     "mutate": "stryker run",
-    "postinstall": "husky",
+    "prepare": "husky || true",
+    "postinstall": "node ./scripts/apply-edn-parser-patch.mjs",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

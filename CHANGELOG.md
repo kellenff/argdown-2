@@ -21,12 +21,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0-alpha2] - 2026-07-18
+
 ### Added
 
+- Cursor plugin (`.cursor-plugin/plugin.json` + root `mcp.json`) for one-click MCP install.
+- Project-local `.cursor/mcp.json` that launches the server via `yarn node` after build.
 - Stryker mutation testing (`yarn mutate`) with Vitest runner, TypeScript checker, and an 80% break threshold on `edn`, `grounded`, `reduce-dung`, and `validate`.
 
 ### Changed
 
+- `prepare` runs `husky || true` so local installs succeed without husky on the PATH. `postinstall` applies the checked-in `edn-parser-js` patch for npm/npx consumers (Yarn `resolutions` patches are ignored by npm).
 - Upgraded Vitest from 1.x to 3.x (required by `@stryker-mutator/vitest-runner` 9.x).
 
 ## [0.2.0-alpha1] - 2026-07-17
@@ -149,3 +154,4 @@ backward-compatibility promises yet — the language surface is frozen (see
 
 [0.1.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.1.0-alpha1
 [0.2.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha1
+[0.2.0-alpha2]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha2
