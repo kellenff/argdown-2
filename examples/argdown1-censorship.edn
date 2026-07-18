@@ -1,0 +1,87 @@
+#casualtheorics.argdown2.solver/grounded
+[
+  #casualtheorics.argdown2.argdown/statement
+  {:id :censorship
+   :text "Censorship is not wrong in principle."}
+
+  #casualtheorics.argdown2.argdown/statement
+  {:id :absolute-freedom
+   :text "Freedom of speech is an absolute right."}
+
+  #casualtheorics.argdown2.argdown/statement
+  {:id :censorship-violates-freedom
+   :text "Censorship violates freedom of speech."}
+
+  #casualtheorics.argdown2.argdown/statement
+  {:id :absolute-rights-rule
+   :text "Whatever violates an absolute right is wrong in principle."}
+
+  #casualtheorics.argdown2.argdown/statement
+  {:id :censorship-wrong
+   :text "Censorship is wrong in principle."}
+
+  #casualtheorics.argdown2.argdown/argument
+  {:id :freedom-of-speech
+   :description "In a free society everyone must be free to express herself."
+   :tags #{:con}
+   :metadata {:source "C1a"}
+   :inferences
+   [#casualtheorics.argdown2.argdown/inference
+    {:id :freedom-of-speech-main
+     :premises [:absolute-freedom
+                :censorship-violates-freedom
+                :absolute-rights-rule]
+     :conclusion :censorship-wrong
+     :rules [:specification :modus-ponens]}]}
+
+  #casualtheorics.argdown2.argdown/argument
+  {:id :no-harm-trumps-freedom
+   :description "Freedom of speech ceases to be a right when it causes harm."
+   :tags #{:pro}
+   :metadata {:source "P1a"}}
+
+  #casualtheorics.argdown2.argdown/argument
+  {:id :racial-hatred
+   :description "Legislation against incitement to racial hatred is permissible."
+   :tags #{:pro}
+   :metadata {:source "P1b"}}
+
+  #casualtheorics.argdown2.argdown/argument
+  {:id :inclusive-debate
+   :description "Censorship drives racists underground."
+   :tags #{:con}
+   :metadata {:source "C1b"}}
+
+  #casualtheorics.argdown2.argdown/argument
+  {:id :excessive-sex-violence
+   :description "Screen violence contributes to similar behavior."
+   :tags #{:pro}
+   :metadata {:source "P2"}}
+
+  #casualtheorics.argdown2.argdown/argument
+  {:id :causal-link-questionable
+   :description "The causal link between screen and real violence is inconclusive."
+   :tags #{:con}
+   :metadata {:source "C2"}}
+
+  #casualtheorics.argdown2.argdown/support
+  {:from :racial-hatred :to :censorship}
+
+  #casualtheorics.argdown2.argdown/attack
+  {:from :inclusive-debate :to :racial-hatred}
+
+  #casualtheorics.argdown2.argdown/support
+  {:from :excessive-sex-violence :to :censorship}
+
+  #casualtheorics.argdown2.argdown/attack
+  {:from :causal-link-questionable :to :excessive-sex-violence}
+
+  #casualtheorics.argdown2.argdown/attack
+  {:from :no-harm-trumps-freedom :to :absolute-freedom}
+
+  #casualtheorics.argdown2.argdown/attack
+  {:from :freedom-of-speech :to :censorship}
+
+  #casualtheorics.argdown2.argdown/contradiction
+  {:from :censorship-wrong :to :censorship}
+]

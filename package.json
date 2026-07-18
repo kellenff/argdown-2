@@ -1,6 +1,6 @@
 {
   "name": "@casualtheorics/argdown-2",
-  "version": "0.1.0-alpha1",
+  "version": "0.2.0-alpha1",
   "private": true,
   "type": "module",
   "packageManager": "yarn@4.17.0",
@@ -9,53 +9,35 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "argdown": "./dist/cli.js",
-    "argdown-mermaid": "./dist/cli.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./ast": {
-      "types": "./dist/ast.d.ts",
-      "import": "./dist/ast.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "bench": "tsx src/parser.bench.ts",
-    "bench:baseline": "yarn bench --baseline",
-    "bench:check": "yarn bench --check",
-    "bench:solver": "tsx src/solver.bench.ts",
-    "bench:solver:baseline": "yarn bench:solver --baseline",
-    "bench:solver:check": "yarn bench:solver --check",
     "build": "tsc",
-    "format": "oxfmt src",
-    "format:check": "oxfmt --check src",
+    "format": "oxfmt --threads=1 src",
+    "format:check": "oxfmt --check --threads=1 src",
     "lint": "oxlint src",
-    "mutate": "stryker run",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "chevrotain": "^11.0.3",
-    "zod": "^3.25.0"
+    "edn-parser-js": "2.0.2",
+    "zod": "^4.4.3"
+  },
+  "resolutions": {
+    "edn-parser-js@npm:2.0.2": "patch:edn-parser-js@npm%3A2.0.2#./.yarn/patches/edn-parser-js-npm-2.0.2.patch"
   },
   "devDependencies": {
-    "@stryker-mutator/core": "8.7.1",
-    "@stryker-mutator/typescript-checker": "8.7.1",
-    "@stryker-mutator/vitest-runner": "8.7.1",
     "@types/node": "^20.12.0",
     "oxfmt": "^0.6.0",
     "oxlint": "^0.6.0",
-    "tinybench": "^2.6.0",
-    "tsx": "^4.22.4",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
   }

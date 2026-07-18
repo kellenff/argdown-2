@@ -42,12 +42,7 @@ jobs:
   release:
     name: Build, test, pack, and publish release
     runs-on: ubuntu-latest
-    # The full `yarn test` includes the structure-aware fuzz suite
-    # (200 iters × 7 fixtures) and the cross-validate solver suite. Both
-    # can run for 10+ minutes on cold CI runners. 30 min headroom keeps
-    # the release job well below GitHub Actions' hard 6 h cap while
-    # leaving room for transient runner slowness.
-    timeout-minutes: 30
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -63,7 +58,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: '.node-version'
           # Don't try to authenticate to npm from this workflow; we only
           # publish to GitHub Releases.
           registry-url: ""

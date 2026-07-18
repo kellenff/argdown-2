@@ -1,3 +1,5 @@
+> **Superseded:** This custom Argdown Extended design is historical. The current format is the EDN-only design in [`docs/snowball/specs/2026-07-17-edn-canonical-representation-design.md`](snowball/specs/2026-07-17-edn-canonical-representation-design.md).
+
 # Argdown Extended: Datalog-lite Design Specification
 
 ## 1. Design Principles

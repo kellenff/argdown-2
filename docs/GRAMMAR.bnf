@@ -1,3 +1,4 @@
+(* SUPERSEDED: historical custom grammar; current canonical representation is EDN. *)
 (* ================================================================= *)
 (*  Argdown Extended — Datalog-lite                                  *)
 (*  Complete grammar in Backus-Naur Form (BNF)                       *)

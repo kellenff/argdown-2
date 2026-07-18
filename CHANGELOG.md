@@ -4,20 +4,42 @@ All notable changes to `argdown-2` are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
-> **Distribution:** the package is not yet on npm. Install a tagged release
-> via the GitHub Releases tarball:
+> **Distribution:** the package is not yet on npm. Install a tagged library
+> tarball from GitHub Releases, then import the package in your project:
 >
 > ```bash
-> echo '[#A] --> [#B]' \
->   | npx https://github.com/kellenff/argdown-2/releases/download/<TAG>/casualtheorics-argdown-2-<VERSION>.tgz \
->       render -
+> npm install https://github.com/kellenff/argdown-2/releases/download/<TAG>/casualtheorics-argdown-2-<VERSION>.tgz
 > ```
 >
-> See the "Cutting a release" section in `README.md` for how new versions
-> are produced. The GitHub Actions workflow `.github/workflows/release.yml`
-> builds, tests, packs, and publishes the tarball automatically on every
-> push to `main` whose `package.json` `version` differs from the previous
-> commit.
+> ```ts
+> import { load, solve } from '@casualtheorics/argdown-2';
+> ```
+>
+> The GitHub Actions workflow `.github/workflows/release.yml` builds, tests,
+> packs, and publishes the tarball automatically on every push to `main`
+> whose `package.json` `version` differs from the previous commit.
+
+## [0.2.0-alpha1] - 2026-07-17
+
+Breaking pre-1.0 reset.
+
+### Added
+
+- EDN-only canonical representation with namespaced solver and theory tags.
+- `load`, `validate`, and `solve` library APIs.
+- Zod structural validation and cross-reference validation.
+- Formally correct grounded Dung labeling.
+- Argdown 1.x censorship parity example.
+
+### Removed
+
+- Custom `.argdown` lexer, parser, source AST, stringifier, CLI, MCP server, and Mermaid renderer.
+- Bipolar, ASPIC+, evidential, preferred, stable, and complete solver surfaces.
+- Parser and solver benchmark/mutation infrastructure.
+
+### Fixed
+
+- Grounded labeling now applies the formal conditions: IN iff all attackers are OUT; OUT iff any attacker is IN. Self-attacks are UNDEC.
 
 ## [0.1.0-alpha1] - 2026-06-28
 
@@ -116,3 +138,4 @@ backward-compatibility promises yet — the language surface is frozen (see
   Unix form (cf. `cat`, `jq`).
 
 [0.1.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.1.0-alpha1
+[0.2.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha1
