@@ -24,7 +24,7 @@ export function buildServer(): McpServer {
         "Create an empty grounded argdown-2 EDN document (path or source). Omit both for empty text mode.",
       inputSchema: docRefSchema,
     },
-    async (args) => tools.runCreateDocument(args),
+    tools.runCreateDocument,
   );
 
   server.registerTool(
@@ -39,7 +39,7 @@ export function buildServer(): McpServer {
         tags: z.array(z.string()).optional(),
       },
     },
-    async (args) => tools.runAddStatement(args),
+    tools.runAddStatement,
   );
 
   server.registerTool(
@@ -54,7 +54,7 @@ export function buildServer(): McpServer {
         tags: z.array(z.string()).optional(),
       },
     },
-    async (args) => tools.runUpdateStatement(args),
+    tools.runUpdateStatement,
   );
 
   server.registerTool(
@@ -69,7 +69,7 @@ export function buildServer(): McpServer {
         tags: z.array(z.string()).optional(),
       },
     },
-    async (args) => tools.runAddArgument(args),
+    tools.runAddArgument,
   );
 
   server.registerTool(
@@ -87,7 +87,7 @@ export function buildServer(): McpServer {
         rules: z.array(z.string()).optional(),
       },
     },
-    async (args) => tools.runAddInference(args),
+    tools.runAddInference,
   );
 
   server.registerTool(
@@ -103,7 +103,7 @@ export function buildServer(): McpServer {
         to: z.string(),
       },
     },
-    async (args) => tools.runAddRelation(args),
+    tools.runAddRelation,
   );
 
   server.registerTool(
@@ -113,7 +113,7 @@ export function buildServer(): McpServer {
       description: "Remove a statement, argument, or inference by id.",
       inputSchema: { ...docRefSchema, id: z.string() },
     },
-    async (args) => tools.runRemoveElement(args),
+    tools.runRemoveElement,
   );
 
   server.registerTool(
@@ -128,7 +128,7 @@ export function buildServer(): McpServer {
         to: z.string(),
       },
     },
-    async (args) => tools.runRemoveRelation(args),
+    tools.runRemoveRelation,
   );
 
   server.registerTool(
@@ -139,7 +139,7 @@ export function buildServer(): McpServer {
         "List statements, arguments, inferences, and relations in the document.",
       inputSchema: docRefSchema,
     },
-    async (args) => tools.runListElements(args),
+    tools.runListElements,
   );
 
   server.registerTool(
@@ -149,7 +149,7 @@ export function buildServer(): McpServer {
       description: "Strict-load the document and return semantic diagnostics.",
       inputSchema: docRefSchema,
     },
-    async (args) => tools.runValidate(args),
+    tools.runValidate,
   );
 
   server.registerTool(
@@ -159,7 +159,7 @@ export function buildServer(): McpServer {
       description: "Strict-load and compute grounded labels.",
       inputSchema: docRefSchema,
     },
-    async (args) => tools.runSolve(args),
+    tools.runSolve,
   );
 
   return server;

@@ -44,7 +44,9 @@ function parseToolResult(res: { content: { type: string; text: string }[] }) {
 describe("argdown-2 mcp registration", () => {
   it("lists the builder tools", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(TOOL_NAMES);
+    expect(tools.map((t: { name: string }) => t.name).sort()).toEqual(
+      TOOL_NAMES,
+    );
   });
 
   it("create_document + add_statement path mode smoke", async () => {
