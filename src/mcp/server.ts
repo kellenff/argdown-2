@@ -11,7 +11,7 @@ const docRefSchema = {
 
 export function buildServer(): McpServer {
   const server = new McpServer(
-    { name: 'argdown-2', version: '0.2.0-alpha2' },
+    { name: 'argdown-2', version: '0.2.0-alpha3' },
     { capabilities: { tools: {} } },
   );
 

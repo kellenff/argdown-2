@@ -96,6 +96,8 @@ You can also use the [MCP install deeplink](cursor://anysphere.cursor-deeplink/m
 
 The plugin launches the server through the checked-in Deno binary launcher with `bash scripts/argdown-2-mcp`; the launcher version is pinned in [`scripts/argdown-2-mcp.version`](scripts/argdown-2-mcp.version). From a source clone of this repo, prefer the committed [`.cursor/mcp.json`](.cursor/mcp.json) which runs `yarn node ./dist/mcp/cli.js` after `yarn build`, or run `yarn mcp` after `yarn build`.
 
+Release binaries are compiled directly from [`src/mcp/cli.ts`](src/mcp/cli.ts) with `yarn compile:mcp` / [`scripts/compile-mcp.sh`](scripts/compile-mcp.sh); there is no separate MCP bundler. Deno is used for release-time native binary compilation only. Day-to-day source development still uses `yarn build` followed by `yarn mcp`.
+
 **Claude Desktop** (`claude_desktop_config.json`) or manual Cursor config:
 
 ```json
@@ -166,6 +168,9 @@ yarn bench          # tinybench pipeline (load, solve, load-solve) over 7 fixtur
 yarn bench:check    # compare against perf-baseline.json
 yarn knip           # fail if package.json lists unused or missing deps
 yarn mcp            # node ./dist/mcp/cli.js
+yarn check:mcp-deno # verify Deno is available for release binary compilation
+yarn compile:mcp    # Deno-compile native MCP binaries from src/mcp/cli.ts
+yarn probe:mcp <bin> # smoke-test a compiled MCP binary over stdio
 ```
 
 PR-time validation runs in `.github/workflows/ci.yml`; release-time runs in `.github/workflows/release.yml`. The two share the same gates. HTML mutation reports land in `reports/mutation/`.
