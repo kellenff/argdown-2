@@ -23,7 +23,7 @@ jobs:
         with:
           deno-version-file: scripts/deno-version
 
-      - name: npm: allowlist
+      - name: "npm: allowlist"
         run: deno task check:npm-allowlist
 
       - name: Lint
