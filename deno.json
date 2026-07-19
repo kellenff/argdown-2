@@ -1,0 +1,12 @@
+{
+  "nodeModulesDir": "auto",
+  "unstable": ["npm-lazy-caching", "sloppy-imports", "node-globals"],
+  "imports": {
+    "edn-parser-js": "./vendor/edn-parser-js/lib/index.js"
+  },
+  "compilerOptions": {
+    "lib": ["es2022", "dom", "dom.iterable", "deno.ns"],
+    "noImplicitAny": false,
+    "types": ["npm:@types/node@^20.12.0"]
+  }
+}
