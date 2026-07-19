@@ -1,3 +1,4 @@
+import { assertEquals } from "@std/assert";
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 import { existsSync, readFileSync } from "node:fs";
@@ -39,4 +40,29 @@ describe("deno package contract", () => {
   it("has no package.json (Yarn/npm package removed)", () => {
     expect(existsSync(join(root, "package.json"))).toBe(false);
   });
+
+  it("enables isolatedDeclarations for JSR slow-types compliance", () => {
+    const deno = readJson("deno.json") as {
+      compilerOptions?: { isolatedDeclarations?: boolean };
+    };
+    expect(deno.compilerOptions?.isolatedDeclarations).toBe(true);
+  });
+});
+
+Deno.test("JSR slow-types check passes", async () => {
+  const cmd = new Deno.Command("deno", {
+    args: ["publish", "--dry-run", "--allow-dirty"],
+    cwd: root,
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const { code, stdout, stderr } = await cmd.output();
+  const output = new TextDecoder().decode(stdout) +
+    new TextDecoder().decode(stderr);
+  assertEquals(code, 0, output);
+  assertEquals(
+    output.includes("Checking for slow types in the public API"),
+    true,
+  );
+  assertEquals(output.includes("Dry run complete"), true);
 });
