@@ -49,3 +49,28 @@ jobs:
           set -euo pipefail
           HOST="$(/bin/ls dist/mcp-bin/argdown-2-mcp-* | head -n1)"
           deno run -A scripts/probe-mcp-stdio.ts "$HOST"
+
+  dry-run-publish:
+    name: Dry-run JSR publish
+    needs: [quality]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version-file: scripts/deno-version
+
+      - name: Dry-run JSR publish
+        run: |
+          set -euo pipefail
+          NAME="$(jq -r .name deno.json)"
+          VERSION="$(jq -r .version deno.json)"
+          {
+            echo "## Dry-run JSR publish"
+            echo
+            echo "- **Package:** \`${NAME}@${VERSION}\`"
+            echo "- **Command:** \`deno publish --dry-run\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          deno publish --dry-run
