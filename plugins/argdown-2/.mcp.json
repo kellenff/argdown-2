@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "argdown-2": {
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/argdown-2-mcp"]
+    }
+  }
+}

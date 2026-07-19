@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# Hybrid launcher: ARGDOWN2_MCP_BIN -> versioned cache -> download -> exec.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION="$(tr -d '[:space:]' < "$ROOT/scripts/argdown-2-mcp.version")"
+REPO_SLUG="kellenff/argdown-2"
+TAG="v${VERSION}"
+BASE_URL="https://github.com/${REPO_SLUG}/releases/download/${TAG}"
+
+uname_s="${ARGDOWN2_MCP_UNAME_S:-$(uname -s)}"
+uname_m="${ARGDOWN2_MCP_UNAME_M:-$(uname -m)}"
+
+die() {
+  echo "argdown-2-mcp: $*" >&2
+  exit 1
+}
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    need_cmd shasum
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+verify_checksum() {
+  local file="$1" sums="$2" cleanup="${3:-}" base expected actual
+  base="$(basename "$file")"
+  # Accept bare names, ./name, *name, or any path ending in /name (release
+  # checksums must use bare names; basename match is defensive).
+  expected="$(awk -v b="$base" '
+    {
+      name = $2
+      sub(/^\*/, "", name)
+      sub(/^\.\//, "", name)
+      n = split(name, parts, "/")
+      leaf = parts[n]
+      if (leaf == b) { print $1; exit }
+    }
+  ' "$sums")"
+  if [[ -z "$expected" ]]; then
+    [[ "$cleanup" == "delete" ]] && rm -f "$file" "$sums"
+    die "no checksum entry for $base in $sums"
+  fi
+  actual="$(sha256_file "$file")"
+  if [[ "$actual" != "$expected" ]]; then
+    [[ "$cleanup" == "delete" ]] && rm -f "$file" "$sums"
+    die "checksum mismatch for $base (got $actual want $expected)"
+  fi
+}
+
+resolve_target() {
+  case "$uname_s" in
+    Darwin)
+      case "$uname_m" in
+        x86_64) echo x86_64-apple-darwin ;;
+        arm64) echo aarch64-apple-darwin ;;
+        *) die "unsupported macOS arch: $uname_m" ;;
+      esac
+      ;;
+    Linux)
+      case "$uname_m" in
+        x86_64) echo x86_64-unknown-linux-gnu ;;
+        aarch64|arm64) echo aarch64-unknown-linux-gnu ;;
+        *) die "unsupported Linux arch: $uname_m" ;;
+      esac
+      ;;
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+      die "Windows is not supported in v1"
+      ;;
+    *)
+      die "unsupported OS: $uname_s"
+      ;;
+  esac
+}
+
+cache_dir() {
+  local base
+  if [[ -n "${XDG_CACHE_HOME:-}" ]]; then
+    base="$XDG_CACHE_HOME"
+  else
+    base="${HOME}/.cache"
+  fi
+  echo "${base}/argdown-2/mcp/${VERSION}"
+}
+
+strip_quarantine() {
+  local file="$1"
+  if [[ "$uname_s" == "Darwin" ]] && command -v xattr >/dev/null 2>&1; then
+    xattr -d com.apple.quarantine "$file" 2>/dev/null || true
+  fi
+}
+
+if [[ -n "${ARGDOWN2_MCP_BIN:-}" ]]; then
+  [[ -x "$ARGDOWN2_MCP_BIN" ]] || die "ARGDOWN2_MCP_BIN not executable: $ARGDOWN2_MCP_BIN"
+  exec "$ARGDOWN2_MCP_BIN" "$@"
+fi
+
+TARGET="$(resolve_target)"
+ASSET="argdown-2-mcp-${TARGET}"
+CACHE="$(cache_dir)"
+CACHED="$CACHE/$ASSET"
+SUMS="$CACHE/sha256sums.txt"
+
+mkdir -p "$CACHE" || die "cache not writable: $CACHE"
+
+if [[ -x "$CACHED" && -f "$SUMS" ]]; then
+  verify_checksum "$CACHED" "$SUMS" delete
+  strip_quarantine "$CACHED"
+  exec "$CACHED" "$@"
+fi
+
+need_cmd curl
+
+TMPDIR_DL="$(mktemp -d "$CACHE/.dl.XXXXXX")"
+cleanup() { rm -rf "$TMPDIR_DL"; }
+trap cleanup EXIT
+
+echo "argdown-2-mcp: downloading ${ASSET} (${TAG})" >&2
+HTTP_ASSET="$(curl -fsSL -o "$TMPDIR_DL/$ASSET" -w '%{http_code}' "$BASE_URL/$ASSET" || true)"
+[[ "$HTTP_ASSET" == "200" ]] || die "download failed ($HTTP_ASSET): $BASE_URL/$ASSET"
+HTTP_SUMS="$(curl -fsSL -o "$TMPDIR_DL/sha256sums.txt" -w '%{http_code}' "$BASE_URL/sha256sums.txt" || true)"
+[[ "$HTTP_SUMS" == "200" ]] || die "download failed ($HTTP_SUMS): $BASE_URL/sha256sums.txt"
+
+verify_checksum "$TMPDIR_DL/$ASSET" "$TMPDIR_DL/sha256sums.txt"
+chmod +x "$TMPDIR_DL/$ASSET"
+mv -f "$TMPDIR_DL/sha256sums.txt" "$SUMS"
+mv -f "$TMPDIR_DL/$ASSET" "$CACHED"
+trap - EXIT
+rm -rf "$TMPDIR_DL"
+
+strip_quarantine "$CACHED"
+exec "$CACHED" "$@"
