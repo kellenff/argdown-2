@@ -6,8 +6,8 @@
   "publish": {
     "exclude": [
       ".github",
-      ".cursor",
-      ".cursor-plugin",
+      ".claude-plugin",
+      "plugins",
       ".yarn",
       "docs",
       "examples",
