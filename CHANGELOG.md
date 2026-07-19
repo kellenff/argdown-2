@@ -15,15 +15,24 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Nested solvers POC: same-tag depth-1 solver vectors inside a parent root,
-  isolated ID scopes, `solve()` `nested` results. See
-  `docs/snowball/specs/2026-07-19-nested-solvers-poc-design.md`.
+- First-class solver components with IDs, local endpoint scopes, identified
+  relations, identity interfaces, typed confidence boundaries, and bottom-up
+  grounded composition.
 - Evidential solver (`#casualtheorics.argdown2.solver/evidential`): grounded
   labels on a Cayrol & Lagasquie-Schiex 2005 §3.3 necessary-support reduction
   (`A --> B` becomes `A → nec:A->B → B`).
 - Claude Code in-repo marketplace (`.claude-plugin/marketplace.json`) and nested
   plugin (`plugins/argdown-2`) with MCP, three skills, and a soft rule to never
   hand-edit EDN.
+
+### Changed
+
+- Replace bare solver-vector roots with tagged document maps containing an
+  identified root component. This is an intentional pre-1.0 wire break.
+- `solve()` now returns per-component `native`, `aggregate`, `boundary`,
+  `children`, and `warnings` layers instead of `labels` / `extensions` plus a
+  positional `nested` array.
+- MCP relations are added and removed by stable relation ID.
 
 ### Removed
 
