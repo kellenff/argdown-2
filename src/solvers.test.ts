@@ -20,7 +20,8 @@ const graph = (
       solver.endsWith(`/${name}`)
     )
     ? `:observer
-       #casualtheorics.argdown2.observer/extension-proportion {}`
+       #casualtheorics.argdown2.observer/extension-proportion
+       {:mode :proportion}`
     : "";
   return `#casualtheorics.argdown2/document
     {:id :solver-test

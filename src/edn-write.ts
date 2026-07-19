@@ -243,7 +243,7 @@ function printSolver(
     if (component.interface.observer !== undefined) {
       lines.push(
         `${deeperPad}:observer`,
-        `${deeperPad}${printTag(OBSERVER_NS, "extension-proportion")} {}`,
+        `${deeperPad}${printTag(OBSERVER_NS, "extension-proportion")} {:mode :proportion}`,
       );
     }
     lines[lines.length - 1] += "}";

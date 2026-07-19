@@ -11,6 +11,6 @@
   [
 #casualtheorics.argdown2.argdown/statement {:id :a}
   #casualtheorics.argdown2.argdown/statement {:id :b}
-  #casualtheorics.argdown2.argdown/attack {:id :attack-1:from :a :to :b}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-1 :from :a :to :b}
 
   ]}}

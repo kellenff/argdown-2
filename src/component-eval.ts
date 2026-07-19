@@ -22,7 +22,7 @@ import {
   STABLE_SOLVER_TAG,
 } from "./model.js";
 import { reduceToBipolar } from "./reduce-bipolar.js";
-import { isSyntheticEntity, reduceToDung } from "./reduce-dung.js";
+import { reduceToDung } from "./reduce-dung.js";
 import { reduceToEvidential } from "./reduce-evidential.js";
 
 export function confidenceFromLabel(label: Label): Confidence {
@@ -43,8 +43,18 @@ export function applyThreshold(
 
 function visibleLabels(
   labels: ReadonlyMap<EntityId, Label>,
+  component: SolverComponent,
 ): ReadonlyMap<EntityId, Label> {
-  return new Map([...labels].filter(([id]) => !isSyntheticEntity(id)));
+  const publicIds = new Set(
+    component.elements
+      .filter((element) =>
+        element.kind === "statement" ||
+        element.kind === "argument" ||
+        element.kind === "solver"
+      )
+      .map((element) => element.id),
+  );
+  return new Map([...labels].filter(([id]) => publicIds.has(id)));
 }
 
 function childComponents(
@@ -74,7 +84,7 @@ function evaluateLabelComponent(
     : component.solver === BIPOLAR_SOLVER_TAG
     ? reduceToBipolar(component)
     : reduceToEvidential(component);
-  const labels = visibleLabels(groundedLabels(reduced.framework));
+  const labels = visibleLabels(groundedLabels(reduced.framework), component);
   const ref = component.interface.aggregate.inputs[0].ref as EntityId;
   const value = labels.get(ref);
   if (value === undefined) {

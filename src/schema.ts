@@ -96,6 +96,7 @@ const relationKeys = new Set(["id", "from", "to"]);
 const documentKeys = new Set(["id", "root"]);
 const solverKeys = new Set(["id", "interface", "imports", "elements"]);
 const interfaceKeys = new Set(["aggregate", "observer"]);
+const observerKeys = new Set(["mode"]);
 const aggregateKeys = new Set(["inputs"]);
 const inputKeys = new Set(["ref"]);
 const projectionKeys = new Set(["out-at-most", "in-at-least", "otherwise"]);
@@ -611,16 +612,20 @@ function decodeInterface(
   let observer: SolverInterface["observer"];
   if (fields.known.has("observer")) {
     const tagged = taggedSchema.safeParse(fields.known.get("observer"));
+    const observerFields = tagged.success
+      ? fieldsOf(tagged.data.value, observerKeys)
+      : undefined;
     if (
       !tagged.success ||
       fullName(tagged.data.tag) !== EXTENSION_PROPORTION_OBSERVER_TAG ||
-      fieldsOf(tagged.data.value, new Set()) === undefined
+      observerFields === undefined ||
+      keywordName(observerFields.known.get("mode")) !== "proportion"
     ) {
       pushInvalid(
         errors,
         path,
         "observer",
-        `Expected #${EXTENSION_PROPORTION_OBSERVER_TAG} {}`,
+        `Expected #${EXTENSION_PROPORTION_OBSERVER_TAG} {:mode :proportion}`,
       );
       return undefined;
     }
