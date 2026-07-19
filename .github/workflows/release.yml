@@ -231,9 +231,10 @@ jobs:
         if: steps.ver.outputs.changed == 'true'
         run: |
           set -euo pipefail
+          # release-notes.md (and similar CI dirt) must not abort publish.
           # deno publish errors if version exists — treat "already published" as success.
           set +e
-          OUT="$(deno publish 2>&1)"
+          OUT="$(deno publish --allow-dirty 2>&1)"
           CODE=$?
           set -e
           echo "$OUT"
