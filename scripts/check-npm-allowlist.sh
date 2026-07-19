@@ -2,7 +2,7 @@
 # Fail if deno.json imports any npm: specifier outside the allowlist.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DENO_JSON="$ROOT/deno.json"
+DENO_JSON="${1:-$ROOT/deno.json}"
 
 ALLOWED=(
   'npm:zod@'
@@ -10,7 +10,7 @@ ALLOWED=(
   'npm:/@modelcontextprotocol/sdk@'
 )
 
-FOUND="$(grep -oE 'npm:/?[@A-Za-z0-9._/-]+@[0-9][^"]*' "$DENO_JSON" | sort -u || true)"
+FOUND="$(grep -oE 'npm:[^"[:space:]]+' "$DENO_JSON" | sort -u || true)"
 if [[ -z "$FOUND" ]]; then
   echo "error: expected npm: allowlist entries in deno.json" >&2
   exit 1
