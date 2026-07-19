@@ -71,6 +71,6 @@ jobs:
             echo "## Dry-run JSR publish"
             echo
             echo "- **Package:** \`${NAME}@${VERSION}\`"
-            echo "- **Command:** \`deno publish --dry-run\`"
+            echo "- **Command:** \`deno task publish:dry-run\`"
           } >> "$GITHUB_STEP_SUMMARY"
-          deno publish --dry-run
+          deno task publish:dry-run
