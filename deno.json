@@ -1,6 +1,6 @@
 {
   "name": "@casualtheorics/argdown-2",
-  "version": "0.2.0-alpha3",
+  "version": "0.2.0-alpha4",
   "exports": "./src/index.ts",
   "license": "Unlicense",
   "publish": {

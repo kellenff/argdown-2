@@ -13,12 +13,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0-alpha4] - 2026-07-19
+
 ### Changed
 
-- Package is Deno/JSR-native: Yarn/Node toolchain and npm tarball releases removed.
-- Library install via `jsr:@casualtheorics/argdown-2`; every merge to main publishes a `*-dev.{utcTimestamp}` prerelease.
-- Contributor tests/lint/fmt/check run on Deno; Stryker mutation gate dropped for now.
-- GitHub Releases ship native MCP binaries only.
+- Enable JSR [slow-types](https://jsr.io/docs/about-slow-types) compliance:
+  `isolatedDeclarations` in `deno.json` and `deno task publish:dry-run` for local
+  verification (PR CI already runs this via the `dry-run-publish` job).
+- Enable `noImplicitAny` in `deno.json` compiler options.
 
 ## [0.2.0-alpha3] - 2026-07-19
 
@@ -165,4 +167,5 @@ backward-compatibility promises yet — the language surface is frozen (see
 [0.1.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.1.0-alpha1
 [0.2.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha1
 [0.2.0-alpha2]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha2
+[0.2.0-alpha4]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha4
 [0.2.0-alpha3]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha3
