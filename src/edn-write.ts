@@ -7,8 +7,8 @@ import type {
   CandidateSolverComponent,
   CandidateStatement,
   ExtraEntry,
-  isEdnKeywordName,
 } from "./model.js";
+import { isEdnKeywordName } from "./model.js";
 
 const DOCUMENT_NS = "casualtheorics.argdown2";
 const ROOT_NS = "casualtheorics.argdown2.solver";
