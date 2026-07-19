@@ -1,8 +1,8 @@
 # Deno Compilation of the MCP Server
 
 **Date:** 2026-07-18
-**Status:** Approved
-**Scope:** Ship zero-dependency native MCP binaries (macOS + Linux, arm64 + x64) via Deno compile of the existing tsdown bundle, plus a hybrid bash launcher that replaces `corepack yarn dlx` for Cursor plugin / `mcp.json` / deeplink install.
+**Status:** Approved (revised 2026-07-19)
+**Scope:** Ship zero-dependency native MCP binaries (macOS + Linux, arm64 + x64) via Deno compile of the **TypeScript MCP entry** (`src/mcp/cli.ts`), plus a hybrid bash launcher that replaces `corepack yarn dlx` for Cursor plugin / `mcp.json` / deeplink install. No esbuild/tsdown MCP bundling step.
 
 ---
 
@@ -10,7 +10,7 @@
 
 Today the MCP server is launched for consumers via `corepack yarn dlx` against a GitHub Releases tarball so Yarn 2+ applies and the checked-in `edn-parser-js` patch sticks. That path still requires Node, Corepack, and a working Yarn on the host. PATH `yarn` is often classic 1.x; PnP and patch application remain host-environment failure modes.
 
-`yarn build` already produces a dependency-inlined `dist/mcp/cli.js` (tsdown). Deno can compile that artifact into standalone executables with cross-compilation from a single CI runner.
+Deno `compile` can take the existing MCP TypeScript entry, resolve its npm dependencies, and emit a standalone executable. That replaces any separate JS bundler (tsdown, esbuild, etc.) for the shipped MCP binary.
 
 **Goals:**
 
@@ -19,17 +19,19 @@ Today the MCP server is launched for consumers via `corepack yarn dlx` against a
 - Hybrid launcher: local cache / override first, download from the pinned GitHub Release if missing.
 - Replace `corepack yarn dlx` entirely in plugin / `mcp.json` / deeplink.
 - Keep `yarn mcp` / Vitest on Node for day-to-day development; optional local compile script.
+- **No MCP pre-bundle** — Deno compile is the only packaging step for the shipped binary.
 
 **Non-goals:**
 
 - Windows binaries (v1).
-- Deno-native MCP rewrite / dual entry (`deno-cli.ts`).
-- Bun `--compile` or Node SEA as the default toolchain.
+- Deno-native MCP rewrite / dual entry (`deno-cli.ts`) unless the source-compile probe fails.
+- Bun `--compile`, Node SEA, esbuild, or tsdown as an MCP packaging path.
 - Auto-floating to `latest` release; launcher pins a version.
 - Changing MCP tool contracts or the library `load` / `validate` / `solve` API.
 - Requiring Deno for ordinary contributor workflows (tests stay on Node).
+- Changing the library `yarn build` / tarball pipeline beyond what Deno compile needs for npm resolution (e.g. a small `deno.json`).
 
-**Fallback:** If the Deno compat probe fails and cheap patches cannot fix it, escalate to a first-class Deno MCP entry (Approach 2 from brainstorming). Do not start there.
+**Fallback:** If Deno cannot compile `src/mcp/cli.ts` (npm/patch/Node-compat) and cheap config/patches cannot fix it, escalate to a Deno-oriented entry or a minimal import-map shim. Do **not** reintroduce an esbuild/tsdown MCP bundle as the default path.
 
 ---
 
@@ -37,31 +39,28 @@ Today the MCP server is launched for consumers via `corepack yarn dlx` against a
 
 | Concern | Decision |
 |---|---|
-| Approach | Deno-compile existing `dist/mcp/cli.js` (Approach 1) |
+| Approach | Deno-compile **source** `src/mcp/cli.ts` (deps resolved by Deno) |
+| MCP bundling | **None** — no esbuild/tsdown step for the shipped binary |
 | Consumer success criterion | Native binary; no Node/Yarn/Corepack |
 | Platforms (v1) | `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` |
 | Launch path | Bash 3.2+ launcher; hybrid cache → download → exec |
 | Plugin / mcp.json / deeplink | Launcher only; remove `corepack yarn dlx` |
 | Version selection | Pinned in launcher (or sibling manifest); bump deliberately |
-| Dev default | `yarn build` + `yarn mcp` (Node) |
+| Dev default | `yarn build` + `yarn mcp` (Node / existing `tsc` emit) |
 | Optional local compile | `yarn compile:mcp` (host target; `--all` for full matrix) |
 | Library tarball | Keep for programmatic library use; not used to launch MCP |
-| Compat gate | `deno check` + static landmine grep + subprocess stdio MCP probe |
-| Rejected | Deno-native entry first; Node SEA; floating `latest`; silent yarn fallback |
+| Compat gate | `deno check` on source entry + landmine grep on MCP sources + subprocess stdio probe of compiled host binary |
+| Rejected | Pre-bundle then compile; Deno-native rewrite first; Node SEA; floating `latest`; silent yarn fallback |
 
 ---
 
 ## 3. Architecture
 
 ```text
-yarn build (tsdown)
-        │
-        ▼
- dist/mcp/cli.js  ──►  deno compile --target ×4  ──►  GitHub Release assets
-                                                      argdown-2-mcp-{target}
-        │
-        ▼ (dev only)
- yarn mcp / vitest   (unchanged Node path)
+src/mcp/cli.ts  ──►  deno compile --target ×4  ──►  GitHub Release assets
+   (+ npm deps via package.json / deno.json)         argdown-2-mcp-{target}
+
+yarn build / yarn mcp / vitest   (dev-only Node path; unchanged tsc library emit)
 
 Cursor plugin / mcp.json
         │
@@ -74,36 +73,42 @@ Cursor plugin / mcp.json
 
 **Boundaries:**
 
-- **Compile pipeline** (CI + optional local script): Deno is a build tool only.
+- **Compile pipeline** (CI + optional local script): Deno is the MCP packager (resolve + compile). No intermediate bundled `dist/mcp/cli.js` for release.
 - **Launcher**: host-facing; runtime deps are bash + curl/HTTPS (+ sha256 tool). No Node.
-- **Library tarball**: programmatic `load` / `validate` / `solve` only.
+- **Library tarball**: programmatic `load` / `validate` / `solve` only; still produced by the existing Node/`tsc` build for library consumers.
+- **Dev Node MCP**: may still use `dist/mcp/cli.js` from `tsc` for `yarn mcp`; that path is not the consumer install path.
 
 ---
 
 ## 4. Components
 
-### 4.1 Compile script
+### 4.1 Deno project config
+
+- Small root `deno.json` (or equivalent) so `deno compile` / `deno check` resolve npm packages from this repo’s `package.json` (including the Yarn `patch:` locator for `edn-parser-js` or an equivalent Deno-visible install of the patched package).
+- Exact flags (`nodeModulesDir`, permission flags, etc.) are implementation details; the contract is: **compile entry is `src/mcp/cli.ts`**, not a pre-bundled dist file.
+
+### 4.2 Compile script
 
 - Path: `scripts/compile-mcp.sh` (exposed as `yarn compile:mcp`).
-- Prerequisite: `dist/mcp/cli.js` from `yarn build`.
-- Pin Deno to the same version CI uses.
-- Default: compile host target only. `--all`: emit all four binaries.
+- Prerequisite: pinned Deno on PATH; repo deps available for Deno’s npm resolution (CI: `yarn install` then Deno setup, or Deno’s own npm install as needed).
+- **Entry:** `src/mcp/cli.ts`.
+- Default: compile host target only. `--all`: emit all four binaries under `dist/mcp-bin/`.
 - Output names (stable Release asset names):
   - `argdown-2-mcp-x86_64-apple-darwin`
   - `argdown-2-mcp-aarch64-apple-darwin`
   - `argdown-2-mcp-x86_64-unknown-linux-gnu`
   - `argdown-2-mcp-aarch64-unknown-linux-gnu`
 
-### 4.2 Release workflow
+### 4.3 Release workflow
 
-- After existing build/test gates: install pinned Deno → run compat probe → `compile --all` → write `sha256sums.txt` → attach four binaries + checksums to the GitHub Release (alongside the library tarball).
+- After existing build/test gates: install pinned Deno → static check on source → `compile --all` → stdio probe on host binary → write `sha256sums.txt` → attach four binaries + checksums to the GitHub Release (alongside the library tarball).
 - Partial matrix failure fails the release; do not publish an incomplete binary set.
 
-### 4.3 Launcher (`scripts/argdown-2-mcp`)
+### 4.4 Launcher (`scripts/argdown-2-mcp`)
 
 - Bash 3.2+ (universal on macOS; available on Linux).
 - Map `uname` → one of the four asset names; unsupported OS/arch exits 1 (Windows: explicit “not supported in v1”).
-- Cache: `~/.cache/argdown-2/mcp/<version>/` (XDG on Linux; reasonable macOS fallback under the same layout).
+- Cache: `~/.cache/argdown-2/mcp/<version>/` (XDG on Linux; same layout fallback on macOS).
 - Version pinned in the launcher or a tiny sibling manifest (same release tag as the intended binaries).
 - Lookup order:
   1. `$ARGDOWN2_MCP_BIN` if set
@@ -113,16 +118,16 @@ Cursor plugin / mcp.json
 - Download via direct Release asset URLs (not the unauthenticated GitHub API) to avoid rate limits.
 - Stderr for diagnostics only; never write to MCP stdio.
 
-### 4.4 Plugin / mcp.json / deeplink
+### 4.5 Plugin / mcp.json / deeplink
 
 - `command` points at the launcher; `args` empty (or pass-through only).
 - Remove `corepack yarn dlx` configuration entirely.
 - Update README install docs and the MCP install deeplink accordingly.
 
-### 4.5 Package `bin` field
+### 4.6 Package `bin` field
 
 - Consumer MCP launch no longer depends on package `bin` via `yarn dlx`.
-- Keep or adjust `bin` for library-package consistency as a follow-up detail in the implementation plan; it must not be required for the zero-dep path.
+- Keep `bin` → `dist/mcp/cli.js` for optional Node users if useful; it must not be required for the zero-dep path.
 
 ---
 
@@ -130,11 +135,11 @@ Cursor plugin / mcp.json
 
 ### 5.1 Release (CI)
 
-Version bump push → lint/format/typecheck/test/build → compat probe → compile all four → checksums → GitHub Release assets.
+Version bump push → lint/format/typecheck/test/build (library) → Deno check source → compile all four → probe host binary → checksums → GitHub Release assets.
 
 ### 5.2 Cold start (Cursor launches MCP)
 
-Host runs launcher → resolve OS/arch + pinned version → override / cache / download → verify → exec binary → binary speaks MCP JSON-RPC on stdio (same contract as `dist/mcp/cli.js`).
+Host runs launcher → resolve OS/arch + pinned version → override / cache / download → verify → exec binary → binary speaks MCP JSON-RPC on stdio (same tool contract as today’s Node MCP).
 
 ### 5.3 Warm start
 
@@ -142,7 +147,7 @@ Cache hit → exec; no network.
 
 ### 5.4 Dev
 
-`yarn mcp` → Node on `dist/mcp/cli.js`. Optional compile; launcher can use `$ARGDOWN2_MCP_BIN` for a locally built binary.
+`yarn mcp` → Node on `tsc`-emitted `dist/mcp/cli.js`. Optional `yarn compile:mcp` for a local native binary; launcher can point at it via `$ARGDOWN2_MCP_BIN`.
 
 ---
 
@@ -156,11 +161,11 @@ Cache hit → exec; no network.
 | Checksum mismatch | Delete bad file, exit 1; do not exec |
 | Cache not writable | Exit 1 with path |
 | `$ARGDOWN2_MCP_BIN` not executable | Exit 1 |
-| Compat probe failure in CI | Fail release; no binary upload |
+| Compat probe / Deno compile failure in CI | Fail release; no binary upload |
 | Partial compile matrix failure | Fail release; no incomplete set |
 | MCP tool/runtime errors | Unchanged from today’s Node MCP |
 
-No silent fallback to `yarn dlx` or Node. Launcher version pin ≠ latest release is intentional; bump the pin when consumers should move.
+No silent fallback to `yarn dlx`, Node, or a JS bundler. Launcher version pin ≠ latest release is intentional; bump the pin when consumers should move.
 
 ---
 
@@ -168,7 +173,7 @@ No silent fallback to `yarn dlx` or Node. Launcher version pin ≠ latest releas
 
 ### 7.1 Compat gate (blocks compile/release)
 
-1. Static: `deno check` on `dist/mcp/cli.js`, plus targeted grep for landmines (`process.binding`, `require.resolve`, risky `__dirname` use).
+1. Static: `deno check src/mcp/cli.ts` (with the same Deno config as compile), plus targeted grep over `src/mcp/**/*.ts` for landmines (`process.binding`, `require.resolve`, risky `__dirname` / `__filename` use).
 2. Runtime: spawn the **compiled host binary** as a subprocess; real stdio JSON-RPC: `initialize` → `tools/list` → one `tools/call` (e.g. `create_document`). Fail on any step.
 
 Insufficient: bare `deno run` smoke or dynamic `import()` of the CLI (auto-starts stdio).
@@ -186,23 +191,24 @@ Shell/unit tests with local fixture or pre-seeded cache: cache hit, checksum fai
 ### 7.4 Regression
 
 - Existing Vitest MCP suite stays on Node.
-- Build-artifact / release contract tests cover compile outputs and Release asset expectations as implemented.
+- Release contract tests cover compile outputs and Release asset expectations as implemented.
 
 ### 7.5 Success criteria
 
 - Fresh machine with bash + curl (and a sha256 tool) can run the launcher and complete MCP `initialize`.
 - No Node/Yarn/Corepack on PATH required for that path.
+- No esbuild/tsdown MCP bundle artifact required to produce Release binaries.
 
 ---
 
 ## 8. Implementation notes (for planning)
 
-Likely plan split (blast-radius flagged decomposition):
+Plan split:
 
-1. **Compile + CI + compat probe** — script, Deno pin, release asset upload, checksums.
+1. **Compile + CI + compat probe** — `deno.json`, Deno pin, compile from `src/mcp/cli.ts`, release assets + checksums.
 2. **Launcher + plugin config + docs** — hybrid cache/download, replace yarn dlx, deeplink/README.
 
-Chorus angles to preserve in the plan: subprocess probe over smoke tests; bash 3.2+ over pure POSIX sh for HTTPS/checksum/quarantine complexity; direct asset URLs over API; treat `__dirname` under `deno compile` as a silent-failure landmine in the static audit.
+Chorus angles to preserve: subprocess probe over smoke tests; bash 3.2+ for launcher complexity; direct asset URLs over API; treat `__dirname` under `deno compile` as a silent-failure landmine in the static audit.
 
 ---
 
@@ -212,5 +218,5 @@ Resolved at plan/implementation time without changing this design:
 
 - Exact cache path on macOS if XDG is not used.
 - Whether version pin lives inline in the launcher vs `scripts/argdown-2-mcp.version`.
-- Precise Deno CLI flags (`--allow-*`, `--node-modules-dir`, etc.) needed for a clean compile of the tsdown bundle.
+- Precise Deno CLI / `deno.json` settings so Yarn’s `edn-parser-js` patch is visible to Deno (e.g. `nodeModulesDir`, `npm install` vs Yarn).
 - Whether package.json `bin` remains pointing at `dist/mcp/cli.js` for non-plugin Node users.
