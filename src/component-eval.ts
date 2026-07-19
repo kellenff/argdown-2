@@ -113,28 +113,39 @@ function evaluateMultiComponent(
     ? findStableExtensions(map)
     : findCompleteExtensions(map);
   const ref = component.interface.aggregate.inputs[0].ref as EntityId;
-  const confidence = extensions.length === 0
+  const membership = extensions.map((extension) => extension.has(ref));
+  const confidence = membership.length === 0
     ? null
-    : extensions.filter((extension) => extension.has(ref)).length /
-      extensions.length;
+    : membership.filter(Boolean).length / membership.length;
   return {
     id: component.id,
     solver: component.solver,
     native: { kind: "extensions", values: extensions },
-    aggregate: { kind: "extension-proportion", value: confidence },
+    aggregate: { kind: "extension-membership", value: membership },
     boundary: { confidence },
     children,
     warnings: reduced.warnings,
   };
 }
 
-export function evaluateComponent(
+function evaluateComponentTree(
   component: SolverComponent,
+  active: Set<SolverComponent>,
+  seen: Set<SolverComponent>,
 ): ComponentSolveResult {
+  if (active.has(component)) {
+    throw new TypeError(`Component containment cycle at :${component.id}`);
+  }
+  if (seen.has(component)) {
+    throw new TypeError(`Component reused by multiple parents: :${component.id}`);
+  }
+  active.add(component);
+  seen.add(component);
   const children = new Map<EntityId, ComponentSolveResult>();
   for (const child of childComponents(component)) {
-    children.set(child.id, evaluateComponent(child));
+    children.set(child.id, evaluateComponentTree(child, active, seen));
   }
+  active.delete(component);
   switch (component.solver) {
     case GROUNDED_SOLVER_TAG:
     case BIPOLAR_SOLVER_TAG:
@@ -145,4 +156,10 @@ export function evaluateComponent(
     case COMPLETE_SOLVER_TAG:
       return evaluateMultiComponent(component, children);
   }
+}
+
+export function evaluateComponent(
+  component: SolverComponent,
+): ComponentSolveResult {
+  return evaluateComponentTree(component, new Set(), new Set());
 }

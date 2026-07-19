@@ -42,6 +42,11 @@ export function isSolverTag(value: string): value is SolverTag {
   return (SOLVER_TAGS as readonly string[]).includes(value);
 }
 
+export function isEdnKeywordName(value: string): boolean {
+  const segment = "[A-Za-z0-9.*+!_?$%&=<>|-]+";
+  return new RegExp(`^${segment}(?:/${segment})?$`).test(value);
+}
+
 declare const entityIdBrand: unique symbol;
 declare const inferenceIdBrand: unique symbol;
 
@@ -216,7 +221,7 @@ export type ExtensionNativeResult = {
 
 export type AggregateResult =
   | { kind: "label"; value: Label }
-  | { kind: "extension-proportion"; value: Confidence };
+  | { kind: "extension-membership"; value: readonly boolean[] };
 
 export type ComponentSolveResult = {
   id: EntityId;

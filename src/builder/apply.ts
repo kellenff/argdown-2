@@ -7,7 +7,12 @@ import {
   type CandidateRelation,
   type CandidateSolverComponent,
   type CandidateStatement,
+  EXTENSION_PROPORTION_OBSERVER_TAG,
   GROUNDED_SOLVER_TAG,
+  isEdnKeywordName,
+  PREFERRED_SOLVER_TAG,
+  STABLE_SOLVER_TAG,
+  COMPLETE_SOLVER_TAG,
   type SolverTag,
 } from "../model.js";
 import { resolveInferenceRef, resolveRef } from "./resolve-ref.js";
@@ -72,6 +77,24 @@ function withElements(
   return { ...doc, root: { ...doc.root, elements } };
 }
 
+function interfaceFor(
+  root: CandidateSolverComponent,
+  ref: string,
+): NonNullable<CandidateSolverComponent["interface"]> {
+  const multi = root.solver === PREFERRED_SOLVER_TAG ||
+    root.solver === STABLE_SOLVER_TAG ||
+    root.solver === COMPLETE_SOLVER_TAG;
+  return {
+    aggregate: {
+      tag: AGGREGATE_IDENTITY_TAG,
+      inputs: [{ ref }],
+    },
+    ...(multi
+      ? { observer: { tag: EXTENSION_PROPORTION_OBSERVER_TAG } }
+      : {}),
+  };
+}
+
 function withInitialInterface(
   root: CandidateSolverComponent,
   ref: string,
@@ -79,12 +102,7 @@ function withInitialInterface(
   if (root.interface !== undefined) return root;
   return {
     ...root,
-    interface: {
-      aggregate: {
-        tag: AGGREGATE_IDENTITY_TAG,
-        inputs: [{ ref }],
-      },
-    },
+    interface: interfaceFor(root, ref),
   };
 }
 
@@ -113,13 +131,26 @@ function repairInterface(
   }
   return {
     ...root,
-    interface: {
-      aggregate: {
-        tag: AGGREGATE_IDENTITY_TAG,
-        inputs: [{ ref: first.id }],
-      },
-    },
+    interface: interfaceFor(root, first.id),
   };
+}
+
+function invalidId(
+  doc: CandidateDocument,
+  id: string,
+): ApplyResult | undefined {
+  return isEdnKeywordName(id)
+    ? undefined
+    : refused(doc, "builder/invalid-id", `"${id}" is not a valid EDN keyword`);
+}
+
+function invalidIdList(
+  doc: CandidateDocument,
+  ids: readonly string[] | undefined,
+): ApplyResult | undefined {
+  if (ids === undefined) return undefined;
+  const invalid = ids.find((id) => !isEdnKeywordName(id));
+  return invalid === undefined ? undefined : invalidId(doc, invalid);
 }
 
 function resolveRefOrRaw(
@@ -157,6 +188,8 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
   switch (edit.type) {
     case "add_statement": {
       const id = stripColon(edit.id);
+      const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags);
+      if (invalid !== undefined) return invalid;
       if (collectIds(doc).has(id)) {
         return refused(doc, "builder/duplicate-id", `Duplicate id "${id}"`);
       }
@@ -180,6 +213,8 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
 
     case "update_statement": {
       const id = stripColon(edit.id);
+      const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags);
+      if (invalid !== undefined) return invalid;
       const index = elements.findIndex((element) =>
         element.kind === "statement" && element.id === id
       );
@@ -207,6 +242,8 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
 
     case "add_argument": {
       const id = stripColon(edit.id);
+      const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags);
+      if (invalid !== undefined) return invalid;
       if (collectIds(doc).has(id)) {
         return refused(doc, "builder/duplicate-id", `Duplicate id "${id}"`);
       }
@@ -234,6 +271,9 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
     case "add_inference": {
       const argumentId = stripColon(edit.argumentId);
       const id = stripColon(edit.id);
+      const invalid = invalidId(doc, argumentId) ?? invalidId(doc, id) ??
+        invalidIdList(doc, edit.rules);
+      if (invalid !== undefined) return invalid;
       if (collectIds(doc).has(id)) {
         return refused(doc, "builder/duplicate-id", `Duplicate id "${id}"`);
       }
@@ -274,6 +314,8 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
 
     case "add_relation": {
       const id = stripColon(edit.id);
+      const invalid = invalidId(doc, id);
+      if (invalid !== undefined) return invalid;
       if (collectIds(doc).has(id)) {
         return refused(doc, "builder/duplicate-id", `Duplicate id "${id}"`);
       }
@@ -296,6 +338,8 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
 
     case "remove_element": {
       const id = stripColon(edit.id);
+      const invalid = invalidId(doc, id);
+      if (invalid !== undefined) return invalid;
       const index = elements.findIndex((element) => element.id === id);
       if (index !== -1) {
         const removed = elements[index]!;
@@ -339,6 +383,8 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
 
     case "remove_relation": {
       const id = stripColon(edit.id);
+      const invalid = invalidId(doc, id);
+      if (invalid !== undefined) return invalid;
       const index = elements.findIndex((element) =>
         element.id === id &&
         element.kind !== "statement" &&

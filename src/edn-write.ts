@@ -7,6 +7,7 @@ import type {
   CandidateSolverComponent,
   CandidateStatement,
   ExtraEntry,
+  isEdnKeywordName,
 } from "./model.js";
 
 const DOCUMENT_NS = "casualtheorics.argdown2";
@@ -21,6 +22,9 @@ function printTag(ns: string, symbol: string): string {
 }
 
 function printKeyword(id: string): string {
+  if (!isEdnKeywordName(id)) {
+    throw new TypeError(`Cannot print invalid EDN keyword id: ${id}`);
+  }
   return `:${id}`;
 }
 

@@ -10,7 +10,11 @@ import type {
   Diagnostic,
   RelationKind,
 } from "../model.js";
-import { GROUNDED_SOLVER_TAG, isSolverTag } from "../model.js";
+import {
+  GROUNDED_SOLVER_TAG,
+  isEdnKeywordName,
+  isSolverTag,
+} from "../model.js";
 import {
   createDocumentRef,
   type DocumentRef,
@@ -223,11 +227,23 @@ export async function runCreateDocument(
       }],
     }, true);
   }
+  const documentId = args.documentId ?? "document";
+  const rootId = args.rootId ?? "root";
+  const invalidId = [documentId, rootId].find((id) => !isEdnKeywordName(id));
+  if (invalidId !== undefined) {
+    return jsonResult({
+      ok: false,
+      errors: [{
+        code: "mcp/invalid-id",
+        message: `"${invalidId}" is not a valid EDN keyword`,
+      }],
+    }, true);
+  }
   const result = await createDocumentRef(
     refResult.ref,
     solver,
-    args.documentId ?? "document",
-    args.rootId ?? "root",
+    documentId,
+    rootId,
   );
   if (!result.ok) {
     return jsonResult(
