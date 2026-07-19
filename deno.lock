@@ -1,6 +1,8 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/assert@1": "1.0.19",
+    "jsr:@std/internal@^1.0.12": "1.0.14",
     "npm:@modelcontextprotocol/sdk@1.29.0": "1.29.0_zod@4.4.3_hono@4.12.31_ajv@8.20.0_express@5.2.1",
     "npm:@modelcontextprotocol/sdk@^1.29.0": "1.29.0_zod@4.4.3_hono@4.12.31_ajv@8.20.0_express@5.2.1",
     "npm:@stryker-mutator/api@^9.6.1": "9.6.1",
@@ -19,6 +21,17 @@
     "npm:vitest@3": "3.2.7_@types+node@20.19.43_vite@7.3.6__@types+node@20.19.43__tsx@4.23.1__picomatch@4.0.5_tsx@4.23.1",
     "npm:zod@4.4.3": "4.4.3",
     "npm:zod@^4.4.3": "4.4.3"
+  },
+  "jsr": {
+    "@std/assert@1.0.19": {
+      "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.14": {
+      "integrity": "291516b3d4c35024d6ffbc0a9df5bf4c64116e05b50012cf846710152d2ffdf7"
+    }
   },
   "npm": {
     "@babel/code-frame@7.29.7": {
