@@ -44,6 +44,14 @@
     "sloppy-imports",
     "node-globals"
   ],
+  "lint": {
+    "rules": {
+      "exclude": [
+        "no-sloppy-imports",
+        "require-await"
+      ]
+    }
+  },
   "compilerOptions": {
     "lib": [
       "es2022",

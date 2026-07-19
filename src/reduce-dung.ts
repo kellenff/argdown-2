@@ -1,4 +1,10 @@
-import type { Diagnostic, DungFramework, EntityId, GroundedDocument, Relation } from './model.js';
+import type {
+  Diagnostic,
+  DungFramework,
+  EntityId,
+  GroundedDocument,
+  Relation,
+} from "./model.js";
 
 export type ReduceResult = {
   framework: DungFramework;
@@ -14,7 +20,10 @@ function addAttack(
   if (attackers !== undefined) attackers.add(from);
 }
 
-function omissionWarning(kind: 'support' | 'undercut', index: number): Diagnostic {
+function omissionWarning(
+  kind: "support" | "undercut",
+  index: number,
+): Diagnostic {
   return {
     code: `reduce/${kind}-omitted`,
     message: `${kind} is represented but omitted from grounded Dung reduction`,
@@ -28,9 +37,9 @@ function reduceRelation(
   attackersByTarget: Map<EntityId, Set<EntityId>>,
   warnings: Diagnostic[],
 ): void {
-  if (relation.kind === 'attack') {
+  if (relation.kind === "attack") {
     addAttack(attackersByTarget, relation.from, relation.to);
-  } else if (relation.kind === 'contradiction') {
+  } else if (relation.kind === "contradiction") {
     addAttack(attackersByTarget, relation.from, relation.to);
     addAttack(attackersByTarget, relation.to, relation.from);
   } else {
@@ -41,7 +50,9 @@ function reduceRelation(
 export function reduceToDung(document: GroundedDocument): ReduceResult {
   const nodes = new Set<EntityId>();
   for (const element of document.elements) {
-    if (element.kind === 'statement' || element.kind === 'argument') nodes.add(element.id);
+    if (element.kind === "statement" || element.kind === "argument") {
+      nodes.add(element.id);
+    }
   }
 
   const attackersByTarget = new Map<EntityId, Set<EntityId>>();
@@ -50,10 +61,10 @@ export function reduceToDung(document: GroundedDocument): ReduceResult {
   const warnings: Diagnostic[] = [];
   document.elements.forEach((element, index) => {
     if (
-      element.kind === 'attack' ||
-      element.kind === 'contradiction' ||
-      element.kind === 'support' ||
-      element.kind === 'undercut'
+      element.kind === "attack" ||
+      element.kind === "contradiction" ||
+      element.kind === "support" ||
+      element.kind === "undercut"
     ) {
       reduceRelation(element, index, attackersByTarget, warnings);
     }

@@ -1,28 +1,33 @@
-import { readFile } from 'node:fs/promises';
+import { readFile } from "node:fs/promises";
 
-import { apply } from '../builder/apply.js';
-import type { DocumentEdit } from '../builder/types.js';
-import { load, solve } from '../index.js';
-import type { CandidateDocument, Diagnostic, RelationKind } from '../model.js';
-import { createDocumentRef, loadDocumentRef, saveDocumentRef, type DocumentRef } from './io.js';
+import { apply } from "../builder/apply.js";
+import type { DocumentEdit } from "../builder/types.js";
+import { load, solve } from "../index.js";
+import type { CandidateDocument, Diagnostic, RelationKind } from "../model.js";
+import {
+  createDocumentRef,
+  type DocumentRef,
+  loadDocumentRef,
+  saveDocumentRef,
+} from "./io.js";
 
 type DocRefInput = { path?: string | undefined; source?: string | undefined };
 
 type McpResult = {
-  content: [{ type: 'text'; text: string }];
+  content: [{ type: "text"; text: string }];
   isError?: boolean;
 };
 
 function jsonResult(body: unknown, isError = false): McpResult {
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(body) }],
+    content: [{ type: "text" as const, text: JSON.stringify(body) }],
     ...(isError ? { isError: true } : {}),
   };
 }
 
 const INVALID_REF_ERROR: Diagnostic = {
-  code: 'mcp/invalid-ref',
-  message: 'Provide exactly one of path or source',
+  code: "mcp/invalid-ref",
+  message: "Provide exactly one of path or source",
 };
 
 function toTextRef(source: string): DocumentRef {
@@ -31,7 +36,10 @@ function toTextRef(source: string): DocumentRef {
 
 function normalizeDocRef(
   input: DocRefInput,
-): { ok: true; ref: DocumentRef } | { ok: false; errors: readonly Diagnostic[] } {
+): { ok: true; ref: DocumentRef } | {
+  ok: false;
+  errors: readonly Diagnostic[];
+} {
   const hasPath = input.path !== undefined;
   const hasSource = input.source !== undefined;
   if (hasPath === hasSource) {
@@ -51,7 +59,9 @@ function normalizeStatementDocRef(
   if (hasPath === hasSource) {
     return { ok: false, errors: [INVALID_REF_ERROR] };
   }
-  const ref: DocumentRef = hasPath ? { path: input.path! } : toTextRef(input.source!);
+  const ref: DocumentRef = hasPath
+    ? { path: input.path! }
+    : toTextRef(input.source!);
   return {
     ok: true,
     ref,
@@ -61,45 +71,58 @@ function normalizeStatementDocRef(
 
 function normalizeCreateDocRef(
   input: DocRefInput,
-): { ok: true; ref: DocumentRef } | { ok: false; errors: readonly Diagnostic[] } {
+): { ok: true; ref: DocumentRef } | {
+  ok: false;
+  errors: readonly Diagnostic[];
+} {
   const hasPath = input.path !== undefined;
   const hasSource = input.source !== undefined;
   if (hasPath && hasSource) {
     return { ok: false, errors: [INVALID_REF_ERROR] };
   }
   if (hasPath) return { ok: true, ref: { path: input.path! } };
-  return { ok: true, ref: toTextRef(input.source ?? '') };
+  return { ok: true, ref: toTextRef(input.source ?? "") };
 }
 
 async function readSource(
   input: DocRefInput,
 ): Promise<
-  { ok: true; source: string } | { ok: false; errors: readonly Diagnostic[]; isError?: boolean }
+  { ok: true; source: string } | {
+    ok: false;
+    errors: readonly Diagnostic[];
+    isError?: boolean;
+  }
 > {
   const refResult = normalizeDocRef(input);
   if (!refResult.ok) {
     return { ok: false, errors: refResult.errors, isError: true };
   }
-  if ('path' in refResult.ref && refResult.ref.path !== undefined) {
+  if ("path" in refResult.ref && refResult.ref.path !== undefined) {
     try {
-      const source = await readFile(refResult.ref.path, 'utf8');
+      const source = await readFile(refResult.ref.path, "utf8");
       return { ok: true, source };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       return {
         ok: false,
         isError: true,
-        errors: [{ code: 'mcp/io-error', message }],
+        errors: [{ code: "mcp/io-error", message }],
       };
     }
   }
   return { ok: true, source: refResult.ref.text };
 }
 
-async function applyMutation(ref: DocumentRef, edit: DocumentEdit): Promise<McpResult> {
+async function applyMutation(
+  ref: DocumentRef,
+  edit: DocumentEdit,
+): Promise<McpResult> {
   const loaded = await loadDocumentRef(ref);
   if (!loaded.ok) {
-    return jsonResult({ ok: false, errors: loaded.errors }, loaded.isError ?? false);
+    return jsonResult(
+      { ok: false, errors: loaded.errors },
+      loaded.isError ?? false,
+    );
   }
 
   const applied = apply(loaded.document, edit);
@@ -114,7 +137,10 @@ async function applyMutation(ref: DocumentRef, edit: DocumentEdit): Promise<McpR
 
   const saved = await saveDocumentRef(ref, applied.document);
   if (!saved.ok) {
-    return jsonResult({ ok: false, errors: saved.errors }, saved.isError ?? false);
+    return jsonResult(
+      { ok: false, errors: saved.errors },
+      saved.isError ?? false,
+    );
   }
 
   const body: Record<string, unknown> = {
@@ -122,28 +148,32 @@ async function applyMutation(ref: DocumentRef, edit: DocumentEdit): Promise<McpR
     warnings: applied.warnings,
     diff: applied.diff,
   };
-  if ('path' in saved) body.path = saved.path;
+  if ("path" in saved) body.path = saved.path;
   else body.source = saved.text;
   return jsonResult(body);
 }
 
-function listElementsFromDoc(doc: CandidateDocument): Record<string, unknown>[] {
+function listElementsFromDoc(
+  doc: CandidateDocument,
+): Record<string, unknown>[] {
   const elements: Record<string, unknown>[] = [];
   for (const el of doc.elements) {
-    if (el.kind === 'statement') {
+    if (el.kind === "statement") {
       elements.push({
-        kind: 'statement',
+        kind: "statement",
         id: el.id,
         ...(el.text !== undefined ? { text: el.text } : {}),
       });
-    } else if (el.kind === 'argument') {
+    } else if (el.kind === "argument") {
       elements.push({
-        kind: 'argument',
+        kind: "argument",
         id: el.id,
-        ...(el.description !== undefined ? { description: el.description } : {}),
+        ...(el.description !== undefined
+          ? { description: el.description }
+          : {}),
       });
       for (const inf of el.inferences) {
-        elements.push({ kind: 'inference', id: inf.id });
+        elements.push({ kind: "inference", id: inf.id });
       }
     } else {
       elements.push({ kind: el.kind, from: el.from, to: el.to });
@@ -159,9 +189,12 @@ export async function runCreateDocument(args: DocRefInput): Promise<McpResult> {
   }
   const result = await createDocumentRef(refResult.ref);
   if (!result.ok) {
-    return jsonResult({ ok: false, errors: result.errors }, result.isError ?? false);
+    return jsonResult(
+      { ok: false, errors: result.errors },
+      result.isError ?? false,
+    );
   }
-  if ('path' in result) return jsonResult({ ok: true, path: result.path });
+  if ("path" in result) return jsonResult({ ok: true, path: result.path });
   return jsonResult({ ok: true, source: result.text });
 }
 
@@ -177,9 +210,11 @@ export async function runAddStatement(
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
   const edit: DocumentEdit = {
-    type: 'add_statement',
+    type: "add_statement",
     id: args.id,
-    ...(refResult.statementText !== undefined ? { text: refResult.statementText } : {}),
+    ...(refResult.statementText !== undefined
+      ? { text: refResult.statementText }
+      : {}),
     ...(args.tags !== undefined ? { tags: args.tags } : {}),
   };
   return applyMutation(refResult.ref, edit);
@@ -197,9 +232,11 @@ export async function runUpdateStatement(
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
   const edit: DocumentEdit = {
-    type: 'update_statement',
+    type: "update_statement",
     id: args.id,
-    ...(refResult.statementText !== undefined ? { text: refResult.statementText } : {}),
+    ...(refResult.statementText !== undefined
+      ? { text: refResult.statementText }
+      : {}),
     ...(args.tags !== undefined ? { tags: args.tags } : {}),
   };
   return applyMutation(refResult.ref, edit);
@@ -217,9 +254,11 @@ export async function runAddArgument(
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
   const edit: DocumentEdit = {
-    type: 'add_argument',
+    type: "add_argument",
     id: args.id,
-    ...(args.description !== undefined ? { description: args.description } : {}),
+    ...(args.description !== undefined
+      ? { description: args.description }
+      : {}),
     ...(args.tags !== undefined ? { tags: args.tags } : {}),
   };
   return applyMutation(refResult.ref, edit);
@@ -239,7 +278,7 @@ export async function runAddInference(
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
   const edit: DocumentEdit = {
-    type: 'add_inference',
+    type: "add_inference",
     argumentId: args.argumentId,
     id: args.id,
     premises: args.premises,
@@ -261,7 +300,7 @@ export async function runAddRelation(
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
   const edit: DocumentEdit = {
-    type: 'add_relation',
+    type: "add_relation",
     kind: args.kind,
     from: args.from,
     to: args.to,
@@ -269,12 +308,14 @@ export async function runAddRelation(
   return applyMutation(refResult.ref, edit);
 }
 
-export async function runRemoveElement(args: DocRefInput & { id: string }): Promise<McpResult> {
+export async function runRemoveElement(
+  args: DocRefInput & { id: string },
+): Promise<McpResult> {
   const refResult = normalizeDocRef(args);
   if (!refResult.ok) {
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
-  return applyMutation(refResult.ref, { type: 'remove_element', id: args.id });
+  return applyMutation(refResult.ref, { type: "remove_element", id: args.id });
 }
 
 export async function runRemoveRelation(
@@ -289,7 +330,7 @@ export async function runRemoveRelation(
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
   const edit: DocumentEdit = {
-    type: 'remove_relation',
+    type: "remove_relation",
     kind: args.kind,
     from: args.from,
     to: args.to,
@@ -304,7 +345,10 @@ export async function runListElements(args: DocRefInput): Promise<McpResult> {
   }
   const loaded = await loadDocumentRef(refResult.ref);
   if (!loaded.ok) {
-    return jsonResult({ ok: false, errors: loaded.errors }, loaded.isError ?? false);
+    return jsonResult(
+      { ok: false, errors: loaded.errors },
+      loaded.isError ?? false,
+    );
   }
   return jsonResult({
     ok: true,
@@ -315,7 +359,10 @@ export async function runListElements(args: DocRefInput): Promise<McpResult> {
 export async function runValidate(args: DocRefInput): Promise<McpResult> {
   const sourceResult = await readSource(args);
   if (!sourceResult.ok) {
-    return jsonResult({ ok: false, errors: sourceResult.errors }, sourceResult.isError ?? false);
+    return jsonResult(
+      { ok: false, errors: sourceResult.errors },
+      sourceResult.isError ?? false,
+    );
   }
   const result = load(sourceResult.source);
   if (!result.ok) {
@@ -327,7 +374,10 @@ export async function runValidate(args: DocRefInput): Promise<McpResult> {
 export async function runSolve(args: DocRefInput): Promise<McpResult> {
   const sourceResult = await readSource(args);
   if (!sourceResult.ok) {
-    return jsonResult({ ok: false, errors: sourceResult.errors }, sourceResult.isError ?? false);
+    return jsonResult(
+      { ok: false, errors: sourceResult.errors },
+      sourceResult.isError ?? false,
+    );
   }
   const result = load(sourceResult.source);
   if (!result.ok) {

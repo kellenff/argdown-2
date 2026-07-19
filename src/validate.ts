@@ -15,9 +15,9 @@ import type {
   Statement,
   TheoryElement,
   ValidationResult,
-} from './model.js';
+} from "./model.js";
 
-type Kind = 'argument' | 'inference' | 'statement';
+type Kind = "argument" | "inference" | "statement";
 
 function entityId(value: string): EntityId {
   return value as EntityId;
@@ -35,7 +35,7 @@ function collectKinds(
   const add = (id: string, kind: Kind, path: readonly (number | string)[]) => {
     if (kinds.has(id)) {
       errors.push({
-        code: 'semantic/duplicate-id',
+        code: "semantic/duplicate-id",
         message: `Duplicate id :${id}`,
         path,
       });
@@ -44,20 +44,27 @@ function collectKinds(
     }
   };
   elements.forEach((element, index) => {
-    if (element.kind === 'statement' || element.kind === 'argument') {
-      add(element.id, element.kind, [index, ':id']);
+    if (element.kind === "statement" || element.kind === "argument") {
+      add(element.id, element.kind, [index, ":id"]);
     }
-    if (element.kind === 'argument') {
+    if (element.kind === "argument") {
       element.inferences.forEach((inference, inferenceIndex) => {
-        add(inference.id, 'inference', [index, ':inferences', inferenceIndex, ':id']);
+        add(inference.id, "inference", [
+          index,
+          ":inferences",
+          inferenceIndex,
+          ":id",
+        ]);
       });
     }
   });
   return kinds;
 }
 
-function isEntityKind(kind: Kind | undefined): kind is 'argument' | 'statement' {
-  return kind === 'argument' || kind === 'statement';
+function isEntityKind(
+  kind: Kind | undefined,
+): kind is "argument" | "statement" {
+  return kind === "argument" || kind === "statement";
 }
 
 function reportMissingReference(
@@ -66,7 +73,7 @@ function reportMissingReference(
   errors: Diagnostic[],
 ): void {
   errors.push({
-    code: 'semantic/missing-reference',
+    code: "semantic/missing-reference",
     message: `Unknown id :${id}`,
     path,
   });
@@ -81,9 +88,9 @@ function validateStatementReference(
   const kind = kinds.get(id);
   if (kind === undefined) {
     reportMissingReference(id, path, errors);
-  } else if (kind !== 'statement') {
+  } else if (kind !== "statement") {
     errors.push({
-      code: 'semantic/invalid-reference-kind',
+      code: "semantic/invalid-reference-kind",
       message: `Expected :${id} to be a statement`,
       path,
     });
@@ -96,19 +103,19 @@ function validateInferenceReferences(
   errors: Diagnostic[],
 ): void {
   elements.forEach((element, index) => {
-    if (element.kind !== 'argument') return;
+    if (element.kind !== "argument") return;
     element.inferences.forEach((inference, inferenceIndex) => {
       inference.premises.forEach((premise, premiseIndex) => {
         validateStatementReference(
           premise,
-          [index, ':inferences', inferenceIndex, ':premises', premiseIndex],
+          [index, ":inferences", inferenceIndex, ":premises", premiseIndex],
           kinds,
           errors,
         );
       });
       validateStatementReference(
         inference.conclusion,
-        [index, ':inferences', inferenceIndex, ':conclusion'],
+        [index, ":inferences", inferenceIndex, ":conclusion"],
         kinds,
         errors,
       );
@@ -127,7 +134,7 @@ function validateEntityEndpoint(
     reportMissingReference(id, path, errors);
   } else if (!isEntityKind(kind)) {
     errors.push({
-      code: 'semantic/invalid-endpoint',
+      code: "semantic/invalid-endpoint",
       message: `Expected :${id} to be a statement or argument`,
       path,
     });
@@ -141,25 +148,25 @@ function validateRelationReferences(
 ): void {
   elements.forEach((element, index) => {
     if (
-      element.kind !== 'support' &&
-      element.kind !== 'attack' &&
-      element.kind !== 'contradiction' &&
-      element.kind !== 'undercut'
+      element.kind !== "support" &&
+      element.kind !== "attack" &&
+      element.kind !== "contradiction" &&
+      element.kind !== "undercut"
     ) {
       return;
     }
 
-    const fromPath = [index, ':from'] as const;
-    const toPath = [index, ':to'] as const;
+    const fromPath = [index, ":from"] as const;
+    const toPath = [index, ":to"] as const;
 
-    if (element.kind === 'undercut') {
+    if (element.kind === "undercut") {
       validateEntityEndpoint(element.from, fromPath, kinds, errors);
       const toKind = kinds.get(element.to);
       if (toKind === undefined) {
         reportMissingReference(element.to, toPath, errors);
-      } else if (toKind !== 'inference') {
+      } else if (toKind !== "inference") {
         errors.push({
-          code: 'semantic/invalid-endpoint',
+          code: "semantic/invalid-endpoint",
           message: `Expected :${element.to} to be an inference`,
           path: toPath,
         });
@@ -198,16 +205,16 @@ function toValidatedArgument(argument: CandidateArgument): Argument {
 function toValidatedRelation(relation: CandidateRelation): Relation {
   const base = { extra: relation.extra };
   switch (relation.kind) {
-    case 'undercut':
+    case "undercut":
       return {
         ...base,
-        kind: 'undercut',
+        kind: "undercut",
         from: entityId(relation.from),
         to: inferenceId(relation.to),
       };
-    case 'support':
-    case 'attack':
-    case 'contradiction':
+    case "support":
+    case "attack":
+    case "contradiction":
       return {
         ...base,
         kind: relation.kind,
@@ -219,19 +226,21 @@ function toValidatedRelation(relation: CandidateRelation): Relation {
 
 function toValidatedElement(element: CandidateElement): TheoryElement {
   switch (element.kind) {
-    case 'statement':
+    case "statement":
       return toValidatedStatement(element);
-    case 'argument':
+    case "argument":
       return toValidatedArgument(element);
-    case 'support':
-    case 'attack':
-    case 'contradiction':
-    case 'undercut':
+    case "support":
+    case "attack":
+    case "contradiction":
+    case "undercut":
       return toValidatedRelation(element);
   }
 }
 
-export function validateCandidate(candidate: CandidateDocument): ValidationResult {
+export function validateCandidate(
+  candidate: CandidateDocument,
+): ValidationResult {
   const errors: Diagnostic[] = [];
   const kinds = collectKinds(candidate.elements, errors);
   validateInferenceReferences(candidate.elements, kinds, errors);

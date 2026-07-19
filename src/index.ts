@@ -1,9 +1,14 @@
-import { readEdn } from './edn.js';
-import { groundedLabels } from './grounded.js';
-import type { GroundedDocument, LoadResult, SolveResult, ValidationResult } from './model.js';
-import { reduceToDung } from './reduce-dung.js';
-import { decodeWire } from './schema.js';
-import { validateCandidate } from './validate.js';
+import { readEdn } from "./edn.js";
+import { groundedLabels } from "./grounded.js";
+import type {
+  GroundedDocument,
+  LoadResult,
+  SolveResult,
+  ValidationResult,
+} from "./model.js";
+import { reduceToDung } from "./reduce-dung.js";
+import { decodeWire } from "./schema.js";
+import { validateCandidate } from "./validate.js";
 
 export type {
   Argument,
@@ -20,7 +25,7 @@ export type {
   Statement,
   TheoryElement,
   ValidationResult,
-} from './model.js';
+} from "./model.js";
 
 export function validate(value: unknown): ValidationResult {
   const decoded = decodeWire(value);

@@ -1,23 +1,12 @@
-.yarn/*
-!.yarn/cache
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
+# Deno may materialize npm: deps here for compile/check
+node_modules/
 
-# Yarn Plug'n'Play: loaders are committed on every yarn install (see commit history).
-# Do NOT add to .gitignore — they must stay tracked.
-
-# Build output
+# Build / compile output
 dist/
 
-# Stryker mutation reports and sandboxes (generated on `yarn mutate`)
+# Legacy mutation tooling (removed)
 reports/
 .stryker-tmp/
-
-# Dependencies
-node_modules/
 
 # Agent tooling state (not part of project source)
 .serena/

@@ -1,6 +1,6 @@
-import { readEdn } from '../edn.js';
-import type { CandidateDocument, Diagnostic } from '../model.js';
-import { decodeWire } from '../schema.js';
+import { readEdn } from "../edn.js";
+import type { CandidateDocument, Diagnostic } from "../model.js";
+import { decodeWire } from "../schema.js";
 
 export type SoftParseResult =
   | { ok: true; document: CandidateDocument }
