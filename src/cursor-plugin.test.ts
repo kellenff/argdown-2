@@ -23,26 +23,22 @@ describe('Cursor plugin MCP config', () => {
     expect(manifest.logo).toBe('assets/logo.svg');
   });
 
-  it('exposes argdown-2 via corepack yarn dlx against the release tarball', () => {
+  it('exposes argdown-2 via the Deno binary launcher', () => {
     const mcp = readJson('mcp.json') as {
       mcpServers: {
         'argdown-2': { command: string; args: string[] };
       };
     };
     const server = mcp.mcpServers['argdown-2'];
-    // corepack ensures Yarn 2+ even when PATH yarn is classic 1.x
-    expect(server.command).toBe('corepack');
-    expect(server.args[0]).toBe('yarn');
-    expect(server.args[1]).toBe('dlx');
-    expect(server.args[2]).toBe('-p');
-    expect(server.args[3]).toMatch(
-      /^@casualtheorics\/argdown-2@https:\/\/github\.com\/kellenff\/argdown-2\/releases\/download\/v[\w.-]+\/casualtheorics-argdown-2-[\w.-]+\.tgz$/,
-    );
-    expect(server.args[4]).toBe('argdown-2-mcp');
+    expect(server.command).toBe('bash');
+    expect(server.args).toEqual(['scripts/argdown-2-mcp']);
 
-    const version = (readJson('package.json') as { version: string }).version;
-    expect(server.args[3]).toContain(`v${version}`);
-    expect(server.args[3]).toContain(`casualtheorics-argdown-2-${version}.tgz`);
+    const packageVersion = (readJson('package.json') as { version: string }).version;
+    const launcherVersion = readFileSync(
+      join(root, 'scripts/argdown-2-mcp.version'),
+      'utf8',
+    ).trim();
+    expect(launcherVersion).toBe(packageVersion);
   });
 
   it('declares edn-parser-js via the Yarn patch protocol', () => {

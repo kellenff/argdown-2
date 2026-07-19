@@ -11,6 +11,21 @@ Standard commands live in `README.md` (`## Development`) and `package.json`
 `scripts` (`build`, `typecheck`, `lint`, `format:check`, `test`, `bench`, `mcp`,
 `mutate`, `knip`). Prefer those instead of re-deriving commands.
 
+### MCP binary launcher and release tooling
+
+Consumers launch the shipped MCP server through the checked-in launcher:
+`bash scripts/argdown-2-mcp`. The launcher downloads or reuses the pinned native
+`argdown-2-mcp` binary version from `scripts/argdown-2-mcp.version`.
+
+Release binaries are compiled directly from `src/mcp/cli.ts` with
+`yarn compile:mcp` (or `bash scripts/compile-mcp.sh`). There is no MCP bundler
+step: do not add esbuild, tsdown, or a separate bundled MCP entrypoint for this
+path.
+
+Deno is release tooling only. Use `yarn check:mcp-deno`, `yarn compile:mcp`, and
+`yarn probe:mcp <bin>` to verify the binary-shipping path; day-to-day source
+development remains `yarn mcp` after `yarn build`.
+
 ### Yarn 4 Plug'n'Play — always run Node through Yarn
 
 This repo uses Yarn 4 with PnP. `.pnp.cjs` / `.pnp.loader.mjs` are tracked and

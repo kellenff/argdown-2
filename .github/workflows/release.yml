@@ -42,7 +42,7 @@ jobs:
   release:
     name: Build, test, pack, and publish release
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -141,6 +141,41 @@ jobs:
           echo "::notice::package.json version unchanged from HEAD~1; skipping release."
           # exit 0 — job succeeds, no release produced.
 
+      - name: Setup Deno
+        if: steps.ver.outputs.changed == 'true'
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version-file: scripts/deno-version
+
+      - name: Check Deno MCP entrypoint
+        if: steps.ver.outputs.changed == 'true'
+        run: yarn check:mcp-deno
+
+      - name: Compile MCP binaries
+        if: steps.ver.outputs.changed == 'true'
+        run: bash ./scripts/compile-mcp.sh --all
+
+      - name: Probe Linux MCP binary
+        if: steps.ver.outputs.changed == 'true'
+        run: yarn probe:mcp ./dist/mcp-bin/argdown-2-mcp-x86_64-unknown-linux-gnu
+
+      - name: Generate MCP binary checksums
+        if: steps.ver.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          # Generate bare filenames (not dist/mcp-bin/...) so the launcher
+          # can match basename(asset) against $2 in sha256sums.txt.
+          (
+            cd dist/mcp-bin
+            sha256sum \
+              argdown-2-mcp-x86_64-apple-darwin \
+              argdown-2-mcp-aarch64-apple-darwin \
+              argdown-2-mcp-x86_64-unknown-linux-gnu \
+              argdown-2-mcp-aarch64-unknown-linux-gnu \
+              > sha256sums.txt
+            test "$(wc -l < sha256sums.txt)" -eq 4
+          )
+
       - name: Extract CHANGELOG.md section for this version
         id: notes
         if: steps.ver.outputs.changed == 'true'
@@ -203,14 +238,20 @@ jobs:
           git push origin ":refs/tags/${TAG}" 2>/dev/null || true
           gh release delete "${TAG}" --yes --cleanup-tag 2>/dev/null || true
 
-      - name: Create GitHub Release with tarball asset
+      - name: Create GitHub Release with tarball and binary assets
         if: steps.ver.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
           name: argdown-2 v${{ steps.ver.outputs.version }}
           body_path: ${{ steps.notes.outputs.notes_path }}
-          files: ${{ steps.pack.outputs.tarball }}
+          files: |
+            ${{ steps.pack.outputs.tarball }}
+            dist/mcp-bin/argdown-2-mcp-x86_64-apple-darwin
+            dist/mcp-bin/argdown-2-mcp-aarch64-apple-darwin
+            dist/mcp-bin/argdown-2-mcp-x86_64-unknown-linux-gnu
+            dist/mcp-bin/argdown-2-mcp-aarch64-unknown-linux-gnu
+            dist/mcp-bin/sha256sums.txt
           fail_on_unmatched_files: true
           overwrite_files: true
           # Don't generate GitHub's auto-notes; the CHANGELOG section is

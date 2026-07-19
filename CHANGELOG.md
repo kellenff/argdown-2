@@ -22,6 +22,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0-alpha3] - 2026-07-19
+
+### Changed
+
+- Ship MCP binaries compiled by Deno directly from `src/mcp/cli.ts`, with no
+  MCP bundler step.
+- Replace the consumer `yarn dlx` MCP launch path with the checked-in
+  `bash scripts/argdown-2-mcp` binary launcher.
+
 ## [0.2.0-alpha2] - 2026-07-18
 
 ### Added
@@ -158,3 +167,4 @@ backward-compatibility promises yet — the language surface is frozen (see
 [0.1.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.1.0-alpha1
 [0.2.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha1
 [0.2.0-alpha2]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha2
+[0.2.0-alpha3]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha3
