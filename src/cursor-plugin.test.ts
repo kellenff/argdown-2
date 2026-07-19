@@ -34,7 +34,10 @@ describe('Cursor plugin MCP config', () => {
     expect(server.args).toEqual(['scripts/argdown-2-mcp']);
 
     const packageVersion = (readJson('package.json') as { version: string }).version;
-    const launcherVersion = readFileSync(join(root, 'scripts/argdown-2-mcp.version'), 'utf8').trim();
+    const launcherVersion = readFileSync(
+      join(root, 'scripts/argdown-2-mcp.version'),
+      'utf8',
+    ).trim();
     expect(launcherVersion).toBe(packageVersion);
   });
 
