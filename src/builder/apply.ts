@@ -6,12 +6,15 @@ import {
   type CandidateRelation,
   type CandidateStatement,
   GROUNDED_SOLVER_TAG,
+  type SolverTag,
 } from "../model.js";
 import { resolveInferenceRef, resolveRef } from "./resolve-ref.js";
 import type { ApplyResult, BuilderWarning, DocumentEdit } from "./types.js";
 
-export function emptyDocument(): CandidateDocument {
-  return { solver: GROUNDED_SOLVER_TAG, elements: [] };
+export function emptyDocument(
+  solver: SolverTag = GROUNDED_SOLVER_TAG,
+): CandidateDocument {
+  return { solver, elements: [] };
 }
 
 function stripColon(id: string): string {

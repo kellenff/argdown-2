@@ -4,6 +4,7 @@ import { apply } from "../builder/apply.js";
 import type { DocumentEdit } from "../builder/types.js";
 import { load, solve } from "../index.js";
 import type { CandidateDocument, Diagnostic, RelationKind } from "../model.js";
+import { GROUNDED_SOLVER_TAG, isSolverTag } from "../model.js";
 import {
   createDocumentRef,
   type DocumentRef,
@@ -182,12 +183,24 @@ function listElementsFromDoc(
   return elements;
 }
 
-export async function runCreateDocument(args: DocRefInput): Promise<McpResult> {
+export async function runCreateDocument(
+  args: DocRefInput & { solver?: string | undefined },
+): Promise<McpResult> {
   const refResult = normalizeCreateDocRef(args);
   if (!refResult.ok) {
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
-  const result = await createDocumentRef(refResult.ref);
+  const solver = args.solver ?? GROUNDED_SOLVER_TAG;
+  if (!isSolverTag(solver)) {
+    return jsonResult({
+      ok: false,
+      errors: [{
+        code: "mcp/invalid-solver",
+        message: `Unsupported solver tag: ${solver}`,
+      }],
+    }, true);
+  }
+  const result = await createDocumentRef(refResult.ref, solver);
   if (!result.ok) {
     return jsonResult(
       { ok: false, errors: result.errors },
@@ -384,10 +397,21 @@ export async function runSolve(args: DocRefInput): Promise<McpResult> {
     return jsonResult({ ok: false, errors: result.errors });
   }
   const solved = solve(result.document);
-  const labels = Object.fromEntries(solved.labels);
+  if ("labels" in solved) {
+    const labels = Object.fromEntries(solved.labels);
+    return jsonResult({
+      ok: true,
+      labels,
+      warnings: solved.warnings,
+      solver: solved.solver,
+    });
+  }
+  const extensions = solved.extensions.map((extension) =>
+    [...extension].sort()
+  );
   return jsonResult({
     ok: true,
-    labels,
+    extensions,
     warnings: solved.warnings,
     solver: solved.solver,
   });
