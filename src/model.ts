@@ -88,14 +88,25 @@ export type CandidateRelation = {
   extra: readonly ExtraEntry[];
 };
 
+export type CandidateNestedSolver = {
+  kind: "nested-solver";
+  document: CandidateDocument;
+};
+
 export type CandidateElement =
   | CandidateArgument
+  | CandidateNestedSolver
   | CandidateRelation
   | CandidateStatement;
 
 export type CandidateDocument = {
   solver: SolverTag;
   elements: readonly CandidateElement[];
+};
+
+export type NestedSolver = {
+  kind: "nested-solver";
+  document: GroundedDocument;
 };
 
 export type Inference =
@@ -129,7 +140,7 @@ export type UndercutRelation =
 
 export type Relation = NodeRelation | UndercutRelation;
 
-export type TheoryElement = Argument | Relation | Statement;
+export type TheoryElement = Argument | NestedSolver | Relation | Statement;
 
 export type GroundedDocument = {
   solver: SolverTag;
@@ -155,10 +166,12 @@ export type SolveResult = {
   solver: LabelSolverTag;
   labels: ReadonlyMap<EntityId, Label>;
   warnings: readonly Diagnostic[];
+  nested: readonly (MultiSolveResult | SolveResult)[];
 };
 
 export type MultiSolveResult = {
   solver: MultiExtensionSolverTag;
   extensions: readonly ReadonlySet<EntityId>[];
   warnings: readonly Diagnostic[];
+  nested: readonly (MultiSolveResult | SolveResult)[];
 };

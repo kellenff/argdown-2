@@ -15,6 +15,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Nested solvers POC: same-tag depth-1 solver vectors inside a parent root,
+  isolated ID scopes, `solve()` `nested` results. See
+  `docs/snowball/specs/2026-07-19-nested-solvers-poc-design.md`.
 - Evidential solver (`#casualtheorics.argdown2.solver/evidential`): grounded
   labels on a Cayrol & Lagasquie-Schiex 2005 §3.3 necessary-support reduction
   (`A --> B` becomes `A → nec:A->B → B`).

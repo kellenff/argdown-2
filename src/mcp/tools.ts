@@ -3,7 +3,13 @@ import { readFile } from "node:fs/promises";
 import { apply } from "../builder/apply.js";
 import type { DocumentEdit } from "../builder/types.js";
 import { load, solve } from "../index.js";
-import type { CandidateDocument, Diagnostic, RelationKind } from "../model.js";
+import type {
+  CandidateDocument,
+  Diagnostic,
+  MultiSolveResult,
+  RelationKind,
+  SolveResult,
+} from "../model.js";
 import { GROUNDED_SOLVER_TAG, isSolverTag } from "../model.js";
 import {
   createDocumentRef,
@@ -176,6 +182,12 @@ function listElementsFromDoc(
       for (const inf of el.inferences) {
         elements.push({ kind: "inference", id: inf.id });
       }
+    } else if (el.kind === "nested-solver") {
+      elements.push({
+        kind: "nested-solver",
+        solver: el.document.solver,
+        elements: listElementsFromDoc(el.document),
+      });
     } else {
       elements.push({ kind: el.kind, from: el.from, to: el.to });
     }
@@ -396,23 +408,28 @@ export async function runSolve(args: DocRefInput): Promise<McpResult> {
   if (!result.ok) {
     return jsonResult({ ok: false, errors: result.errors });
   }
-  const solved = solve(result.document);
-  if ("labels" in solved) {
-    const labels = Object.fromEntries(solved.labels);
-    return jsonResult({
-      ok: true,
-      labels,
-      warnings: solved.warnings,
-      solver: solved.solver,
-    });
-  }
-  const extensions = solved.extensions.map((extension) =>
-    [...extension].sort()
-  );
   return jsonResult({
     ok: true,
-    extensions,
-    warnings: solved.warnings,
-    solver: solved.solver,
+    ...serializeSolveResult(solve(result.document)),
   });
+}
+
+function serializeSolveResult(
+  solved: MultiSolveResult | SolveResult,
+): Record<string, unknown> {
+  const nested = solved.nested.map(serializeSolveResult);
+  if ("labels" in solved) {
+    return {
+      labels: Object.fromEntries(solved.labels),
+      nested,
+      solver: solved.solver,
+      warnings: solved.warnings,
+    };
+  }
+  return {
+    extensions: solved.extensions.map((extension) => [...extension].sort()),
+    nested,
+    solver: solved.solver,
+    warnings: solved.warnings,
+  };
 }

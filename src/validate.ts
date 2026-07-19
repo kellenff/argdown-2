@@ -7,10 +7,12 @@ import type {
   CandidateRelation,
   CandidateStatement,
   Diagnostic,
+  DiagnosticPath,
   EntityId,
   GroundedDocument,
   Inference,
   InferenceId,
+  NestedSolver,
   Relation,
   Statement,
   TheoryElement,
@@ -25,6 +27,18 @@ function entityId(value: string): EntityId {
 
 function inferenceId(value: string): InferenceId {
   return value as InferenceId;
+}
+
+function prefixDiagnostics(
+  prefix: number,
+  errors: readonly Diagnostic[],
+): Diagnostic[] {
+  return errors.map((error) => ({
+    ...error,
+    path: error.path === undefined
+      ? [prefix]
+      : [prefix, ...error.path] as DiagnosticPath,
+  }));
 }
 
 function collectKinds(
@@ -224,7 +238,9 @@ function toValidatedRelation(relation: CandidateRelation): Relation {
   }
 }
 
-function toValidatedElement(element: CandidateElement): TheoryElement {
+function toValidatedTheoryElement(
+  element: Exclude<CandidateElement, { kind: "nested-solver" }>,
+): Exclude<TheoryElement, NestedSolver> {
   switch (element.kind) {
     case "statement":
       return toValidatedStatement(element);
@@ -245,12 +261,34 @@ export function validateCandidate(
   const kinds = collectKinds(candidate.elements, errors);
   validateInferenceReferences(candidate.elements, kinds, errors);
   validateRelationReferences(candidate.elements, kinds, errors);
+
+  const nestedDocuments = new Map<number, GroundedDocument>();
+  candidate.elements.forEach((element, index) => {
+    if (element.kind !== "nested-solver") return;
+    const nested = validateCandidate(element.document);
+    if (!nested.ok) {
+      errors.push(...prefixDiagnostics(index, nested.errors));
+      return;
+    }
+    nestedDocuments.set(index, nested.document);
+  });
+
   if (errors.length > 0) return { ok: false, errors };
 
-  const elements = candidate.elements.map(toValidatedElement);
-  const document: GroundedDocument = {
-    elements,
-    solver: candidate.solver,
+  const elements: TheoryElement[] = candidate.elements.map((element, index) => {
+    if (element.kind === "nested-solver") {
+      return {
+        kind: "nested-solver",
+        document: nestedDocuments.get(index)!,
+      };
+    }
+    return toValidatedTheoryElement(element);
+  });
+  return {
+    ok: true,
+    document: {
+      elements,
+      solver: candidate.solver,
+    },
   };
-  return { ok: true, document };
 }

@@ -92,6 +92,28 @@ Bipolar vs evidential on the same graph (`A` supports `B`, `C` attacks `A`):
 
 Evidential propagates A's defeat to B (necessary support). Bipolar does not (deductive support protects/affects the supporter instead).
 
+### Nested solvers (POC)
+
+Experimental: a solver root may contain **depth-1** child solver vectors with the
+**same** tag. Each nest validates and solves as an isolated subgraph (own ID
+scope; no cross-root references; no further nesting). `solve()` returns a
+`nested` array of child results alongside parent labels or extensions.
+
+```edn
+#casualtheorics.argdown2.solver/grounded [
+  #casualtheorics.argdown2.argdown/statement {:id :parent}
+  #casualtheorics.argdown2.solver/grounded [
+    #casualtheorics.argdown2.argdown/statement {:id :a}
+    #casualtheorics.argdown2.argdown/statement {:id :b}
+    #casualtheorics.argdown2.argdown/attack {:from :a :to :b}
+  ]
+]
+```
+
+There are no MCP builder tools for authoring nests yet — load nested EDN via
+`source` / `path`. See
+[`docs/snowball/specs/2026-07-19-nested-solvers-poc-design.md`](docs/snowball/specs/2026-07-19-nested-solvers-poc-design.md).
+
 ## MCP server
 
 Eleven tools, stdio transport, single binary `argdown-2-mcp`. Every mutating tool takes exactly one of `path` (filesystem `.edn`, atomic write via temp + rename) or `source` (full document text, returns updated text). Builder mutations may soft-warn (`builder/unresolved-ref`); `builder/duplicate-id` and `builder/missing-id` refuse the edit and return a `refused` field with no document change.

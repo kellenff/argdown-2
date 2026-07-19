@@ -6,6 +6,7 @@ import type {
   LoadResult,
   MultiExtensionSolverTag,
   MultiSolveResult,
+  NestedSolver,
   SolveResult,
   ValidationResult,
 } from "./model.js";
@@ -40,6 +41,7 @@ export type {
   Label,
   LoadResult,
   MultiSolveResult,
+  NestedSolver,
   Relation,
   SolveResult,
   SolverTag,
@@ -68,6 +70,22 @@ export function load(source: string): LoadResult {
   return read.ok ? validate(read.value) : read;
 }
 
+function nestedDocuments(
+  document: GroundedDocument,
+): readonly GroundedDocument[] {
+  return document.elements
+    .filter((element): element is NestedSolver =>
+      element.kind === "nested-solver"
+    )
+    .map((element) => element.document);
+}
+
+function solveNested(
+  document: GroundedDocument,
+): readonly (MultiSolveResult | SolveResult)[] {
+  return nestedDocuments(document).map((nested) => solve(nested));
+}
+
 function solveLabels(
   document: GroundedDocument,
   solver: LabelSolverTag,
@@ -79,6 +97,7 @@ function solveLabels(
   const reduced = reduce(document);
   return {
     labels: groundedLabels(reduced.framework),
+    nested: solveNested(document),
     solver,
     warnings: reduced.warnings,
   };
@@ -94,7 +113,12 @@ function solveMultiExtension(
 ): MultiSolveResult {
   const reduced = reduceToDung(document);
   const extensions = findExtensions(frameworkToAttackMap(reduced.framework));
-  return { extensions, solver, warnings: reduced.warnings };
+  return {
+    extensions,
+    nested: solveNested(document),
+    solver,
+    warnings: reduced.warnings,
+  };
 }
 
 export function solve(

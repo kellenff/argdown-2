@@ -49,7 +49,10 @@ describe("decodeWire", () => {
       kind: "statement",
       text: "Premise",
     });
-    expect(result.document.elements[0]?.extra).toHaveLength(1);
+    const first = result.document.elements[0];
+    expect(first?.kind).toBe("statement");
+    if (first?.kind !== "statement") return;
+    expect(first.extra).toHaveLength(1);
   });
 
   for (
@@ -107,7 +110,10 @@ describe("decodeWire", () => {
     const result = decodeWire(value);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.document.elements[0]?.extra).toHaveLength(1);
+    const first = result.document.elements[0];
+    expect(first?.kind).toBe("statement");
+    if (first?.kind !== "statement") return;
+    expect(first.extra).toHaveLength(1);
   });
 
   for (

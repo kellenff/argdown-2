@@ -494,12 +494,45 @@ function decodeRelation(
   return { kind, from, to, extra: fields.extra };
 }
 
+type DecodeElementOptions = {
+  expectedSolver: SolverTag;
+  allowNesting: boolean;
+};
+
+function decodeSolverVector(
+  value: unknown,
+  path: Path,
+  errors: Diagnostic[],
+  options: DecodeElementOptions,
+): CandidateDocument | undefined {
+  if (!Array.isArray(value)) {
+    errors.push({
+      code: "schema/root-not-vector",
+      message: "Solver root value must be vector",
+      path,
+    });
+    return undefined;
+  }
+  const elements: CandidateElement[] = [];
+  let failed = false;
+  value.forEach((entry, index) => {
+    const decoded = decodeElement(entry, [...path, index], errors, options);
+    if (decoded === undefined) {
+      failed = true;
+      return;
+    }
+    elements.push(decoded);
+  });
+  if (failed) return undefined;
+  return { solver: options.expectedSolver, elements };
+}
+
 function decodeElement(
   value: unknown,
-  index: number,
+  path: Path,
   errors: Diagnostic[],
+  options: DecodeElementOptions,
 ): CandidateElement | undefined {
-  const path: Path = [index];
   const tagged = taggedSchema.safeParse(value);
   if (!tagged.success) {
     errors.push({
@@ -510,6 +543,33 @@ function decodeElement(
     return undefined;
   }
   const name = fullName(tagged.data.tag);
+
+  if (tagged.data.tag.ns === ROOT_NAMESPACE && isSolverTag(name)) {
+    if (!options.allowNesting) {
+      errors.push({
+        code: "schema/nested-solver-depth",
+        message: "Nested solvers cannot contain further nested solvers",
+        path,
+      });
+      return undefined;
+    }
+    if (name !== options.expectedSolver) {
+      errors.push({
+        code: "schema/nested-solver-mismatch",
+        message:
+          `Nested solver #${name} must match parent #${options.expectedSolver}`,
+        path,
+      });
+      return undefined;
+    }
+    const nested = decodeSolverVector(tagged.data.value, path, errors, {
+      allowNesting: false,
+      expectedSolver: name,
+    });
+    if (nested === undefined) return undefined;
+    return { kind: "nested-solver", document: nested };
+  }
+
   if (tagged.data.tag.ns !== THEORY_NAMESPACE) {
     pushUnsupportedTag(errors, path, name);
     return undefined;
@@ -571,24 +631,13 @@ export function decodeWire(value: unknown): DecodeResult {
       }],
     };
   }
-  if (!Array.isArray(root.data.value)) {
-    return {
-      ok: false,
-      errors: [{
-        code: "schema/root-not-vector",
-        message: "Solver root value must be vector",
-      }],
-    };
-  }
   const errors: Diagnostic[] = [];
-  const elements: CandidateElement[] = [];
-  root.data.value.forEach((entry, index) => {
-    const decoded = decodeElement(entry, index, errors);
-    if (decoded !== undefined) elements.push(decoded);
+  const document = decodeSolverVector(root.data.value, [], errors, {
+    allowNesting: true,
+    expectedSolver: rootName,
   });
-  if (errors.length > 0) return { ok: false, errors };
-  return {
-    ok: true,
-    document: { solver: rootName as SolverTag, elements },
-  };
+  if (document === undefined || errors.length > 0) {
+    return { ok: false, errors };
+  }
+  return { ok: true, document };
 }

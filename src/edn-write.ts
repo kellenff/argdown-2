@@ -213,12 +213,29 @@ function printRelation(rel: CandidateRelation, baseIndent: number): string {
   return printTaggedMap(printTag(THEORY_NS, rel.kind), entries, baseIndent);
 }
 
+function printNestedSolver(
+  nest: Extract<CandidateElement, { kind: "nested-solver" }>,
+  baseIndent: number,
+): string {
+  const pad = " ".repeat(baseIndent);
+  const body = nest.document.elements
+    .map((element) => printElement(element, baseIndent + 2))
+    .join("\n\n");
+  const tag = printTag(ROOT_NS, solverSymbol(nest.document.solver));
+  if (body.length === 0) {
+    return `${pad}${tag}\n${pad}[\n${pad}]`;
+  }
+  return `${pad}${tag}\n${pad}[\n${body}\n${pad}]`;
+}
+
 function printElement(element: CandidateElement, baseIndent: number): string {
   switch (element.kind) {
     case "statement":
       return printStatement(element, baseIndent);
     case "argument":
       return printArgument(element, baseIndent);
+    case "nested-solver":
+      return printNestedSolver(element, baseIndent);
     default:
       return printRelation(element, baseIndent);
   }
