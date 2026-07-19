@@ -104,7 +104,9 @@ describe("first-class component solve result", () => {
       elements: [],
       extra: [],
     };
-    (component as { elements: SolverComponent[] }).elements = [component];
+    (component as unknown as { elements: SolverComponent[] }).elements = [
+      component,
+    ];
     expect(() => evaluateComponent(component)).toThrow(
       "Component containment cycle at :root",
     );
