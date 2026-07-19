@@ -7,10 +7,7 @@ const cliJs = 'dist/mcp/cli.js';
 const built = existsSync(indexJs);
 
 const externalImport = (pkg: string) =>
-  new RegExp(
-    String.raw`^(?!\s*\*).*\b(?:import|export)\s+[^;]*?\bfrom\s+['"]${pkg}`,
-    'm',
-  );
+  new RegExp(String.raw`^(?!\s*\*).*\b(?:import|export)\s+[^;]*?\bfrom\s+['"]${pkg}`, 'm');
 
 describe.skipIf(!built)('build artifacts', () => {
   it('emits library JS, library dts, and MCP CLI', () => {
