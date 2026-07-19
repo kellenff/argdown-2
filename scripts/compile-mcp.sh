@@ -7,6 +7,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DENO_VERSION="$(tr -d '[:space:]' < "$ROOT/scripts/deno-version")"
 ENTRY="$ROOT/src/mcp/cli.ts"
 OUT_DIR="$ROOT/dist/mcp-bin"
+LOCKFILE="$ROOT/deno.lock"
 
 TARGETS_ALL=(
   x86_64-apple-darwin
@@ -50,7 +51,10 @@ host_target() {
 }
 
 TARGETS=()
-if [[ "${1:-}" == "--all" ]]; then
+if [[ "$#" -gt 1 || ( "$#" -eq 1 && "${1:-}" != "--all" ) ]]; then
+  echo "Usage: scripts/compile-mcp.sh [--all]" >&2
+  exit 2
+elif [[ "${1:-}" == "--all" ]]; then
   TARGETS=("${TARGETS_ALL[@]}")
 else
   TARGETS=("$(host_target)")
@@ -63,6 +67,8 @@ for target in "${TARGETS[@]}"; do
   # MCP needs filesystem I/O for path-mode tools; allow-all keeps v1 simple.
   deno compile \
     --allow-all \
+    --frozen \
+    --lock "$LOCKFILE" \
     --node-modules-dir=auto \
     --target "$target" \
     --output "$out" \
