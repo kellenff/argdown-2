@@ -42,6 +42,8 @@ describe("Argdown 1.x censorship parity", () => {
     const loaded = load(source);
     if (!loaded.ok) throw new Error("fixture did not load");
     const result = solve(loaded.document);
+    expect("labels" in result).toBe(true);
+    if (!("labels" in result)) return;
     expect(result.labels.get(id("inclusive-debate"))).toBe("in");
     expect(result.labels.get(id("racial-hatred"))).toBe("out");
     expect(result.labels.get(id("causal-link-questionable"))).toBe("in");
@@ -56,7 +58,9 @@ describe("Argdown 1.x censorship parity", () => {
   it("warns once for each represented support relation", () => {
     const loaded = load(source);
     if (!loaded.ok) throw new Error("fixture did not load");
-    expect(solve(loaded.document).warnings.map((warning) => warning.code))
+    const solved = solve(loaded.document);
+    expect("warnings" in solved).toBe(true);
+    expect(solved.warnings.map((warning) => warning.code))
       .toEqual([
         "reduce/support-omitted",
         "reduce/support-omitted",

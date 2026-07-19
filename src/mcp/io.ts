@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import { emptyDocument } from "../builder/apply.js";
 import { softParse } from "../builder/soft-parse.js";
 import { writeEdn } from "../edn-write.js";
-import type { CandidateDocument, Diagnostic } from "../model.js";
+import type { CandidateDocument, Diagnostic, SolverTag } from "../model.js";
+import { GROUNDED_SOLVER_TAG } from "../model.js";
 
 export type DocumentRef = { path: string; text?: undefined } | {
   text: string;
@@ -105,6 +106,7 @@ export async function saveDocumentRef(
 /** Create a new empty file for path refs, or return empty EDN text. */
 export async function createDocumentRef(
   ref: DocumentRef,
+  solver: SolverTag = GROUNDED_SOLVER_TAG,
 ): Promise<SaveDocResult> {
-  return saveDocumentRef(ref, emptyDocument());
+  return saveDocumentRef(ref, emptyDocument(solver));
 }

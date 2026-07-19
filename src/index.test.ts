@@ -17,6 +17,8 @@ describe("public API", () => {
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
     const result = solve(loaded.document);
+    expect("labels" in result).toBe(true);
+    if (!("labels" in result)) return;
     expect(Object.fromEntries(result.labels)).toEqual({ a: "in", b: "out" });
     expect(result.solver).toBe("casualtheorics.argdown2.solver/grounded");
     expect(result.warnings).toEqual([]);

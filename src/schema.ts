@@ -10,8 +10,9 @@ import {
   type CandidateStatement,
   type Diagnostic,
   type ExtraEntry,
-  GROUNDED_SOLVER_TAG,
+  isSolverTag,
   type RelationKind,
+  type SolverTag,
 } from "./model.js";
 
 const ROOT_NAMESPACE = "casualtheorics.argdown2.solver";
@@ -561,7 +562,7 @@ export function decodeWire(value: unknown): DecodeResult {
     };
   }
   const rootName = fullName(root.data.tag);
-  if (rootName !== GROUNDED_SOLVER_TAG || root.data.tag.ns !== ROOT_NAMESPACE) {
+  if (root.data.tag.ns !== ROOT_NAMESPACE || !isSolverTag(rootName)) {
     return {
       ok: false,
       errors: [{
@@ -575,7 +576,7 @@ export function decodeWire(value: unknown): DecodeResult {
       ok: false,
       errors: [{
         code: "schema/root-not-vector",
-        message: "Grounded solver value must be vector",
+        message: "Solver root value must be vector",
       }],
     };
   }
@@ -586,5 +587,8 @@ export function decodeWire(value: unknown): DecodeResult {
     if (decoded !== undefined) elements.push(decoded);
   });
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, document: { solver: GROUNDED_SOLVER_TAG, elements } };
+  return {
+    ok: true,
+    document: { solver: rootName as SolverTag, elements },
+  };
 }

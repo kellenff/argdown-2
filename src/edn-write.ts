@@ -6,6 +6,7 @@ import type {
   CandidateRelation,
   CandidateStatement,
   ExtraEntry,
+  SolverTag,
 } from "./model.js";
 
 const ROOT_NS = "casualtheorics.argdown2.solver";
@@ -223,9 +224,14 @@ function printElement(element: CandidateElement, baseIndent: number): string {
   }
 }
 
+function solverSymbol(solver: SolverTag): string {
+  const slash = solver.lastIndexOf("/");
+  return slash === -1 ? solver : solver.slice(slash + 1);
+}
+
 export function writeEdn(doc: CandidateDocument): string {
   const elements = doc.elements.map((element) => printElement(element, 2)).join(
     "\n\n",
   );
-  return `${printTag(ROOT_NS, "grounded")}\n[\n${elements}\n]`;
+  return `${printTag(ROOT_NS, solverSymbol(doc.solver))}\n[\n${elements}\n]`;
 }

@@ -1,5 +1,34 @@
 export const GROUNDED_SOLVER_TAG =
   "casualtheorics.argdown2.solver/grounded" as const;
+export const PREFERRED_SOLVER_TAG =
+  "casualtheorics.argdown2.solver/preferred" as const;
+export const STABLE_SOLVER_TAG =
+  "casualtheorics.argdown2.solver/stable" as const;
+export const COMPLETE_SOLVER_TAG =
+  "casualtheorics.argdown2.solver/complete" as const;
+export const BIPOLAR_SOLVER_TAG =
+  "casualtheorics.argdown2.solver/bipolar" as const;
+
+export const SOLVER_TAGS = [
+  GROUNDED_SOLVER_TAG,
+  PREFERRED_SOLVER_TAG,
+  STABLE_SOLVER_TAG,
+  COMPLETE_SOLVER_TAG,
+  BIPOLAR_SOLVER_TAG,
+] as const;
+
+export type SolverTag = (typeof SOLVER_TAGS)[number];
+export type LabelSolverTag =
+  | typeof BIPOLAR_SOLVER_TAG
+  | typeof GROUNDED_SOLVER_TAG;
+export type MultiExtensionSolverTag =
+  | typeof COMPLETE_SOLVER_TAG
+  | typeof PREFERRED_SOLVER_TAG
+  | typeof STABLE_SOLVER_TAG;
+
+export function isSolverTag(value: string): value is SolverTag {
+  return (SOLVER_TAGS as readonly string[]).includes(value);
+}
 
 declare const entityIdBrand: unique symbol;
 declare const inferenceIdBrand: unique symbol;
@@ -61,7 +90,7 @@ export type CandidateElement =
   | CandidateStatement;
 
 export type CandidateDocument = {
-  solver: typeof GROUNDED_SOLVER_TAG;
+  solver: SolverTag;
   elements: readonly CandidateElement[];
 };
 
@@ -99,7 +128,7 @@ export type Relation = NodeRelation | UndercutRelation;
 export type TheoryElement = Argument | Relation | Statement;
 
 export type GroundedDocument = {
-  solver: typeof GROUNDED_SOLVER_TAG;
+  solver: SolverTag;
   elements: readonly TheoryElement[];
 };
 
@@ -119,7 +148,13 @@ export type ValidationResult =
 export type LoadResult = ValidationResult;
 
 export type SolveResult = {
-  solver: typeof GROUNDED_SOLVER_TAG;
+  solver: LabelSolverTag;
   labels: ReadonlyMap<EntityId, Label>;
+  warnings: readonly Diagnostic[];
+};
+
+export type MultiSolveResult = {
+  solver: MultiExtensionSolverTag;
+  extensions: readonly ReadonlySet<EntityId>[];
   warnings: readonly Diagnostic[];
 };

@@ -21,8 +21,13 @@ export function buildServer(): McpServer {
     {
       title: "Create document",
       description:
-        "Create an empty grounded argdown-2 EDN document (path or source). Omit both for empty text mode.",
-      inputSchema: docRefSchema,
+        "Create an empty argdown-2 EDN document (path or source). Optional solver tag defaults to grounded.",
+      inputSchema: {
+        ...docRefSchema,
+        solver: z.string().optional().describe(
+          "Solver tag, e.g. casualtheorics.argdown2.solver/preferred",
+        ),
+      },
     },
     tools.runCreateDocument,
   );
@@ -156,7 +161,8 @@ export function buildServer(): McpServer {
     "solve",
     {
       title: "Solve",
-      description: "Strict-load and compute grounded labels.",
+      description:
+        "Strict-load and compute labels (grounded/bipolar) or extensions (preferred/stable/complete).",
       inputSchema: docRefSchema,
     },
     tools.runSolve,
