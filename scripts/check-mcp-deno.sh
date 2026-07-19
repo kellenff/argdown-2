@@ -21,6 +21,12 @@ if ! command -v deno >/dev/null 2>&1; then
   exit 1
 fi
 
+INSTALLED="$(deno --version | head -n1 | awk '{print $2}')"
+if [[ "$INSTALLED" != "$DENO_VERSION" ]]; then
+  echo "error: deno $INSTALLED on PATH; pin is $DENO_VERSION" >&2
+  exit 1
+fi
+
 cd "$ROOT"
 # IMPORTANT: use frozen lock like compile script.
 deno check --frozen --lock "$ROOT/deno.lock" --node-modules-dir=auto "$ENTRY"

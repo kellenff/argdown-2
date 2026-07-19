@@ -30,7 +30,8 @@ function parseToolResult(result) {
 }
 
 const client = new Client({ name: 'argdown-2-mcp-stdio-probe', version: '0.0.0' });
-const transport = new StdioClientTransport({ command: host, args: [] });
+const transport = new StdioClientTransport({ command: host, args: [], stderr: 'inherit' });
+let failed = false;
 
 try {
   await client.connect(transport);
@@ -46,6 +47,10 @@ try {
     name: 'create_document',
     arguments: { source: '' },
   });
+  if (created.isError) {
+    throw new Error(`create_document returned MCP error: ${JSON.stringify(created)}`);
+  }
+
   const payload = parseToolResult(created);
 
   if (payload.ok !== true) {
@@ -53,6 +58,14 @@ try {
   }
 
   console.log(`probe-mcp-stdio: ok (${basename(host)})`);
+} catch (error) {
+  failed = true;
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`error: MCP stdio probe failed for ${host}: ${message}`);
 } finally {
   await client.close().catch(() => {});
+}
+
+if (failed) {
+  process.exit(1);
 }
