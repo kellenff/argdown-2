@@ -10,6 +10,21 @@ function readJson(relativePath: string): unknown {
 }
 
 describe('Cursor plugin MCP config', () => {
+  it('has a valid marketplace manifest for local install', () => {
+    const marketplace = readJson('.cursor-plugin/marketplace.json') as {
+      name: string;
+      owner: { name: string };
+      plugins: Array<{ name: string; source: string; description: string }>;
+    };
+    const manifest = readJson('.cursor-plugin/plugin.json') as { name: string };
+    expect(marketplace.name).toBe('argdown-2');
+    expect(marketplace.owner.name).toBeTruthy();
+    expect(marketplace.plugins).toHaveLength(1);
+    expect(marketplace.plugins[0]?.name).toBe(manifest.name);
+    expect(marketplace.plugins[0]?.source).toBe('.');
+    expect(marketplace.plugins[0]?.description.length).toBeGreaterThan(10);
+  });
+
   it('has a valid plugin manifest', () => {
     const manifest = readJson('.cursor-plugin/plugin.json') as {
       name: string;

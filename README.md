@@ -86,10 +86,7 @@ Eleven tools, stdio transport, single binary `argdown-2-mcp`. Every mutating too
 
 This repo is a Cursor plugin. Installing it registers the `argdown-2` MCP server automatically.
 
-1. In Cursor, open **Customize** → add this repository as a plugin / team marketplace source, **or** symlink it for local testing:
-   ```bash
-   ln -s /absolute/path/to/argdown-2 ~/.cursor/plugins/local/argdown-2
-   ```
+1. In Cursor, open **Customize** → add this repository as a local plugin / team marketplace source. Cursor snapshots the selected revision when it installs the plugin, so remove and re-add the source after changing its MCP configuration.
 2. Reload the window. Toggle **argdown-2** on under Tools & MCP if needed.
 
 You can also use the [MCP install deeplink](cursor://anysphere.cursor-deeplink/mcp/install?name=argdown-2&config=eyJjb21tYW5kIjoiYmFzaCIsImFyZ3MiOlsic2NyaXB0cy9hcmdkb3duLTItbWNwIl19) (opens Cursor’s install prompt with the same launcher config as [`mcp.json`](mcp.json)).
