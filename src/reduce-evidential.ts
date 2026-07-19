@@ -2,7 +2,7 @@ import type {
   Diagnostic,
   DungFramework,
   EntityId,
-  GroundedDocument,
+  SolverComponent,
 } from "./model.js";
 import type { ReduceResult } from "./reduce-dung.js";
 
@@ -44,7 +44,7 @@ function undercutWarning(index: number): Diagnostic {
   };
 }
 
-export function reduceToEvidential(document: GroundedDocument): ReduceResult {
+export function reduceToEvidential(document: SolverComponent): ReduceResult {
   const nodes = new Set<EntityId>();
   for (const element of document.elements) {
     if (element.kind === "statement" || element.kind === "argument") {

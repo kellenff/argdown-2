@@ -1,3 +1,11 @@
+export const DOCUMENT_TAG = "casualtheorics.argdown2/document" as const;
+export const AGGREGATE_IDENTITY_TAG =
+  "casualtheorics.argdown2.aggregate/identity" as const;
+export const EXTENSION_PROPORTION_OBSERVER_TAG =
+  "casualtheorics.argdown2.observer/extension-proportion" as const;
+export const PROJECTION_THRESHOLD_TAG =
+  "casualtheorics.argdown2.projection/threshold" as const;
+
 export const GROUNDED_SOLVER_TAG =
   "casualtheorics.argdown2.solver/grounded" as const;
 export const PREFERRED_SOLVER_TAG =
@@ -39,6 +47,7 @@ declare const inferenceIdBrand: unique symbol;
 
 export type EntityId = string & { readonly [entityIdBrand]: true };
 export type InferenceId = string & { readonly [inferenceIdBrand]: true };
+export type Confidence = number | null;
 export type Label = "in" | "out" | "undec";
 export type DiagnosticPath = readonly (number | string)[];
 
@@ -83,30 +92,55 @@ export type RelationKind = "support" | "attack" | "contradiction" | "undercut";
 
 export type CandidateRelation = {
   kind: RelationKind;
+  id: string;
   from: string;
   to: string;
   extra: readonly ExtraEntry[];
 };
 
-export type CandidateNestedSolver = {
-  kind: "nested-solver";
-  document: CandidateDocument;
+export type AggregateInput = { ref: string };
+
+export type IdentityAggregate = {
+  tag: typeof AGGREGATE_IDENTITY_TAG;
+  inputs: readonly [AggregateInput];
+};
+
+export type ExtensionProportionObserver = {
+  tag: typeof EXTENSION_PROPORTION_OBSERVER_TAG;
+};
+
+export type SolverInterface = {
+  aggregate: IdentityAggregate;
+  observer?: ExtensionProportionObserver;
+};
+
+export type ThresholdProjection = {
+  tag: typeof PROJECTION_THRESHOLD_TAG;
+  outAtMost: number;
+  inAtLeast: number;
+  otherwise: null;
+};
+
+export type CandidateSolverComponent = {
+  kind: "solver";
+  solver: SolverTag;
+  id: string;
+  interface?: SolverInterface;
+  imports: readonly (readonly [string, ThresholdProjection])[];
+  elements: readonly CandidateElement[];
+  extra: readonly ExtraEntry[];
 };
 
 export type CandidateElement =
   | CandidateArgument
-  | CandidateNestedSolver
   | CandidateRelation
+  | CandidateSolverComponent
   | CandidateStatement;
 
 export type CandidateDocument = {
-  solver: SolverTag;
-  elements: readonly CandidateElement[];
-};
-
-export type NestedSolver = {
-  kind: "nested-solver";
-  document: GroundedDocument;
+  id: string;
+  root: CandidateSolverComponent;
+  extra: readonly ExtraEntry[];
 };
 
 export type Inference =
@@ -124,28 +158,36 @@ export type Argument = Omit<CandidateArgument, "id" | "inferences"> & {
   inferences: readonly Inference[];
 };
 
-export type NodeRelation = Omit<CandidateRelation, "from" | "kind" | "to"> & {
-  kind: "attack" | "contradiction" | "support";
+export type Relation = Omit<CandidateRelation, "from" | "id" | "to"> & {
+  id: EntityId;
   from: EntityId;
   to: EntityId;
 };
 
-export type UndercutRelation =
-  & Omit<CandidateRelation, "from" | "kind" | "to">
-  & {
-    kind: "undercut";
-    from: EntityId;
-    to: InferenceId;
-  };
-
-export type Relation = NodeRelation | UndercutRelation;
-
-export type TheoryElement = Argument | NestedSolver | Relation | Statement;
-
-export type GroundedDocument = {
+export type SolverComponent = {
+  kind: "solver";
   solver: SolverTag;
+  id: EntityId;
+  interface: SolverInterface;
+  imports: ReadonlyMap<EntityId, ThresholdProjection>;
   elements: readonly TheoryElement[];
+  extra: readonly ExtraEntry[];
 };
+
+export type TheoryElement =
+  | Argument
+  | Relation
+  | SolverComponent
+  | Statement;
+
+export type Document = {
+  id: string;
+  root: SolverComponent;
+  extra: readonly ExtraEntry[];
+};
+
+// Compatibility alias retained for callers while the pre-1.0 API migrates.
+export type GroundedDocument = Document;
 
 export type DungFramework = {
   nodes: ReadonlySet<EntityId>;
@@ -157,21 +199,34 @@ export type ReadResult =
   | { ok: false; errors: readonly Diagnostic[] };
 
 export type ValidationResult =
-  | { ok: true; document: GroundedDocument }
+  | { ok: true; document: Document }
   | { ok: false; errors: readonly Diagnostic[] };
 
 export type LoadResult = ValidationResult;
 
-export type SolveResult = {
-  solver: LabelSolverTag;
-  labels: ReadonlyMap<EntityId, Label>;
-  warnings: readonly Diagnostic[];
-  nested: readonly (MultiSolveResult | SolveResult)[];
+export type LabelNativeResult = {
+  kind: "labels";
+  values: ReadonlyMap<EntityId, Label>;
 };
 
-export type MultiSolveResult = {
-  solver: MultiExtensionSolverTag;
-  extensions: readonly ReadonlySet<EntityId>[];
-  warnings: readonly Diagnostic[];
-  nested: readonly (MultiSolveResult | SolveResult)[];
+export type ExtensionNativeResult = {
+  kind: "extensions";
+  values: readonly ReadonlySet<EntityId>[];
 };
+
+export type AggregateResult =
+  | { kind: "label"; value: Label }
+  | { kind: "extension-proportion"; value: Confidence };
+
+export type ComponentSolveResult = {
+  id: EntityId;
+  solver: SolverTag;
+  native: LabelNativeResult | ExtensionNativeResult;
+  aggregate: AggregateResult;
+  boundary: { confidence: Confidence };
+  children: ReadonlyMap<EntityId, ComponentSolveResult>;
+  warnings: readonly Diagnostic[];
+};
+
+export type SolveResult = ComponentSolveResult;
+export type MultiSolveResult = ComponentSolveResult;
