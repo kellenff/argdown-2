@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const indexJs = 'dist/index.js';
@@ -12,15 +12,6 @@ const externalImport = (pkg: string) =>
     'm',
   );
 
-function libraryBundleSources(): string[] {
-  const indexSource = readFileSync(indexJs, 'utf8');
-  const sources = [indexSource];
-  for (const match of indexSource.matchAll(/\bfrom\s+['"](\.\/[^'"]+)['"]/g)) {
-    sources.push(readFileSync(`dist/${match[1]!.replace(/^\.\//, '')}`, 'utf8'));
-  }
-  return sources;
-}
-
 describe.skipIf(!built)('build artifacts', () => {
   it('emits library JS, library dts, and MCP CLI', () => {
     expect(existsSync(indexJs)).toBe(true);
@@ -33,11 +24,17 @@ describe.skipIf(!built)('build artifacts', () => {
     expect(head.startsWith('#!/usr/bin/env node')).toBe(true);
   });
 
+  it('builds self-contained entry bundles without shared chunks', () => {
+    const sharedChunks = readdirSync('dist').filter((name) => /^src-.*\.js$/.test(name));
+    expect(sharedChunks).toEqual([]);
+    expect(readFileSync(indexJs, 'utf8')).not.toMatch(/\bfrom\s+['"]\.\/src-/);
+    expect(readFileSync(cliJs, 'utf8')).not.toMatch(/\bfrom\s+['"]\.\/src-/);
+  });
+
   it('inlines app dependencies in the library bundle', () => {
-    for (const source of libraryBundleSources()) {
-      expect(source).not.toMatch(externalImport('zod'));
-      expect(source).not.toMatch(externalImport('edn-parser-js'));
-    }
+    const source = readFileSync(indexJs, 'utf8');
+    expect(source).not.toMatch(externalImport('zod'));
+    expect(source).not.toMatch(externalImport('edn-parser-js'));
   });
 
   it('inlines app dependencies in the MCP CLI bundle', () => {
