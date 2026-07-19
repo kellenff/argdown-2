@@ -24,14 +24,12 @@ export type DiffOp =
   | {
     op: "add-relation";
     kind: RelationKind;
-    from: string;
-    to: string;
+    id: string;
   }
   | {
     op: "remove-relation";
     kind: RelationKind;
-    from: string;
-    to: string;
+    id: string;
   };
 
 export type ApplyResult = {
@@ -71,13 +69,9 @@ export type DocumentEdit =
   | {
     type: "add_relation";
     kind: RelationKind;
+    id: string;
     from: string;
     to: string;
   }
   | { type: "remove_element"; id: string }
-  | {
-    type: "remove_relation";
-    kind: RelationKind;
-    from: string;
-    to: string;
-  };
+  | { type: "remove_relation"; id: string };

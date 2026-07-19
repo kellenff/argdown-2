@@ -15,14 +15,18 @@ export function resolveRef(
     return { ok: false, reason: "missing", message: "Empty reference" };
   }
 
-  for (const el of doc.elements) {
-    if (el.kind === "statement" || el.kind === "argument") {
+  for (const el of doc.root.elements) {
+    if (
+      el.kind === "statement" ||
+      el.kind === "argument" ||
+      el.kind === "solver"
+    ) {
       if (el.id === needle) return { ok: true, id: el.id, via: "id" };
     }
   }
 
   const textHits: string[] = [];
-  for (const el of doc.elements) {
+  for (const el of doc.root.elements) {
     if (el.kind === "statement" && el.text === needle) textHits.push(el.id);
     if (el.kind === "argument" && el.description === needle) {
       textHits.push(el.id);
@@ -59,10 +63,17 @@ export function resolveInferenceRef(
   idOrText: string,
 ): RefResolution {
   const needle = stripKeywordColon(idOrText.trim());
-  for (const el of doc.elements) {
-    if (el.kind !== "argument") continue;
-    for (const inf of el.inferences) {
-      if (inf.id === needle) return { ok: true, id: inf.id, via: "id" };
+  for (const el of doc.root.elements) {
+    if (el.kind === "argument") {
+      for (const inf of el.inferences) {
+        if (inf.id === needle) return { ok: true, id: inf.id, via: "id" };
+      }
+    } else if (
+      el.kind !== "statement" &&
+      el.kind !== "solver" &&
+      el.id === needle
+    ) {
+      return { ok: true, id: el.id, via: "id" };
     }
   }
   return {

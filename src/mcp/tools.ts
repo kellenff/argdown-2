@@ -5,10 +5,10 @@ import type { DocumentEdit } from "../builder/types.js";
 import { load, solve } from "../index.js";
 import type {
   CandidateDocument,
+  CandidateSolverComponent,
+  ComponentSolveResult,
   Diagnostic,
-  MultiSolveResult,
   RelationKind,
-  SolveResult,
 } from "../model.js";
 import { GROUNDED_SOLVER_TAG, isSolverTag } from "../model.js";
 import {
@@ -163,8 +163,14 @@ async function applyMutation(
 function listElementsFromDoc(
   doc: CandidateDocument,
 ): Record<string, unknown>[] {
+  return listElementsFromComponent(doc.root);
+}
+
+function listElementsFromComponent(
+  component: CandidateSolverComponent,
+): Record<string, unknown>[] {
   const elements: Record<string, unknown>[] = [];
-  for (const el of doc.elements) {
+  for (const el of component.elements) {
     if (el.kind === "statement") {
       elements.push({
         kind: "statement",
@@ -182,21 +188,26 @@ function listElementsFromDoc(
       for (const inf of el.inferences) {
         elements.push({ kind: "inference", id: inf.id });
       }
-    } else if (el.kind === "nested-solver") {
+    } else if (el.kind === "solver") {
       elements.push({
-        kind: "nested-solver",
-        solver: el.document.solver,
-        elements: listElementsFromDoc(el.document),
+        kind: "solver",
+        id: el.id,
+        solver: el.solver,
+        elements: listElementsFromComponent(el),
       });
     } else {
-      elements.push({ kind: el.kind, from: el.from, to: el.to });
+      elements.push({ kind: el.kind, id: el.id, from: el.from, to: el.to });
     }
   }
   return elements;
 }
 
 export async function runCreateDocument(
-  args: DocRefInput & { solver?: string | undefined },
+  args: DocRefInput & {
+    solver?: string | undefined;
+    documentId?: string | undefined;
+    rootId?: string | undefined;
+  },
 ): Promise<McpResult> {
   const refResult = normalizeCreateDocRef(args);
   if (!refResult.ok) {
@@ -212,7 +223,12 @@ export async function runCreateDocument(
       }],
     }, true);
   }
-  const result = await createDocumentRef(refResult.ref, solver);
+  const result = await createDocumentRef(
+    refResult.ref,
+    solver,
+    args.documentId ?? "document",
+    args.rootId ?? "root",
+  );
   if (!result.ok) {
     return jsonResult(
       { ok: false, errors: result.errors },
@@ -315,6 +331,7 @@ export async function runAddInference(
 
 export async function runAddRelation(
   args: DocRefInput & {
+    id: string;
     kind: RelationKind;
     from: string;
     to: string;
@@ -326,6 +343,7 @@ export async function runAddRelation(
   }
   const edit: DocumentEdit = {
     type: "add_relation",
+    id: args.id,
     kind: args.kind,
     from: args.from,
     to: args.to,
@@ -344,22 +362,13 @@ export async function runRemoveElement(
 }
 
 export async function runRemoveRelation(
-  args: DocRefInput & {
-    kind: RelationKind;
-    from: string;
-    to: string;
-  },
+  args: DocRefInput & { id: string },
 ): Promise<McpResult> {
   const refResult = normalizeDocRef(args);
   if (!refResult.ok) {
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
-  const edit: DocumentEdit = {
-    type: "remove_relation",
-    kind: args.kind,
-    from: args.from,
-    to: args.to,
-  };
+  const edit: DocumentEdit = { type: "remove_relation", id: args.id };
   return applyMutation(refResult.ref, edit);
 }
 
@@ -415,21 +424,26 @@ export async function runSolve(args: DocRefInput): Promise<McpResult> {
 }
 
 function serializeSolveResult(
-  solved: MultiSolveResult | SolveResult,
+  solved: ComponentSolveResult,
 ): Record<string, unknown> {
-  const nested = solved.nested.map(serializeSolveResult);
-  if ("labels" in solved) {
-    return {
-      labels: Object.fromEntries(solved.labels),
-      nested,
-      solver: solved.solver,
-      warnings: solved.warnings,
-    };
-  }
+  const children = Object.fromEntries(
+    [...solved.children].map(([id, child]) => [
+      id,
+      serializeSolveResult(child),
+    ]),
+  );
   return {
-    extensions: solved.extensions.map((extension) => [...extension].sort()),
-    nested,
+    id: solved.id,
     solver: solved.solver,
+    native: solved.native.kind === "labels"
+      ? { kind: "labels", values: Object.fromEntries(solved.native.values) }
+      : {
+        kind: "extensions",
+        values: solved.native.values.map((extension) => [...extension].sort()),
+      },
+    aggregate: solved.aggregate,
+    boundary: solved.boundary,
+    children,
     warnings: solved.warnings,
   };
 }

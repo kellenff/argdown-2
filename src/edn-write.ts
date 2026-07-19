@@ -4,12 +4,16 @@ import type {
   CandidateElement,
   CandidateInference,
   CandidateRelation,
+  CandidateSolverComponent,
   CandidateStatement,
   ExtraEntry,
-  SolverTag,
 } from "./model.js";
 
+const DOCUMENT_NS = "casualtheorics.argdown2";
 const ROOT_NS = "casualtheorics.argdown2.solver";
+const AGGREGATE_NS = "casualtheorics.argdown2.aggregate";
+const OBSERVER_NS = "casualtheorics.argdown2.observer";
+const PROJECTION_NS = "casualtheorics.argdown2.projection";
 const THEORY_NS = "casualtheorics.argdown2.argdown";
 
 function printTag(ns: string, symbol: string): string {
@@ -206,6 +210,7 @@ function printArgument(arg: CandidateArgument, baseIndent: number): string {
 
 function printRelation(rel: CandidateRelation, baseIndent: number): string {
   const entries = [
+    `:id ${printKeyword(rel.id)}`,
     `:from ${printKeyword(rel.from)}`,
     `:to ${printKeyword(rel.to)}`,
     ...printExtra(rel.extra),
@@ -213,19 +218,58 @@ function printRelation(rel: CandidateRelation, baseIndent: number): string {
   return printTaggedMap(printTag(THEORY_NS, rel.kind), entries, baseIndent);
 }
 
-function printNestedSolver(
-  nest: Extract<CandidateElement, { kind: "nested-solver" }>,
+function printSolver(
+  component: CandidateSolverComponent,
   baseIndent: number,
 ): string {
   const pad = " ".repeat(baseIndent);
-  const body = nest.document.elements
+  const innerPad = " ".repeat(baseIndent + 1);
+  const deeperPad = " ".repeat(baseIndent + 2);
+  const body = component.elements
     .map((element) => printElement(element, baseIndent + 2))
     .join("\n\n");
-  const tag = printTag(ROOT_NS, solverSymbol(nest.document.solver));
-  if (body.length === 0) {
-    return `${pad}${tag}\n${pad}[\n${pad}]`;
+  const lines = [
+    `${pad}${printTag(ROOT_NS, solverSymbol(component.solver))}`,
+    `${pad}{:id ${printKeyword(component.id)}`,
+  ];
+  if (component.interface !== undefined) {
+    const ref = component.interface.aggregate.inputs[0].ref;
+    lines.push(
+      `${innerPad}:interface`,
+      `${innerPad}{:aggregate`,
+      `${deeperPad}${printTag(AGGREGATE_NS, "identity")}`,
+      `${deeperPad}{:inputs [{:ref ${printKeyword(ref)}}]}`,
+    );
+    if (component.interface.observer !== undefined) {
+      lines.push(
+        `${deeperPad}:observer`,
+        `${deeperPad}${printTag(OBSERVER_NS, "extension-proportion")} {}`,
+      );
+    }
+    lines[lines.length - 1] += "}";
   }
-  return `${pad}${tag}\n${pad}[\n${body}\n${pad}]`;
+  if (component.imports.length > 0) {
+    lines.push(`${innerPad}:imports`, `${innerPad}{`);
+    component.imports.forEach(([id, projection], index) => {
+      lines.push(
+        `${deeperPad}${printKeyword(id)}`,
+        `${deeperPad}${printTag(PROJECTION_NS, "threshold")}`,
+        `${deeperPad}{:out-at-most ${projection.outAtMost}`,
+        `${deeperPad} :in-at-least ${projection.inAtLeast}`,
+        `${deeperPad} :otherwise nil}${index === component.imports.length - 1 ? "}" : ""}`,
+      );
+    });
+  }
+  lines.push(
+    ...printExtra(component.extra).map((entry) => `${innerPad}${entry}`),
+  );
+  lines.push(`${innerPad}:elements`);
+  if (body.length === 0) {
+    lines.push(`${innerPad}[]}`);
+  } else {
+    lines.push(`${innerPad}[`, body, `${innerPad}]}`);
+  }
+  return lines.join("\n");
 }
 
 function printElement(element: CandidateElement, baseIndent: number): string {
@@ -234,21 +278,20 @@ function printElement(element: CandidateElement, baseIndent: number): string {
       return printStatement(element, baseIndent);
     case "argument":
       return printArgument(element, baseIndent);
-    case "nested-solver":
-      return printNestedSolver(element, baseIndent);
+    case "solver":
+      return printSolver(element, baseIndent);
     default:
       return printRelation(element, baseIndent);
   }
 }
 
-function solverSymbol(solver: SolverTag): string {
+function solverSymbol(solver: string): string {
   const slash = solver.lastIndexOf("/");
   return slash === -1 ? solver : solver.slice(slash + 1);
 }
 
 export function writeEdn(doc: CandidateDocument): string {
-  const elements = doc.elements.map((element) => printElement(element, 2)).join(
-    "\n\n",
-  );
-  return `${printTag(ROOT_NS, solverSymbol(doc.solver))}\n[\n${elements}\n]`;
+  const root = printSolver(doc.root, 1);
+  const extra = printExtra(doc.extra).map((entry) => ` ${entry}`).join("\n");
+  return `${printTag(DOCUMENT_NS, "document")}\n{:id ${printKeyword(doc.id)}\n :root\n${root}${extra.length === 0 ? "" : `\n${extra}`}\n}`;
 }

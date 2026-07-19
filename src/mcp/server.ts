@@ -27,6 +27,8 @@ export function buildServer(): McpServer {
         solver: z.string().optional().describe(
           "Solver tag, e.g. casualtheorics.argdown2.solver/preferred",
         ),
+        documentId: z.string().optional(),
+        rootId: z.string().optional(),
       },
     },
     tools.runCreateDocument,
@@ -103,6 +105,7 @@ export function buildServer(): McpServer {
         "Add support|attack|contradiction|undercut (from/to are id-or-prose refs).",
       inputSchema: {
         ...docRefSchema,
+        id: z.string().describe("Unique local relation id"),
         kind: z.enum(["support", "attack", "contradiction", "undercut"]),
         from: z.string(),
         to: z.string(),
@@ -125,13 +128,8 @@ export function buildServer(): McpServer {
     "remove_relation",
     {
       title: "Remove relation",
-      description: "Remove a relation by kind + from + to (id-or-prose refs).",
-      inputSchema: {
-        ...docRefSchema,
-        kind: z.enum(["support", "attack", "contradiction", "undercut"]),
-        from: z.string(),
-        to: z.string(),
-      },
+      description: "Remove a relation by its local id.",
+      inputSchema: { ...docRefSchema, id: z.string() },
     },
     tools.runRemoveRelation,
   );
