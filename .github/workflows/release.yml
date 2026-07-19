@@ -91,7 +91,7 @@ jobs:
 
       - name: Build
         run: yarn build
-        # `tsc` populates dist/. The subsequent `npm pack` step relies on
+        # `tsdown` populates dist/. The subsequent `npm pack` step relies on
         # dist/ existing on disk (the `files` field is `["dist"]`, and
         # npm pack uses the working tree, not git history).
 

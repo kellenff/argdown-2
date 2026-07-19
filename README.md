@@ -158,7 +158,7 @@ To run from source, clone and use Yarn 4 with PnP. `.pnp.cjs` and `.pnp.loader.m
 
 ```bash
 yarn install        # Yarn 4 with PnP
-yarn build          # tsc to dist/
+yarn build          # tsdown → dist/ (library + MCP CLI, deps inlined)
 yarn typecheck      # tsc --noEmit
 yarn lint           # oxlint
 yarn format:check   # oxfmt --check

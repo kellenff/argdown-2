@@ -244,7 +244,7 @@ jobs:
           tar -tzf "$TARBALL" | sort
           echo
           echo "Required files check:"
-          REQUIRED=("package/package.json" "package/README.md" "package/dist/index.js" "package/dist/index.d.ts")
+          REQUIRED=("package/package.json" "package/README.md" "package/dist/index.js" "package/dist/index.d.ts" "package/dist/mcp/cli.js")
           # List once: with pipefail, `tar | grep -qx` false-negatives when grep
           # exits early and tar receives SIGPIPE.
           TAR_LIST=$(tar -tzf "$TARBALL")
