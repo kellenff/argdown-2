@@ -7,13 +7,13 @@ import {
   type CandidateRelation,
   type CandidateSolverComponent,
   type CandidateStatement,
+  COMPLETE_SOLVER_TAG,
   EXTENSION_PROPORTION_OBSERVER_TAG,
   GROUNDED_SOLVER_TAG,
   isEdnKeywordName,
   PREFERRED_SOLVER_TAG,
-  STABLE_SOLVER_TAG,
-  COMPLETE_SOLVER_TAG,
   type SolverTag,
+  STABLE_SOLVER_TAG,
 } from "../model.js";
 import { resolveInferenceRef, resolveRef } from "./resolve-ref.js";
 import type { ApplyResult, BuilderWarning, DocumentEdit } from "./types.js";
@@ -89,9 +89,7 @@ function interfaceFor(
       tag: AGGREGATE_IDENTITY_TAG,
       inputs: [{ ref }],
     },
-    ...(multi
-      ? { observer: { tag: EXTENSION_PROPORTION_OBSERVER_TAG } }
-      : {}),
+    ...(multi ? { observer: { tag: EXTENSION_PROPORTION_OBSERVER_TAG } } : {}),
   };
 }
 

@@ -137,7 +137,9 @@ function evaluateComponentTree(
     throw new TypeError(`Component containment cycle at :${component.id}`);
   }
   if (seen.has(component)) {
-    throw new TypeError(`Component reused by multiple parents: :${component.id}`);
+    throw new TypeError(
+      `Component reused by multiple parents: :${component.id}`,
+    );
   }
   active.add(component);
   seen.add(component);
