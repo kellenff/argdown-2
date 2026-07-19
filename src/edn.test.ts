@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@std/expect';
+import { describe, it } from '@std/testing/bdd';
 
 import { readEdn } from './edn.js';
 
@@ -25,33 +26,37 @@ describe('readEdn', () => {
     });
   });
 
-  it.each([
+  for (const [name, source] of [
     ['unbalanced collection', '[1 2'],
     ['unterminated string', '"abc'],
     ['odd map arity', '{:id :x :orphan}'],
     ['orphan tag', '#example/tag'],
     ['invalid numeric token', '42.3.4'],
     ['unexpected trailing delimiter', '{:id :x})'],
-  ])('returns edn/read-error for %s', (_name, source) => {
-    const result = readEdn(source);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors[0]?.code).toBe('edn/read-error');
-  });
+  ] as const) {
+    it(`returns edn/read-error for ${name}`, () => {
+      const result = readEdn(source);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors[0]?.code).toBe('edn/read-error');
+    });
+  }
 
-  it.each([
+  for (const [name, source] of [
     ['zero roots', ''],
     ['multiple roots', '1 2'],
-  ])('returns edn/root-count for %s', (_name, source) => {
-    const result = readEdn(source);
-    expect(result).toEqual({
-      ok: false,
-      errors: [
-        {
-          code: 'edn/root-count',
-          message: 'Expected exactly one top-level EDN value',
-        },
-      ],
+  ] as const) {
+    it(`returns edn/root-count for ${name}`, () => {
+      const result = readEdn(source);
+      expect(result).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: 'edn/root-count',
+            message: 'Expected exactly one top-level EDN value',
+          },
+        ],
+      });
     });
-  });
+  }
 });

@@ -2,7 +2,8 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { expect } from '@std/expect';
+import { describe, it } from '@std/testing/bdd';
 
 import {
   runAddArgument,

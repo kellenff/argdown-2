@@ -2,7 +2,8 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { expect } from '@std/expect';
+import { describe, it } from '@std/testing/bdd';
 
 import { emptyDocument } from '../builder/apply.js';
 import { writeEdn } from '../edn-write.js';

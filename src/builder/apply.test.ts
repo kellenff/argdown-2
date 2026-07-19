@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@std/expect';
+import { describe, it } from '@std/testing/bdd';
 
 import { apply, emptyDocument } from './apply.js';
 import { GROUNDED_SOLVER_TAG } from '../model.js';

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@std/expect';
+import { describe, it } from '@std/testing/bdd';
 
 import { readEdn } from './edn.js';
 import { decodeWire } from './schema.js';
@@ -49,7 +50,7 @@ describe('decodeWire', () => {
     expect(result.document.elements[0]?.extra).toHaveLength(1);
   });
 
-  it.each([
+  for (const [name, source, code] of [
     ['wrong root tag', '#other.solver/grounded []', 'edn/unsupported-tag'],
     ['bare root vector', '[]', 'schema/missing-root-tag'],
     [
@@ -82,12 +83,14 @@ describe('decodeWire', () => {
       '#casualtheorics.argdown2.solver/grounded [#casualtheorics.argdown2.argdown/statement {:id :a :tags [:pro]}]',
       'schema/invalid-field',
     ],
-  ])('rejects %s with a stable code', (_name, source, code) => {
-    const result = decodeWire(readOne(source));
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors.some((error) => error.code === code)).toBe(true);
-  });
+  ] as const) {
+    it(`rejects ${name} with a stable code`, () => {
+      const result = decodeWire(readOne(source));
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.some((error) => error.code === code)).toBe(true);
+    });
+  }
 
   it('preserves arbitrary EDN metadata and unknown entries', () => {
     const value = readOne(`
@@ -103,7 +106,7 @@ describe('decodeWire', () => {
     expect(result.document.elements[0]?.extra).toHaveLength(1);
   });
 
-  it.each([
+  for (const [name, source, code] of [
     [
       'duplicate field',
       '#casualtheorics.argdown2.solver/grounded [#casualtheorics.argdown2.argdown/statement {:id :a :id :b}]',
@@ -119,10 +122,12 @@ describe('decodeWire', () => {
       '#casualtheorics.argdown2.solver/grounded [#casualtheorics.argdown2.argdown/statement {:id :a :tags #{:pro :pro}}]',
       'schema/duplicate-set-value',
     ],
-  ])('rejects %s retained by the EDN reader', (_name, source, code) => {
-    const result = decodeWire(readOne(source));
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors.some((error) => error.code === code)).toBe(true);
-  });
+  ] as const) {
+    it(`rejects ${name} retained by the EDN reader`, () => {
+      const result = decodeWire(readOne(source));
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.some((error) => error.code === code)).toBe(true);
+    });
+  }
 });

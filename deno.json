@@ -13,8 +13,6 @@
       "scripts",
       "assets",
       "**/*.test.ts",
-      "**/pipeline.bench.ts",
-      "perf-baseline.json",
       "dist",
       "node_modules"
     ]

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@std/expect';
+import { describe, it } from '@std/testing/bdd';
 
 import { readEdn } from './edn.js';
 import { decodeWire } from './schema.js';
@@ -54,7 +55,7 @@ describe('validateCandidate', () => {
     ]);
   });
 
-  it.each([
+  for (const [name, relation] of [
     [
       'attack endpoint cannot be an inference',
       '#casualtheorics.argdown2.argdown/attack {:from :i :to :s}',
@@ -63,8 +64,9 @@ describe('validateCandidate', () => {
       'undercut target must be an inference',
       '#casualtheorics.argdown2.argdown/undercut {:from :s :to :s}',
     ],
-  ])('rejects %s', (_name, relation) => {
-    const source = `
+  ] as const) {
+    it(`rejects ${name}`, () => {
+      const source = `
       #casualtheorics.argdown2.solver/grounded [
         #casualtheorics.argdown2.argdown/statement {:id :s}
         #casualtheorics.argdown2.argdown/argument
@@ -73,8 +75,9 @@ describe('validateCandidate', () => {
         ${relation}
       ]
     `;
-    expect(codes(source)).toContain('semantic/invalid-endpoint');
-  });
+      expect(codes(source)).toContain('semantic/invalid-endpoint');
+    });
+  }
 
   it('requires inference premises and conclusions to reference statements', () => {
     const source = `
