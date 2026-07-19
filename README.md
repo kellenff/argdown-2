@@ -80,20 +80,28 @@ Eleven tools, stdio transport, single binary `argdown-2-mcp`. Every mutating too
 | `validate` | Strict-load and return semantic diagnostics |
 | `solve` | Strict-load and compute grounded labels |
 
-### One-click install (Cursor plugin)
+### One-click install (Claude Code plugin)
 
-This repo is a Cursor plugin. Installing it registers the `argdown-2` MCP server automatically.
+This repo is a Claude Code marketplace. Installing the `argdown-2` plugin registers the MCP server and ships skills for build / validate / solve.
 
-1. In Cursor, open **Customize** → add this repository as a local plugin / team marketplace source. Cursor snapshots the selected revision when it installs the plugin, so remove and re-add the source after changing its MCP configuration.
-2. Reload the window. Toggle **argdown-2** on under Tools & MCP if needed.
+1. In Claude Code: `/plugin marketplace add kellenff/argdown-2` (or add a local checkout path).
+2. `/plugin install argdown-2@argdown-2`
+3. Enable the plugin if prompted. MCP starts via the checked-in binary launcher.
 
-You can also use the [MCP install deeplink](cursor://anysphere.cursor-deeplink/mcp/install?name=argdown-2&config=eyJjb21tYW5kIjoiYmFzaCIsImFyZ3MiOlsic2NyaXB0cy9hcmdkb3duLTItbWNwIl19) (opens Cursor’s install prompt with the same launcher config as [`mcp.json`](mcp.json)).
+**Never hand-edit EDN** while using the plugin — mutate graphs only through the builder MCP tools (`create_document`, `add_statement`, …).
 
-The plugin launches the server through the checked-in binary launcher with `bash scripts/argdown-2-mcp`; the launcher version is pinned in [`scripts/argdown-2-mcp.version`](scripts/argdown-2-mcp.version). From a source clone of this repo, prefer the committed [`.cursor/mcp.json`](.cursor/mcp.json) which runs `deno task mcp`, or run `deno task mcp` directly.
+Optional checks after changing plugin files:
+
+```bash
+claude plugin validate .
+claude plugin validate ./plugins/argdown-2
+```
+
+The plugin launches the server with `bash ${CLAUDE_PLUGIN_ROOT}/scripts/argdown-2-mcp` (launcher + version pin are copied under `plugins/argdown-2/scripts/`). The version is pinned in [`scripts/argdown-2-mcp.version`](scripts/argdown-2-mcp.version). From a source clone of this repo, run `deno task mcp` for stdio MCP from TypeScript.
 
 Release binaries are compiled directly from [`src/mcp/cli.ts`](src/mcp/cli.ts) with `deno task compile:mcp` / [`scripts/compile-mcp.sh`](scripts/compile-mcp.sh); there is no separate MCP bundler.
 
-**Claude Desktop** (`claude_desktop_config.json`) or manual Cursor config:
+**Claude Desktop** (`claude_desktop_config.json`) or other MCP clients via root [`mcp.json`](mcp.json):
 
 ```json
 {

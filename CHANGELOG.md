@@ -13,6 +13,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Claude Code in-repo marketplace (`.claude-plugin/marketplace.json`) and nested
+  plugin (`plugins/argdown-2`) with MCP, three skills, and a soft rule to never
+  hand-edit EDN.
+
+### Removed
+
+- Cursor plugin / marketplace (`.cursor-plugin/`) and project-local
+  `.cursor/mcp.json` one-click install path.
+
 ## [0.2.0-alpha4] - 2026-07-19
 
 ### Changed
