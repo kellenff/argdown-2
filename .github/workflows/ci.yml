@@ -125,6 +125,8 @@ jobs:
         run: yarn install --immutable
       - name: Build
         run: yarn build
+      - name: Build artifact contract tests
+        run: yarn test src/build-artifacts.test.ts
 
   knip:
     name: Knip

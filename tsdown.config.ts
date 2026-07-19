@@ -1,5 +1,7 @@
 import { defineConfig } from 'tsdown';
 
+// Two configs (not one dual-entry object): Rolldown rejects
+// `codeSplitting: false` when a single config has multiple inputs.
 const shared = {
   format: ['esm'] as const,
   platform: 'node' as const,

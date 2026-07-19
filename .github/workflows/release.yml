@@ -95,6 +95,9 @@ jobs:
         # dist/ existing on disk (the `files` field is `["dist"]`, and
         # npm pack uses the working tree, not git history).
 
+      - name: Build artifact contract tests
+        run: yarn test src/build-artifacts.test.ts
+
       - name: Knip (unused/missing dependencies)
         run: yarn knip
 
