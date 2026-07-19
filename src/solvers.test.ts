@@ -4,6 +4,7 @@ import { describe, it } from "@std/testing/bdd";
 import {
   BIPOLAR_SOLVER_TAG,
   COMPLETE_SOLVER_TAG,
+  EVIDENTIAL_SOLVER_TAG,
   GROUNDED_SOLVER_TAG,
   PREFERRED_SOLVER_TAG,
   STABLE_SOLVER_TAG,
@@ -68,6 +69,27 @@ describe("solver tags", () => {
     expect(result.solver).toBe(BIPOLAR_SOLVER_TAG);
     expect(result.labels.get("a" as never)).toBe("out");
     expect(result.labels.get("b" as never)).toBe("in");
+    expect(result.labels.get("c" as never)).toBe("in");
+  });
+
+  it("solves evidential documents with necessary-support reduction", () => {
+    const loaded = load(`
+      #casualtheorics.argdown2.solver/evidential [
+        #casualtheorics.argdown2.argdown/statement {:id :a}
+        #casualtheorics.argdown2.argdown/statement {:id :b}
+        #casualtheorics.argdown2.argdown/statement {:id :c}
+        #casualtheorics.argdown2.argdown/support {:from :a :to :b}
+        #casualtheorics.argdown2.argdown/attack {:from :c :to :a}
+      ]
+    `);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const result = solve(loaded.document);
+    expect("labels" in result).toBe(true);
+    if (!("labels" in result)) return;
+    expect(result.solver).toBe(EVIDENTIAL_SOLVER_TAG);
+    expect(result.labels.get("a" as never)).toBe("out");
+    expect(result.labels.get("b" as never)).toBe("out");
     expect(result.labels.get("c" as never)).toBe("in");
   });
 
