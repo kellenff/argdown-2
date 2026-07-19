@@ -2,11 +2,10 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
+import { connectArgdownMcp } from "../pi/extensions/mcp-bridge.ts";
 import { resolveLauncherPath } from "../pi/extensions/resolve-launcher.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -105,26 +104,12 @@ describe("Pi package", () => {
       "../pi/extensions/argdown-2-mcp.ts",
       import.meta.url,
     ).href;
-    const launcher = resolveLauncherPath(extensionUrl);
-
-    const client = new Client({
-      name: "argdown-2-pi-package-test",
-      version: "0.0.0",
-    });
-    const transport = new StdioClientTransport({
-      command: "bash",
-      args: [launcher],
-      stderr: "inherit",
-    });
+    const session = await connectArgdownMcp(extensionUrl);
 
     try {
-      await client.connect(transport);
-      const { tools } = await client.listTools();
-      expect(tools.map((t: { name: string }) => t.name).sort()).toEqual(
-        TOOL_NAMES,
-      );
+      expect(session.tools.map((t) => t.name).sort()).toEqual(TOOL_NAMES);
     } finally {
-      await client.close();
+      await session.close();
     }
   });
 });
