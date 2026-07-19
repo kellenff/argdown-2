@@ -32,7 +32,18 @@ sha256_file() {
 verify_checksum() {
   local file="$1" sums="$2" cleanup="${3:-}" base expected actual
   base="$(basename "$file")"
-  expected="$(awk -v b="$base" '$2 == b || $2 == ("*" b) || $2 == ("./" b) { print $1; exit }' "$sums")"
+  # Accept bare names, ./name, *name, or any path ending in /name (release
+  # checksums must use bare names; basename match is defensive).
+  expected="$(awk -v b="$base" '
+    {
+      name = $2
+      sub(/^\*/, "", name)
+      sub(/^\.\//, "", name)
+      n = split(name, parts, "/")
+      leaf = parts[n]
+      if (leaf == b) { print $1; exit }
+    }
+  ' "$sums")"
   if [[ -z "$expected" ]]; then
     [[ "$cleanup" == "delete" ]] && rm -f "$file" "$sums"
     die "no checksum entry for $base in $sums"

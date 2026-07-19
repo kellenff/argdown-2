@@ -60,4 +60,21 @@ if [[ -e "$CACHE/sha256sums.txt" ]]; then
 fi
 echo "ok: checksum mismatch"
 
+# Path-prefixed checksum lines (pre-fix release format) must still match.
+mkdir -p "$CACHE"
+cp "$FAKE" "$CACHE/argdown-2-mcp-$TARGET"
+HASH="$(
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$CACHE/argdown-2-mcp-$TARGET" | awk '{print $1}'
+  else
+    shasum -a 256 "$CACHE/argdown-2-mcp-$TARGET" | awk '{print $1}'
+  fi
+)"
+echo "$HASH  dist/mcp-bin/argdown-2-mcp-$TARGET" > "$CACHE/sha256sums.txt"
+XDG_CACHE_HOME="$TMP/cache" \
+  ARGDOWN2_MCP_UNAME_S=Linux \
+  ARGDOWN2_MCP_UNAME_M=x86_64 \
+  "$LAUNCHER" </dev/null
+echo "ok: path-prefixed checksum"
+
 echo "argdown-2-mcp.test.sh: all ok"

@@ -163,13 +163,18 @@ jobs:
         if: steps.ver.outputs.changed == 'true'
         run: |
           set -euo pipefail
-          sha256sum \
-            dist/mcp-bin/argdown-2-mcp-x86_64-apple-darwin \
-            dist/mcp-bin/argdown-2-mcp-aarch64-apple-darwin \
-            dist/mcp-bin/argdown-2-mcp-x86_64-unknown-linux-gnu \
-            dist/mcp-bin/argdown-2-mcp-aarch64-unknown-linux-gnu \
-            > dist/mcp-bin/sha256sums.txt
-          test "$(wc -l < dist/mcp-bin/sha256sums.txt)" -eq 4
+          # Generate bare filenames (not dist/mcp-bin/...) so the launcher
+          # can match basename(asset) against $2 in sha256sums.txt.
+          (
+            cd dist/mcp-bin
+            sha256sum \
+              argdown-2-mcp-x86_64-apple-darwin \
+              argdown-2-mcp-aarch64-apple-darwin \
+              argdown-2-mcp-x86_64-unknown-linux-gnu \
+              argdown-2-mcp-aarch64-unknown-linux-gnu \
+              > sha256sums.txt
+            test "$(wc -l < sha256sums.txt)" -eq 4
+          )
 
       - name: Extract CHANGELOG.md section for this version
         id: notes
