@@ -37,8 +37,19 @@ describe("deno package contract", () => {
     );
   });
 
-  it("has no package.json (Yarn/npm package removed)", () => {
-    expect(existsSync(join(root, "package.json"))).toBe(false);
+  it("has a Pi-only package.json excluded from JSR publish", () => {
+    expect(existsSync(join(root, "package.json"))).toBe(true);
+    const pkg = readJson("package.json") as {
+      name: string;
+      keywords: string[];
+    };
+    expect(pkg.name).toBe("argdown-2-pi");
+    expect(pkg.keywords).toContain("pi-package");
+    const deno = readJson("deno.json") as {
+      publish?: { exclude?: string[] };
+    };
+    expect(deno.publish?.exclude).toContain("package.json");
+    expect(deno.publish?.exclude).toContain("pi");
   });
 
   it("declares publish:dry-run task for JSR slow-types verification", () => {

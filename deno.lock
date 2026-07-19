@@ -578,6 +578,11 @@
       "jsr:@std/testing@1",
       "npm:@modelcontextprotocol/sdk@1.29.0",
       "npm:zod@4.4.3"
-    ]
+    ],
+    "packageJson": {
+      "dependencies": [
+        "npm:@modelcontextprotocol/sdk@1.29.0"
+      ]
+    }
   }
 }

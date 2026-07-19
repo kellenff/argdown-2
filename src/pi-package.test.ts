@@ -120,7 +120,9 @@ describe("Pi package", () => {
     try {
       await client.connect(transport);
       const { tools } = await client.listTools();
-      expect(tools.map((t) => t.name).sort()).toEqual(TOOL_NAMES);
+      expect(tools.map((t: { name: string }) => t.name).sort()).toEqual(
+        TOOL_NAMES,
+      );
     } finally {
       await client.close();
     }

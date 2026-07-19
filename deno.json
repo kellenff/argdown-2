@@ -15,16 +15,19 @@
       "assets",
       "**/*.test.ts",
       "dist",
-      "node_modules"
+      "node_modules",
+      "package.json",
+      "package-lock.json",
+      "pi"
     ]
   },
   "tasks": {
     "test": "deno test -A --frozen --parallel src/",
     "check": "deno check --frozen src/index.ts src/mcp/cli.ts",
     "publish:dry-run": "deno publish --dry-run --allow-dirty",
-    "lint": "deno lint src scripts",
-    "fmt": "deno fmt src scripts",
-    "fmt:check": "deno fmt --check src scripts",
+    "lint": "deno lint src scripts pi",
+    "fmt": "deno fmt src scripts pi",
+    "fmt:check": "deno fmt --check src scripts pi",
     "mcp": "deno run -A src/mcp/cli.ts",
     "compile:mcp": "bash ./scripts/compile-mcp.sh",
     "check:mcp-deno": "bash ./scripts/check-mcp-deno.sh",

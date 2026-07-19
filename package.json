@@ -1,0 +1,38 @@
+{
+  "name": "argdown-2-pi",
+  "version": "0.2.0-alpha4",
+  "private": true,
+  "description": "Pi package: shared argdown-2 skills plus an MCP bridge extension for grounded EDN argument graphs. Unix only. Never hand-edit EDN; use builder MCP tools.",
+  "keywords": [
+    "pi-package",
+    "argdown",
+    "argdown-2",
+    "mcp",
+    "argumentation"
+  ],
+  "homepage": "https://github.com/kellenff/argdown-2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kellenff/argdown-2.git"
+  },
+  "license": "Unlicense",
+  "type": "module",
+  "files": [
+    "pi",
+    "plugins/argdown-2/skills",
+    "scripts",
+    "package.json",
+    "README.md"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "skills": ["./plugins/argdown-2/skills"],
+    "extensions": ["./pi/extensions/argdown-2-mcp.ts"]
+  }
+}
