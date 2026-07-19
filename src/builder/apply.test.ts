@@ -2,7 +2,11 @@ import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
 import { apply, emptyDocument } from "./apply.js";
-import { GROUNDED_SOLVER_TAG } from "../model.js";
+import {
+  EXTENSION_PROPORTION_OBSERVER_TAG,
+  GROUNDED_SOLVER_TAG,
+  PREFERRED_SOLVER_TAG,
+} from "../model.js";
 
 describe("emptyDocument", () => {
   it("returns a grounded candidate with no elements", () => {
@@ -22,6 +26,30 @@ describe("emptyDocument", () => {
 });
 
 describe("apply statements and arguments", () => {
+  it("bootstraps and repairs a preferred interface with its observer", () => {
+    let result = apply(emptyDocument(PREFERRED_SOLVER_TAG), {
+      type: "add_statement",
+      id: "a",
+    });
+    expect(result.document.root.interface?.observer).toEqual({
+      tag: EXTENSION_PROPORTION_OBSERVER_TAG,
+    });
+    result = apply(result.document, { type: "add_statement", id: "b" });
+    result = apply(result.document, { type: "remove_element", id: "a" });
+    expect(result.document.root.interface).toMatchObject({
+      aggregate: { inputs: [{ ref: "b" }] },
+      observer: { tag: EXTENSION_PROPORTION_OBSERVER_TAG },
+    });
+  });
+
+  it("refuses ids that cannot be emitted as EDN keywords", () => {
+    const result = apply(emptyDocument(), {
+      type: "add_statement",
+      id: "bad id",
+    });
+    expect(result.refused?.code).toBe("builder/invalid-id");
+  });
+
   it("adds a statement", () => {
     const result = apply(emptyDocument(), {
       type: "add_statement",

@@ -1,7 +1,10 @@
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
+import { evaluateComponent } from "./component-eval.js";
 import { load, solve } from "./index.js";
+import type { EntityId, SolverComponent } from "./model.js";
+import { AGGREGATE_IDENTITY_TAG, GROUNDED_SOLVER_TAG } from "./model.js";
 
 const statement = (id: string): string =>
   `#casualtheorics.argdown2.argdown/statement {:id :${id}}`;
@@ -86,6 +89,27 @@ describe("first-class solver component wire", () => {
 });
 
 describe("first-class component solve result", () => {
+  it("rejects cyclic manually constructed component objects", () => {
+    const component: SolverComponent = {
+      kind: "solver",
+      solver: GROUNDED_SOLVER_TAG,
+      id: "root" as EntityId,
+      interface: {
+        aggregate: {
+          tag: AGGREGATE_IDENTITY_TAG,
+          inputs: [{ ref: "root" }],
+        },
+      },
+      imports: new Map(),
+      elements: [],
+      extra: [],
+    };
+    (component as { elements: SolverComponent[] }).elements = [component];
+    expect(() => evaluateComponent(component)).toThrow(
+      "Component containment cycle at :root",
+    );
+  });
+
   it("returns native, aggregate, and boundary layers", () => {
     const loaded = load(document(statement("claim")));
     expect(loaded.ok).toBe(true);

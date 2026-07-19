@@ -20,6 +20,16 @@ function parseBody(res: { content: { type: string; text: string }[] }) {
 }
 
 describe("mcp tool handlers", () => {
+  it("rejects document ids that are not EDN keywords", async () => {
+    const created = await runCreateDocument({
+      source: "",
+      documentId: "bad id",
+    });
+    const body = parseBody(created);
+    expect(body.ok).toBe(false);
+    expect(created.isError).toBe(true);
+  });
+
   it("create + add_statement + validate + solve on a path", async () => {
     const dir = await mkdtemp(join(tmpdir(), "argdown-mcp-"));
     const path = join(dir, "doc.edn");

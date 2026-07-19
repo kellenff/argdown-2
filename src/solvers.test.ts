@@ -95,6 +95,14 @@ describe("solver component dispatch", () => {
       kind: "extensions",
       values: [new Set()],
     });
+    expect(preferredResult.aggregate).toEqual({
+      kind: "extension-membership",
+      value: [false],
+    });
+    expect(stableResult.aggregate).toEqual({
+      kind: "extension-membership",
+      value: [],
+    });
     expect(preferredResult.boundary.confidence).toBe(0);
     expect(stableResult.boundary.confidence).toBe(null);
   });
