@@ -7,7 +7,7 @@ A TypeScript library and MCP server for loading, validating, and solving argumen
 ## Quick start
 
 ```ts
-import { load, solve } from '@casualtheorics/argdown-2';
+import { load, solve } from "jsr:@casualtheorics/argdown-2";
 
 const loaded = load(`
   #casualtheorics.argdown2.solver/grounded [
@@ -28,8 +28,6 @@ if (!loaded.ok) {
 Three functions, one return shape: `{ ok: true, ... } | { ok: false, errors }`. The library never throws and never produces a partial document.
 
 ## Status and rigor
-
-The four behavioral files (`src/edn.ts`, `src/grounded.ts`, `src/reduce-dung.ts`, `src/validate.ts`) are held to an 80% Stryker mutation threshold by `yarn mutate`. Declarative Zod schemas in `src/schema.ts` are deliberately excluded as low-value mutants.
 
 Seven EDN fixtures live in `src/bench.fixtures/` and are exercised by every commit: `small-minimal`, `small-relations`, `small-argument`, `medium-censorship`, `heavy-attacks`, `deep-arguments`, `large-stress`. [`examples/argdown1-censorship.edn`](examples/argdown1-censorship.edn) ports the [Argdown 1.x censorship tutorial](https://argdown.org/guide/a-first-example.html); `src/parity.test.ts` verifies that the grounded labels match the pure-attack expected set, with one `reduce/support-omitted` warning per represented support relation.
 
@@ -91,9 +89,9 @@ This repo is a Cursor plugin. Installing it registers the `argdown-2` MCP server
 
 You can also use the [MCP install deeplink](cursor://anysphere.cursor-deeplink/mcp/install?name=argdown-2&config=eyJjb21tYW5kIjoiYmFzaCIsImFyZ3MiOlsic2NyaXB0cy9hcmdkb3duLTItbWNwIl19) (opens Cursor’s install prompt with the same launcher config as [`mcp.json`](mcp.json)).
 
-The plugin launches the server through the checked-in Deno binary launcher with `bash scripts/argdown-2-mcp`; the launcher version is pinned in [`scripts/argdown-2-mcp.version`](scripts/argdown-2-mcp.version). From a source clone of this repo, prefer the committed [`.cursor/mcp.json`](.cursor/mcp.json) which runs `yarn node ./dist/mcp/cli.js` after `yarn build`, or run `yarn mcp` after `yarn build`.
+The plugin launches the server through the checked-in binary launcher with `bash scripts/argdown-2-mcp`; the launcher version is pinned in [`scripts/argdown-2-mcp.version`](scripts/argdown-2-mcp.version). From a source clone of this repo, prefer the committed [`.cursor/mcp.json`](.cursor/mcp.json) which runs `deno task mcp`, or run `deno task mcp` directly.
 
-Release binaries are compiled directly from [`src/mcp/cli.ts`](src/mcp/cli.ts) with `yarn compile:mcp` / [`scripts/compile-mcp.sh`](scripts/compile-mcp.sh); there is no separate MCP bundler. Deno is used for release-time native binary compilation only. Day-to-day source development still uses `yarn build` followed by `yarn mcp`.
+Release binaries are compiled directly from [`src/mcp/cli.ts`](src/mcp/cli.ts) with `deno task compile:mcp` / [`scripts/compile-mcp.sh`](scripts/compile-mcp.sh); there is no separate MCP bundler.
 
 **Claude Desktop** (`claude_desktop_config.json`) or manual Cursor config:
 
@@ -135,42 +133,44 @@ Use `validate(value)` when EDN has already been read with `edn-parser-js` and yo
 
 ## Project status
 
-What is here: strict EDN loader, Zod schema validation, cross-reference validator, grounded Dung solver, builder MCP server, atomic-write I/O layer, tinybench harness, Stryker mutation gates, GitHub Actions CI and release workflows.
+What is here: strict EDN loader, Zod schema validation, cross-reference validator, grounded Dung solver, builder MCP server, atomic-write I/O layer, GitHub Actions CI and release workflows.
 
-What is not here: a custom `.argdown` language or parser, a source AST, a Mermaid or DOT renderer, a CLI binary (the MCP server is the only shipped binary), preferred/stable/complete or bipolar/ASPIC+/evidential solvers (the reset deleted them along with the parser), npm publish (distribution is a GitHub Releases tarball built by `.github/workflows/release.yml`), a public license (the license will be chosen before the first public release).
+What is not here: a custom `.argdown` language or parser, a source AST, a Mermaid or DOT renderer, a CLI binary (the MCP server is the only shipped binary), preferred/stable/complete or bipolar/ASPIC+/evidential solvers (the reset deleted them along with the parser), a public license (the license will be chosen before the first public release).
+
+Distribution: the library is published to [JSR](https://jsr.io/@casualtheorics/argdown-2) (`jsr:@casualtheorics/argdown-2`); every merge to `main` publishes a `*-dev.{utcTimestamp}` prerelease. Native MCP binaries ship via GitHub Releases (`.github/workflows/release.yml`).
 
 The namespaced EDN tags and the `#casualtheorics.argdown2.solver/grounded` root are spec-frozen. Downstream consumers cannot extend the language without forking. This is a deliberate scoping decision.
 
-## Installation
-
-The package is `private: true` and is not on npm. The GitHub Actions workflow `.github/workflows/release.yml` builds, tests, mutates, packs, and attaches a tarball to a GitHub Release whenever `package.json` version changes on `main`:
+## Install (library)
 
 ```bash
-npm install https://github.com/kellenff/argdown-2/releases/download/<TAG>/casualtheorics-argdown-2-<VERSION>.tgz
+deno add jsr:@casualtheorics/argdown-2
 ```
 
-To run from source, clone and use Yarn 4 with PnP. `.pnp.cjs` and `.pnp.loader.mjs` are tracked; `node_modules/` is gitignored.
+```ts
+import { load, solve } from "jsr:@casualtheorics/argdown-2";
+```
+
+## MCP (consumers)
+
+Use the checked-in launcher (`bash scripts/argdown-2-mcp`) which downloads the pinned native binary from GitHub Releases. No Deno/Node required on the consumer machine.
 
 ## Development
 
+Requires Deno matching [`scripts/deno-version`](scripts/deno-version).
+
 ```bash
-yarn install        # Yarn 4 with PnP
-yarn build          # tsdown → dist/ (library + MCP CLI, deps inlined)
-yarn typecheck      # tsc --noEmit
-yarn lint           # oxlint
-yarn format:check   # oxfmt --check
-yarn test           # vitest
-yarn mutate         # Stryker; 80% threshold on the four behavioral files
-yarn bench          # tinybench pipeline (load, solve, load-solve) over 7 fixtures
-yarn bench:check    # compare against perf-baseline.json
-yarn knip           # fail if package.json lists unused or missing deps
-yarn mcp            # node ./dist/mcp/cli.js
-yarn check:mcp-deno # verify Deno is available for release binary compilation
-yarn compile:mcp    # Deno-compile native MCP binaries from src/mcp/cli.ts
-yarn probe:mcp <bin> # smoke-test a compiled MCP binary over stdio
+deno task test
+deno task check
+deno task lint
+deno task fmt:check
+deno task mcp              # stdio MCP from source
+deno task compile:mcp      # host native binary
+deno task check:mcp-deno
+deno task probe:mcp -- ./dist/mcp-bin/argdown-2-mcp-<host>
 ```
 
-PR-time validation runs in `.github/workflows/ci.yml`; release-time runs in `.github/workflows/release.yml`. The two share the same gates. HTML mutation reports land in `reports/mutation/`.
+PR-time validation runs in `.github/workflows/ci.yml`; release-time runs in `.github/workflows/release.yml`. The two share the same gates.
 
 ## License
 

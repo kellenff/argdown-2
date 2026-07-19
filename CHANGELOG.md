@@ -4,23 +4,21 @@ All notable changes to `argdown-2` are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
-> **Distribution:** the package is not yet on npm. Install a tagged library
-> tarball from GitHub Releases with Yarn (required for the `edn-parser-js`
-> patch protocol), then import the package in your project:
->
-> ```bash
-> yarn add https://github.com/kellenff/argdown-2/releases/download/<TAG>/casualtheorics-argdown-2-<VERSION>.tgz
-> ```
->
-> ```ts
-> import { load, solve } from '@casualtheorics/argdown-2';
-> ```
->
-> The GitHub Actions workflow `.github/workflows/release.yml` builds, tests,
-> packs, and publishes the tarball automatically on every push to `main`
-> whose `package.json` `version` differs from the previous commit.
+> **Distribution:** the library is published to
+> [JSR](https://jsr.io/@casualtheorics/argdown-2). Install with
+> `deno add jsr:@casualtheorics/argdown-2` and import via
+> `jsr:@casualtheorics/argdown-2`. Every merge to `main` publishes a
+> `*-dev.{utcTimestamp}` prerelease. Native MCP binaries ship via GitHub
+> Releases only.
 
 ## [Unreleased]
+
+### Changed
+
+- Package is Deno/JSR-native: Yarn/Node toolchain and npm tarball releases removed.
+- Library install via `jsr:@casualtheorics/argdown-2`; every merge to main publishes a `*-dev.{utcTimestamp}` prerelease.
+- Contributor tests/lint/fmt/check run on Deno; Stryker mutation gate dropped for now.
+- GitHub Releases ship native MCP binaries only.
 
 ## [0.2.0-alpha3] - 2026-07-19
 
