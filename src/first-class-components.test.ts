@@ -55,14 +55,19 @@ describe("first-class solver component wire", () => {
   });
 
   it("requires relation ids", () => {
-    const result = load(document(`
+    const result = load(document(
+      `
       ${statement("a")}
       ${statement("b")}
       #casualtheorics.argdown2.argdown/attack {:from :a :to :b}
-    `, "a"));
+    `,
+      "a",
+    ));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors.some((error) => error.code === "schema/missing-required"))
+    expect(
+      result.errors.some((error) => error.code === "schema/missing-required"),
+    )
       .toBe(true);
   });
 

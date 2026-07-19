@@ -44,9 +44,11 @@ describe("scoped first-class solver components", () => {
     ));
     expect(invalid.ok).toBe(false);
     if (invalid.ok) return;
-    expect(invalid.errors.some((error) =>
-      error.code === "semantic/missing-reference"
-    )).toBe(true);
+    expect(
+      invalid.errors.some((error) =>
+        error.code === "semantic/missing-reference"
+      ),
+    ).toBe(true);
   });
 
   it("allows the same local id in sibling scopes", () => {

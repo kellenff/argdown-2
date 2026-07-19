@@ -1,7 +1,12 @@
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
-import type { EntityId, SolverComponent, SolverTag, TheoryElement } from "./model.js";
+import type {
+  EntityId,
+  SolverComponent,
+  SolverTag,
+  TheoryElement,
+} from "./model.js";
 import {
   AGGREGATE_IDENTITY_TAG,
   BIPOLAR_SOLVER_TAG,

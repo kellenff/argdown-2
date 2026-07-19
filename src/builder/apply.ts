@@ -311,7 +311,11 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
           diff: [{ op: "remove", kind: removed.kind, id }],
         };
       }
-      for (let elementIndex = 0; elementIndex < elements.length; elementIndex++) {
+      for (
+        let elementIndex = 0;
+        elementIndex < elements.length;
+        elementIndex++
+      ) {
         const element = elements[elementIndex];
         if (element === undefined || element.kind !== "argument") continue;
         if (!element.inferences.some((inference) => inference.id === id)) {

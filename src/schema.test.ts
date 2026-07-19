@@ -69,9 +69,9 @@ describe("first-class wire schema", () => {
     `)));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors.some((error) =>
-      error.code === "schema/missing-required"
-    )).toBe(true);
+    expect(
+      result.errors.some((error) => error.code === "schema/missing-required"),
+    ).toBe(true);
   });
 
   it("requires identity aggregates to have exactly one input", () => {

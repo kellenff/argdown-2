@@ -11,15 +11,14 @@ import {
   type CandidateRelation,
   type CandidateSolverComponent,
   type CandidateStatement,
-  DOCUMENT_TAG,
   type Diagnostic,
+  DOCUMENT_TAG,
   EXTENSION_PROPORTION_OBSERVER_TAG,
   type ExtraEntry,
   isSolverTag,
   PROJECTION_THRESHOLD_TAG,
   type RelationKind,
   type SolverInterface,
-  type SolverTag,
   type ThresholdProjection,
 } from "./model.js";
 

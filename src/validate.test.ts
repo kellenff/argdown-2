@@ -24,9 +24,9 @@ describe("component semantic validation", () => {
     `));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors.some((error) =>
-      error.code === "semantic/duplicate-id"
-    )).toBe(true);
+    expect(
+      result.errors.some((error) => error.code === "semantic/duplicate-id"),
+    ).toBe(true);
   });
 
   it("allows parallel relations with distinct ids", () => {
@@ -41,16 +41,21 @@ describe("component semantic validation", () => {
   });
 
   it("separates addressability from native selectability", () => {
-    const result = load(document(`
+    const result = load(document(
+      `
       ${stmt("a")} ${stmt("b")}
       #casualtheorics.argdown2.argdown/attack
       {:id :edge :from :a :to :b}
-    `, "edge"));
+    `,
+      "edge",
+    ));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors.some((error) =>
-      error.code === "semantic/non-selectable-endpoint"
-    )).toBe(true);
+    expect(
+      result.errors.some((error) =>
+        error.code === "semantic/non-selectable-endpoint"
+      ),
+    ).toBe(true);
   });
 
   it("rejects relation endpoints unsupported by grounded semantics", () => {
@@ -63,9 +68,11 @@ describe("component semantic validation", () => {
     `));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors.some((error) =>
-      error.code === "semantic/unsupported-endpoint"
-    )).toBe(true);
+    expect(
+      result.errors.some((error) =>
+        error.code === "semantic/unsupported-endpoint"
+      ),
+    ).toBe(true);
   });
 
   it("requires multi-extension components to declare an observer", () => {
@@ -77,9 +84,9 @@ describe("component semantic validation", () => {
     `);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors.some((error) =>
-      error.code === "semantic/missing-observer"
-    )).toBe(true);
+    expect(
+      result.errors.some((error) => error.code === "semantic/missing-observer"),
+    ).toBe(true);
   });
 
   it("validates threshold bounds and immediate child import keys", () => {

@@ -243,7 +243,9 @@ function printSolver(
     if (component.interface.observer !== undefined) {
       lines.push(
         `${deeperPad}:observer`,
-        `${deeperPad}${printTag(OBSERVER_NS, "extension-proportion")} {:mode :proportion}`,
+        `${deeperPad}${
+          printTag(OBSERVER_NS, "extension-proportion")
+        } {:mode :proportion}`,
       );
     }
     lines[lines.length - 1] += "}";
@@ -256,7 +258,9 @@ function printSolver(
         `${deeperPad}${printTag(PROJECTION_NS, "threshold")}`,
         `${deeperPad}{:out-at-most ${projection.outAtMost}`,
         `${deeperPad} :in-at-least ${projection.inAtLeast}`,
-        `${deeperPad} :otherwise nil}${index === component.imports.length - 1 ? "}" : ""}`,
+        `${deeperPad} :otherwise nil}${
+          index === component.imports.length - 1 ? "}" : ""
+        }`,
       );
     });
   }
@@ -293,5 +297,7 @@ function solverSymbol(solver: string): string {
 export function writeEdn(doc: CandidateDocument): string {
   const root = printSolver(doc.root, 1);
   const extra = printExtra(doc.extra).map((entry) => ` ${entry}`).join("\n");
-  return `${printTag(DOCUMENT_NS, "document")}\n{:id ${printKeyword(doc.id)}\n :root\n${root}${extra.length === 0 ? "" : `\n${extra}`}\n}`;
+  return `${printTag(DOCUMENT_NS, "document")}\n{:id ${
+    printKeyword(doc.id)
+  }\n :root\n${root}${extra.length === 0 ? "" : `\n${extra}`}\n}`;
 }

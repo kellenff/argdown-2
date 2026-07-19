@@ -2,7 +2,6 @@ import type {
   Argument,
   CandidateArgument,
   CandidateDocument,
-  CandidateElement,
   CandidateInference,
   CandidateRelation,
   CandidateSolverComponent,
@@ -230,7 +229,8 @@ function validateInterface(
   } else if (!isEntityLike(kind)) {
     errors.push({
       code: "semantic/non-selectable-endpoint",
-      message: `Solver ${component.solver} has no native result for ${kind} :${ref}`,
+      message:
+        `Solver ${component.solver} has no native result for ${kind} :${ref}`,
       path: refPath,
     });
   }
@@ -247,7 +247,8 @@ function validateInterface(
   } else if (!multi && component.interface.observer !== undefined) {
     errors.push({
       code: "semantic/unsupported-observer",
-      message: `Solver ${component.solver} does not accept an extension observer`,
+      message:
+        `Solver ${component.solver} does not accept an extension observer`,
       path: [...path, ":interface", ":observer"],
     });
   }
@@ -268,7 +269,10 @@ function validateImports(
   const compositeMulti = component.solver === PREFERRED_SOLVER_TAG ||
     component.solver === STABLE_SOLVER_TAG ||
     component.solver === COMPLETE_SOLVER_TAG;
-  if (children.size > 0 && component.solver !== "casualtheorics.argdown2.solver/grounded") {
+  if (
+    children.size > 0 &&
+    component.solver !== "casualtheorics.argdown2.solver/grounded"
+  ) {
     errors.push({
       code: "semantic/unsupported-composite-parent",
       message: `Composite parent ${component.solver} has no import adapter`,
@@ -290,13 +294,15 @@ function validateImports(
     ) {
       errors.push({
         code: "semantic/invalid-projection-bounds",
-        message:
-          "Threshold requires 0 <= :out-at-most < :in-at-least <= 1",
+        message: "Threshold requires 0 <= :out-at-most < :in-at-least <= 1",
         path: [...path, ":imports", childId],
       });
     }
   }
-  if (!compositeMulti && component.solver === "casualtheorics.argdown2.solver/grounded") {
+  if (
+    !compositeMulti &&
+    component.solver === "casualtheorics.argdown2.solver/grounded"
+  ) {
     for (const child of children.values()) {
       const multiChild = child.solver === PREFERRED_SOLVER_TAG ||
         child.solver === STABLE_SOLVER_TAG ||

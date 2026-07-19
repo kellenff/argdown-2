@@ -16,22 +16,19 @@ function docWithStatements(): CandidateDocument {
         text: "Alpha claim",
         tags: [],
         extra: [],
-      },
-      {
+      }, {
         kind: "statement",
         id: "b",
         text: "Beta claim",
         tags: [],
         extra: [],
-      },
-      {
+      }, {
         kind: "statement",
         id: "c",
         text: "Alpha claim",
         tags: [],
         extra: [],
-      },
-      {
+      }, {
         kind: "argument",
         id: "arg1",
         description: "Arg one",

@@ -81,7 +81,9 @@ try {
       }) as { content?: Array<{ type: string; text?: string }> },
     );
     if (added.ok !== true) {
-      throw new Error(`add_statement did not return ok: ${JSON.stringify(added)}`);
+      throw new Error(
+        `add_statement did not return ok: ${JSON.stringify(added)}`,
+      );
     }
     source = added.source;
   }
@@ -98,7 +100,9 @@ try {
     }) as { content?: Array<{ type: string; text?: string }> },
   );
   if (related.ok !== true) {
-    throw new Error(`add_relation did not return ok: ${JSON.stringify(related)}`);
+    throw new Error(
+      `add_relation did not return ok: ${JSON.stringify(related)}`,
+    );
   }
   const solved = parseToolResult(
     await client.callTool({
@@ -111,7 +115,9 @@ try {
     solved.native?.values?.a !== "in" ||
     solved.native?.values?.b !== "out"
   ) {
-    throw new Error(`solve returned unexpected result: ${JSON.stringify(solved)}`);
+    throw new Error(
+      `solve returned unexpected result: ${JSON.stringify(solved)}`,
+    );
   }
   console.log(`probe-mcp-stdio: ok (${basename(host)})`);
 } catch (error) {
