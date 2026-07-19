@@ -1,14 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from "@std/expect";
+import { describe, it } from "@std/testing/bdd";
 
-import { readEdn } from './edn.js';
-import { decodeWire } from './schema.js';
-import { validateCandidate } from './validate.js';
+import { readEdn } from "./edn.js";
+import { decodeWire } from "./schema.js";
+import { validateCandidate } from "./validate.js";
 
 function candidate(source: string) {
   const read = readEdn(source);
-  if (!read.ok) throw new Error('read failed');
+  if (!read.ok) throw new Error("read failed");
   const decoded = decodeWire(read.value);
-  if (!decoded.ok) throw new Error('decode failed');
+  if (!decoded.ok) throw new Error("decode failed");
   return decoded.document;
 }
 
@@ -17,8 +18,8 @@ function codes(source: string): readonly string[] {
   return result.ok ? [] : result.errors.map((error) => error.code);
 }
 
-describe('validateCandidate', () => {
-  it('accepts globally unique and fully resolved identities', () => {
+describe("validateCandidate", () => {
+  it("accepts globally unique and fully resolved identities", () => {
     const result = validateCandidate(
       candidate(`
         #casualtheorics.argdown2.solver/grounded [
@@ -35,7 +36,7 @@ describe('validateCandidate', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('collects duplicate and dangling-reference errors in one pass', () => {
+  it("collects duplicate and dangling-reference errors in one pass", () => {
     const result = validateCandidate(
       candidate(`
         #casualtheorics.argdown2.solver/grounded [
@@ -48,23 +49,26 @@ describe('validateCandidate', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors.map((error) => error.code)).toEqual([
-      'semantic/duplicate-id',
-      'semantic/missing-reference',
-      'semantic/missing-reference',
+      "semantic/duplicate-id",
+      "semantic/missing-reference",
+      "semantic/missing-reference",
     ]);
   });
 
-  it.each([
-    [
-      'attack endpoint cannot be an inference',
-      '#casualtheorics.argdown2.argdown/attack {:from :i :to :s}',
-    ],
-    [
-      'undercut target must be an inference',
-      '#casualtheorics.argdown2.argdown/undercut {:from :s :to :s}',
-    ],
-  ])('rejects %s', (_name, relation) => {
-    const source = `
+  for (
+    const [name, relation] of [
+      [
+        "attack endpoint cannot be an inference",
+        "#casualtheorics.argdown2.argdown/attack {:from :i :to :s}",
+      ],
+      [
+        "undercut target must be an inference",
+        "#casualtheorics.argdown2.argdown/undercut {:from :s :to :s}",
+      ],
+    ] as const
+  ) {
+    it(`rejects ${name}`, () => {
+      const source = `
       #casualtheorics.argdown2.solver/grounded [
         #casualtheorics.argdown2.argdown/statement {:id :s}
         #casualtheorics.argdown2.argdown/argument
@@ -73,10 +77,11 @@ describe('validateCandidate', () => {
         ${relation}
       ]
     `;
-    expect(codes(source)).toContain('semantic/invalid-endpoint');
-  });
+      expect(codes(source)).toContain("semantic/invalid-endpoint");
+    });
+  }
 
-  it('requires inference premises and conclusions to reference statements', () => {
+  it("requires inference premises and conclusions to reference statements", () => {
     const source = `
       #casualtheorics.argdown2.solver/grounded [
         #casualtheorics.argdown2.argdown/argument {:id :a}
@@ -86,8 +91,8 @@ describe('validateCandidate', () => {
       ]
     `;
     expect(codes(source)).toEqual([
-      'semantic/invalid-reference-kind',
-      'semantic/invalid-reference-kind',
+      "semantic/invalid-reference-kind",
+      "semantic/invalid-reference-kind",
     ]);
   });
 });

@@ -1,0 +1,16 @@
+{
+  "name": "argdown-2",
+  "owner": {
+    "name": "kellenff"
+  },
+  "metadata": {
+    "description": "One-click MCP server for loading, validating, and solving EDN argument graphs with grounded Dung semantics."
+  },
+  "plugins": [
+    {
+      "name": "argdown-2",
+      "source": ".",
+      "description": "One-click MCP server for loading, validating, and solving EDN argument graphs with grounded Dung semantics."
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { run } from './server.js';
+import process from "node:process";
+import { run } from "./server.js";
 
 run().catch((error: unknown) => {
   console.error(error);

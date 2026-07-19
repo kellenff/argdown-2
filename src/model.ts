@@ -1,11 +1,12 @@
-export const GROUNDED_SOLVER_TAG = 'casualtheorics.argdown2.solver/grounded' as const;
+export const GROUNDED_SOLVER_TAG =
+  "casualtheorics.argdown2.solver/grounded" as const;
 
 declare const entityIdBrand: unique symbol;
 declare const inferenceIdBrand: unique symbol;
 
 export type EntityId = string & { readonly [entityIdBrand]: true };
 export type InferenceId = string & { readonly [inferenceIdBrand]: true };
-export type Label = 'in' | 'out' | 'undec';
+export type Label = "in" | "out" | "undec";
 export type DiagnosticPath = readonly (number | string)[];
 
 export type Diagnostic = {
@@ -17,7 +18,7 @@ export type Diagnostic = {
 export type ExtraEntry = readonly [unknown, unknown];
 
 export type CandidateInference = {
-  kind: 'inference';
+  kind: "inference";
   id: string;
   premises: readonly string[];
   conclusion: string;
@@ -27,7 +28,7 @@ export type CandidateInference = {
 };
 
 export type CandidateStatement = {
-  kind: 'statement';
+  kind: "statement";
   id: string;
   text?: string;
   tags: readonly string[];
@@ -36,7 +37,7 @@ export type CandidateStatement = {
 };
 
 export type CandidateArgument = {
-  kind: 'argument';
+  kind: "argument";
   id: string;
   description?: string;
   tags: readonly string[];
@@ -45,7 +46,7 @@ export type CandidateArgument = {
   extra: readonly ExtraEntry[];
 };
 
-export type RelationKind = 'support' | 'attack' | 'contradiction' | 'undercut';
+export type RelationKind = "support" | "attack" | "contradiction" | "undercut";
 
 export type CandidateRelation = {
   kind: RelationKind;
@@ -54,37 +55,44 @@ export type CandidateRelation = {
   extra: readonly ExtraEntry[];
 };
 
-export type CandidateElement = CandidateArgument | CandidateRelation | CandidateStatement;
+export type CandidateElement =
+  | CandidateArgument
+  | CandidateRelation
+  | CandidateStatement;
 
 export type CandidateDocument = {
   solver: typeof GROUNDED_SOLVER_TAG;
   elements: readonly CandidateElement[];
 };
 
-export type Inference = Omit<CandidateInference, 'conclusion' | 'id' | 'premises'> & {
-  id: InferenceId;
-  premises: readonly EntityId[];
-  conclusion: EntityId;
-};
+export type Inference =
+  & Omit<CandidateInference, "conclusion" | "id" | "premises">
+  & {
+    id: InferenceId;
+    premises: readonly EntityId[];
+    conclusion: EntityId;
+  };
 
-export type Statement = Omit<CandidateStatement, 'id'> & { id: EntityId };
+export type Statement = Omit<CandidateStatement, "id"> & { id: EntityId };
 
-export type Argument = Omit<CandidateArgument, 'id' | 'inferences'> & {
+export type Argument = Omit<CandidateArgument, "id" | "inferences"> & {
   id: EntityId;
   inferences: readonly Inference[];
 };
 
-export type NodeRelation = Omit<CandidateRelation, 'from' | 'kind' | 'to'> & {
-  kind: 'attack' | 'contradiction' | 'support';
+export type NodeRelation = Omit<CandidateRelation, "from" | "kind" | "to"> & {
+  kind: "attack" | "contradiction" | "support";
   from: EntityId;
   to: EntityId;
 };
 
-export type UndercutRelation = Omit<CandidateRelation, 'from' | 'kind' | 'to'> & {
-  kind: 'undercut';
-  from: EntityId;
-  to: InferenceId;
-};
+export type UndercutRelation =
+  & Omit<CandidateRelation, "from" | "kind" | "to">
+  & {
+    kind: "undercut";
+    from: EntityId;
+    to: InferenceId;
+  };
 
 export type Relation = NodeRelation | UndercutRelation;
 

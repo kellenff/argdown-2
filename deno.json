@@ -1,12 +1,63 @@
 {
-  "nodeModulesDir": "auto",
-  "unstable": ["npm-lazy-caching", "sloppy-imports", "node-globals"],
+  "name": "@casualtheorics/argdown-2",
+  "version": "0.2.0-alpha3",
+  "exports": "./src/index.ts",
+  "publish": {
+    "exclude": [
+      ".github",
+      ".cursor",
+      ".cursor-plugin",
+      ".yarn",
+      "docs",
+      "examples",
+      "scripts",
+      "assets",
+      "**/*.test.ts",
+      "dist",
+      "node_modules"
+    ]
+  },
+  "tasks": {
+    "test": "deno test -A --frozen --parallel src/",
+    "check": "deno check --frozen src/index.ts src/mcp/cli.ts",
+    "lint": "deno lint src scripts",
+    "fmt": "deno fmt src scripts",
+    "fmt:check": "deno fmt --check src scripts",
+    "mcp": "deno run -A src/mcp/cli.ts",
+    "compile:mcp": "bash ./scripts/compile-mcp.sh",
+    "check:mcp-deno": "bash ./scripts/check-mcp-deno.sh",
+    "probe:mcp": "deno run -A ./scripts/probe-mcp-stdio.ts",
+    "check:npm-allowlist": "bash ./scripts/check-npm-allowlist.sh"
+  },
   "imports": {
-    "edn-parser-js": "./vendor/edn-parser-js/lib/index.js"
+    "edn-parser-js": "./vendor/edn-parser-js/lib/index.js",
+    "zod": "npm:zod@4.4.3",
+    "@modelcontextprotocol/sdk/": "npm:/@modelcontextprotocol/sdk@1.29.0/",
+    "@std/assert": "jsr:@std/assert@1",
+    "@std/expect": "jsr:@std/expect@1",
+    "@std/testing/bdd": "jsr:@std/testing@1/bdd",
+    "@std/testing/": "jsr:@std/testing@1/"
+  },
+  "nodeModulesDir": "auto",
+  "unstable": [
+    "npm-lazy-caching",
+    "sloppy-imports",
+    "node-globals"
+  ],
+  "lint": {
+    "rules": {
+      "exclude": [
+        "no-sloppy-imports",
+        "require-await"
+      ]
+    }
   },
   "compilerOptions": {
-    "lib": ["es2022", "dom", "dom.iterable", "deno.ns"],
-    "noImplicitAny": false,
-    "types": ["npm:@types/node@^20.12.0"]
+    "lib": [
+      "es2022",
+      "deno.window"
+    ],
+    "strict": true,
+    "noImplicitAny": false
   }
 }

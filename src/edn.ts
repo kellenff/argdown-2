@@ -1,14 +1,14 @@
-import { ednParseMulti } from 'edn-parser-js';
+import { ednParseMulti } from "edn-parser-js";
 
-import type { Diagnostic, ReadResult } from './model.js';
+import type { Diagnostic, ReadResult } from "./model.js";
 
 function rootCountFailure(): ReadResult {
   return {
     ok: false,
     errors: [
       {
-        code: 'edn/root-count',
-        message: 'Expected exactly one top-level EDN value',
+        code: "edn/root-count",
+        message: "Expected exactly one top-level EDN value",
       },
     ],
   };
@@ -17,7 +17,7 @@ function rootCountFailure(): ReadResult {
 function readFailure(error: unknown): ReadResult {
   const message = error instanceof Error ? error.message : String(error);
   const diagnostic: Diagnostic = {
-    code: 'edn/read-error',
+    code: "edn/read-error",
     message,
   };
   return { ok: false, errors: [diagnostic] };

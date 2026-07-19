@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from "@std/expect";
+import { describe, it } from "@std/testing/bdd";
 
-import { groundedLabels } from './grounded.js';
-import type { DungFramework, EntityId, Label } from './model.js';
+import { groundedLabels } from "./grounded.js";
+import type { DungFramework, EntityId, Label } from "./model.js";
 
 const id = (value: string) => value as EntityId;
 
@@ -23,75 +24,75 @@ function labelsOf(
   return Object.fromEntries(groundedLabels(framework(nodes, edges)));
 }
 
-describe('groundedLabels', () => {
-  it('labels an empty framework with an empty map', () => {
+describe("groundedLabels", () => {
+  it("labels an empty framework with an empty map", () => {
     expect(groundedLabels(framework([], [])).size).toBe(0);
   });
 
-  it('labels unattacked nodes IN and their targets OUT', () => {
-    expect(labelsOf(['a', 'b'], [['a', 'b']])).toEqual({ a: 'in', b: 'out' });
+  it("labels unattacked nodes IN and their targets OUT", () => {
+    expect(labelsOf(["a", "b"], [["a", "b"]])).toEqual({ a: "in", b: "out" });
   });
 
-  it('labels a lone self-attacker UNDEC', () => {
-    expect(labelsOf(['a'], [['a', 'a']])).toEqual({ a: 'undec' });
+  it("labels a lone self-attacker UNDEC", () => {
+    expect(labelsOf(["a"], [["a", "a"]])).toEqual({ a: "undec" });
   });
 
-  it('labels mutual and odd cycles UNDEC', () => {
+  it("labels mutual and odd cycles UNDEC", () => {
     expect(
       labelsOf(
-        ['a', 'b'],
+        ["a", "b"],
         [
-          ['a', 'b'],
-          ['b', 'a'],
+          ["a", "b"],
+          ["b", "a"],
         ],
       ),
     ).toEqual({
-      a: 'undec',
-      b: 'undec',
+      a: "undec",
+      b: "undec",
     });
     expect(
       labelsOf(
-        ['a', 'b', 'c'],
+        ["a", "b", "c"],
         [
-          ['a', 'b'],
-          ['b', 'c'],
-          ['c', 'a'],
+          ["a", "b"],
+          ["b", "c"],
+          ["c", "a"],
         ],
       ),
     ).toEqual({
-      a: 'undec',
-      b: 'undec',
-      c: 'undec',
+      a: "undec",
+      b: "undec",
+      c: "undec",
     });
   });
 
-  it('labels OUT when any attacker is IN even if another attacker is OUT', () => {
+  it("labels OUT when any attacker is IN even if another attacker is OUT", () => {
     expect(
       labelsOf(
-        ['a', 'b', 'c', 'd'],
+        ["a", "b", "c", "d"],
         [
-          ['a', 'b'],
-          ['a', 'd'],
-          ['a', 'c'],
-          ['d', 'c'],
+          ["a", "b"],
+          ["a", "d"],
+          ["a", "c"],
+          ["d", "c"],
         ],
       ),
-    ).toEqual({ a: 'in', b: 'out', c: 'out', d: 'out' });
+    ).toEqual({ a: "in", b: "out", c: "out", d: "out" });
   });
 
-  it('labels a node IN only after all of its attackers become OUT', () => {
+  it("labels a node IN only after all of its attackers become OUT", () => {
     expect(
       labelsOf(
-        ['a', 'b', 'c'],
+        ["a", "b", "c"],
         [
-          ['a', 'b'],
-          ['b', 'c'],
+          ["a", "b"],
+          ["b", "c"],
         ],
       ),
     ).toEqual({
-      a: 'in',
-      b: 'out',
-      c: 'in',
+      a: "in",
+      b: "out",
+      c: "in",
     });
   });
 });

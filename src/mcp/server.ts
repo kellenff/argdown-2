@@ -1,36 +1,37 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { z } from 'zod';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import process from "node:process";
+import { z } from "zod";
 
-import * as tools from './tools.js';
+import * as tools from "./tools.js";
 
 const docRefSchema = {
-  path: z.string().optional().describe('Filesystem path to an .edn document'),
-  source: z.string().optional().describe('Full EDN document text'),
+  path: z.string().optional().describe("Filesystem path to an .edn document"),
+  source: z.string().optional().describe("Full EDN document text"),
 };
 
 export function buildServer(): McpServer {
   const server = new McpServer(
-    { name: 'argdown-2', version: '0.2.0-alpha3' },
+    { name: "argdown-2", version: "0.2.0-alpha3" },
     { capabilities: { tools: {} } },
   );
 
   server.registerTool(
-    'create_document',
+    "create_document",
     {
-      title: 'Create document',
+      title: "Create document",
       description:
-        'Create an empty grounded argdown-2 EDN document (path or source). Omit both for empty text mode.',
+        "Create an empty grounded argdown-2 EDN document (path or source). Omit both for empty text mode.",
       inputSchema: docRefSchema,
     },
     async (args) => tools.runCreateDocument(args),
   );
 
   server.registerTool(
-    'add_statement',
+    "add_statement",
     {
-      title: 'Add statement',
-      description: 'Add a statement (id + prose text).',
+      title: "Add statement",
+      description: "Add a statement (id + prose text).",
       inputSchema: {
         ...docRefSchema,
         id: z.string(),
@@ -42,10 +43,10 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'update_statement',
+    "update_statement",
     {
-      title: 'Update statement',
-      description: 'Update an existing statement by id.',
+      title: "Update statement",
+      description: "Update an existing statement by id.",
       inputSchema: {
         ...docRefSchema,
         id: z.string(),
@@ -57,10 +58,10 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'add_argument',
+    "add_argument",
     {
-      title: 'Add argument',
-      description: 'Add an argument (id + prose description).',
+      title: "Add argument",
+      description: "Add an argument (id + prose description).",
       inputSchema: {
         ...docRefSchema,
         id: z.string(),
@@ -72,10 +73,11 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'add_inference',
+    "add_inference",
     {
-      title: 'Add inference',
-      description: 'Add an inference under an argument; premises/conclusion are id-or-prose refs.',
+      title: "Add inference",
+      description:
+        "Add an inference under an argument; premises/conclusion are id-or-prose refs.",
       inputSchema: {
         ...docRefSchema,
         argumentId: z.string(),
@@ -89,13 +91,14 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'add_relation',
+    "add_relation",
     {
-      title: 'Add relation',
-      description: 'Add support|attack|contradiction|undercut (from/to are id-or-prose refs).',
+      title: "Add relation",
+      description:
+        "Add support|attack|contradiction|undercut (from/to are id-or-prose refs).",
       inputSchema: {
         ...docRefSchema,
-        kind: z.enum(['support', 'attack', 'contradiction', 'undercut']),
+        kind: z.enum(["support", "attack", "contradiction", "undercut"]),
         from: z.string(),
         to: z.string(),
       },
@@ -104,23 +107,23 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'remove_element',
+    "remove_element",
     {
-      title: 'Remove element',
-      description: 'Remove a statement, argument, or inference by id.',
+      title: "Remove element",
+      description: "Remove a statement, argument, or inference by id.",
       inputSchema: { ...docRefSchema, id: z.string() },
     },
     async (args) => tools.runRemoveElement(args),
   );
 
   server.registerTool(
-    'remove_relation',
+    "remove_relation",
     {
-      title: 'Remove relation',
-      description: 'Remove a relation by kind + from + to (id-or-prose refs).',
+      title: "Remove relation",
+      description: "Remove a relation by kind + from + to (id-or-prose refs).",
       inputSchema: {
         ...docRefSchema,
-        kind: z.enum(['support', 'attack', 'contradiction', 'undercut']),
+        kind: z.enum(["support", "attack", "contradiction", "undercut"]),
         from: z.string(),
         to: z.string(),
       },
@@ -129,30 +132,31 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
-    'list_elements',
+    "list_elements",
     {
-      title: 'List elements',
-      description: 'List statements, arguments, inferences, and relations in the document.',
+      title: "List elements",
+      description:
+        "List statements, arguments, inferences, and relations in the document.",
       inputSchema: docRefSchema,
     },
     async (args) => tools.runListElements(args),
   );
 
   server.registerTool(
-    'validate',
+    "validate",
     {
-      title: 'Validate',
-      description: 'Strict-load the document and return semantic diagnostics.',
+      title: "Validate",
+      description: "Strict-load the document and return semantic diagnostics.",
       inputSchema: docRefSchema,
     },
     async (args) => tools.runValidate(args),
   );
 
   server.registerTool(
-    'solve',
+    "solve",
     {
-      title: 'Solve',
-      description: 'Strict-load and compute grounded labels.',
+      title: "Solve",
+      description: "Strict-load and compute grounded labels.",
       inputSchema: docRefSchema,
     },
     async (args) => tools.runSolve(args),
@@ -167,10 +171,10 @@ export async function run(): Promise<void> {
   await server.connect(transport);
   await new Promise<void>((resolve) => {
     server.server.onclose = () => resolve();
-    process.on('SIGINT', () => {
+    process.on("SIGINT", () => {
       void server.close();
     });
-    process.on('SIGTERM', () => {
+    process.on("SIGTERM", () => {
       void server.close();
     });
   });
