@@ -1,6 +1,6 @@
 {
   "name": "@casualtheorics/argdown-2",
-  "version": "0.2.0-alpha3",
+  "version": "0.2.0-alpha4",
   "exports": "./src/index.ts",
   "license": "Unlicense",
   "publish": {
@@ -21,6 +21,7 @@
   "tasks": {
     "test": "deno test -A --frozen --parallel src/",
     "check": "deno check --frozen src/index.ts src/mcp/cli.ts",
+    "publish:dry-run": "deno publish --dry-run --allow-dirty",
     "lint": "deno lint src scripts",
     "fmt": "deno fmt src scripts",
     "fmt:check": "deno fmt --check src scripts",
@@ -59,6 +60,6 @@
       "deno.window"
     ],
     "strict": true,
-    "noImplicitAny": false
+    "noImplicitAny": true
   }
 }

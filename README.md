@@ -162,6 +162,7 @@ Requires Deno matching [`scripts/deno-version`](scripts/deno-version).
 ```bash
 deno task test
 deno task check
+deno task publish:dry-run
 deno task lint
 deno task fmt:check
 deno task mcp              # stdio MCP from source
