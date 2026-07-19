@@ -1,14 +1,8 @@
 {
   "mcpServers": {
     "argdown-2": {
-      "command": "corepack",
-      "args": [
-        "yarn",
-        "dlx",
-        "-p",
-        "@casualtheorics/argdown-2@https://github.com/kellenff/argdown-2/releases/download/v0.2.0-alpha2/casualtheorics-argdown-2-0.2.0-alpha2.tgz",
-        "argdown-2-mcp"
-      ]
+      "command": "bash",
+      "args": ["scripts/argdown-2-mcp"]
     }
   }
 }

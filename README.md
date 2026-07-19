@@ -92,9 +92,9 @@ This repo is a Cursor plugin. Installing it registers the `argdown-2` MCP server
    ```
 2. Reload the window. Toggle **argdown-2** on under Tools & MCP if needed.
 
-You can also use the [MCP install deeplink](cursor://anysphere.cursor-deeplink/mcp/install?name=argdown-2&config=eyJjb21tYW5kIjoiY29yZXBhY2siLCJhcmdzIjpbInlhcm4iLCJkbHgiLCItcCIsIkBjYXN1YWx0aGVvcmljcy9hcmdkb3duLTJAaHR0cHM6Ly9naXRodWIuY29tL2tlbGxlbmZmL2FyZ2Rvd24tMi9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAtYWxwaGEyL2Nhc3VhbHRoZW9yaWNzLWFyZ2Rvd24tMi0wLjIuMC1hbHBoYTIudGd6IiwiYXJnZG93bi0yLW1jcCJdfQ==) (opens Cursor’s install prompt with the same `corepack yarn dlx` config as [`mcp.json`](mcp.json)).
+You can also use the [MCP install deeplink](cursor://anysphere.cursor-deeplink/mcp/install?name=argdown-2&config=eyJjb21tYW5kIjoiYmFzaCIsImFyZ3MiOlsic2NyaXB0cy9hcmdkb3duLTItbWNwIl19) (opens Cursor’s install prompt with the same launcher config as [`mcp.json`](mcp.json)).
 
-The plugin launches the server from the GitHub Releases tarball via `corepack yarn dlx` so Yarn 2+ is used even when PATH `yarn` is classic 1.x, and the checked-in `edn-parser-js` patch applies. From a source clone of this repo, prefer the committed [`.cursor/mcp.json`](.cursor/mcp.json) which runs `yarn node ./dist/mcp/cli.js` after `yarn build`.
+The plugin launches the server through the checked-in Deno binary launcher with `bash scripts/argdown-2-mcp`; the launcher version is pinned in [`scripts/argdown-2-mcp.version`](scripts/argdown-2-mcp.version). From a source clone of this repo, prefer the committed [`.cursor/mcp.json`](.cursor/mcp.json) which runs `yarn node ./dist/mcp/cli.js` after `yarn build`, or run `yarn mcp` after `yarn build`.
 
 **Claude Desktop** (`claude_desktop_config.json`) or manual Cursor config:
 
@@ -102,14 +102,8 @@ The plugin launches the server from the GitHub Releases tarball via `corepack ya
 {
   "mcpServers": {
     "argdown-2": {
-      "command": "corepack",
-      "args": [
-        "yarn",
-        "dlx",
-        "-p",
-        "@casualtheorics/argdown-2@https://github.com/kellenff/argdown-2/releases/download/v0.2.0-alpha2/casualtheorics-argdown-2-0.2.0-alpha2.tgz",
-        "argdown-2-mcp"
-      ]
+      "command": "bash",
+      "args": ["scripts/argdown-2-mcp"]
     }
   }
 }
