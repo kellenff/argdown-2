@@ -1,17 +1,14 @@
 # .github/workflows/release.yml
 #
-# On every push to `main`, if `package.json`'s `version` differs from the
-# previous commit, build the project, run the test/lint/typecheck/format/knip
-# gates, pack a tarball, extract the matching section from CHANGELOG.md as
-# release notes, and publish a GitHub Release with the tarball attached.
+# On every push to `main` (and workflow_dispatch):
+#   1. Deno quality gates (same checks as ci.yml)
+#   2. Always publish a timestamped JSR *-dev.* prerelease (OIDC)
+#   3. If deno.json version bumped vs HEAD~1 (or dispatch override):
+#      compile MCP binaries, probe Linux, checksums, GitHub Release
+#      (binaries only — no npm tarball), stable deno publish
 #
-# Idempotent on re-run: any existing tag + release at the same version is
-# deleted and recreated, so a partial failure followed by a re-run produces
-# the same end state as a clean run.
-#
-# Skip condition: `package.json` version unchanged from HEAD~1. This is
-# what makes the workflow safe to fire on every push — only version-bump
-# commits trigger a release.
+# Continuous JSR has no mutable "latest" tag; a new *-dev.* version on
+# every merge is what makes "latest" track main.
 
 name: release
 
@@ -19,12 +16,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    # Allow manual trigger (e.g. to republish the same tag after editing
-    # release notes). When invoked manually, the version-bump diff is
-    # skipped — `workflow_dispatch` always proceeds.
     inputs:
       version:
-        description: "Version to publish (e.g. 0.1.0-alpha1). Defaults to package.json version."
+        description: "Version override for stable release (e.g. 0.2.0-alpha4). Empty = read deno.json and only publish stable if bumped."
         required: false
 
 # Don't cancel in-progress runs — queue them so two merges back-to-back
@@ -33,105 +27,104 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# `contents: write` is required to create tags, releases, and upload
-# assets. GITHUB_TOKEN is the only credential used.
 permissions:
   contents: write
+  id-token: write
 
 jobs:
-  release:
-    name: Build, test, pack, and publish release
+  gates:
+    name: Deno gates
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 25
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          # Need HEAD~1 to diff package.json version. Without fetch-depth: 2
-          # the diff step will fail with "bad revision 'HEAD~1'".
           fetch-depth: 2
-          # Yarn 4 PnP keeps .yarn/cache and .yarn/releases committed;
-          # submodules: false is the default but explicit for clarity.
-          submodules: false
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: denoland/setup-deno@v2
         with:
-          node-version-file: '.node-version'
-          # Don't try to authenticate to npm from this workflow; we only
-          # publish to GitHub Releases.
-          registry-url: ""
+          deno-version-file: scripts/deno-version
 
-      - name: Enable corepack
-        run: |
-          corepack enable
-          # .yarnrc.yml's `yarnPath: .yarn/releases/yarn-4.17.0.cjs` will
-          # take over once corepack is on; no `corepack prepare` needed
-          # because the binary is committed.
-          corepack --version
-          yarn --version
-
-      - name: Install dependencies (immutable)
-        run: yarn install --immutable
-        # If the lockfile is out of sync with package.json the job fails
-        # here, before tests run. Cheapest catch-all for dependency drift.
+      - name: "npm: allowlist"
+        run: deno task check:npm-allowlist
 
       - name: Lint
-        run: yarn lint
+        run: deno task lint
 
       - name: Format check
-        run: yarn format:check
+        run: deno task fmt:check
 
       - name: Typecheck
-        run: yarn typecheck
+        run: deno task check
 
       - name: Test
-        run: yarn test
+        run: deno task test
 
-      - name: Build
-        run: yarn build
-        # `tsdown` populates dist/. The subsequent `npm pack` step relies on
-        # dist/ existing on disk (the `files` field is `["dist"]`, and
-        # npm pack uses the working tree, not git history).
+      - name: Check MCP Deno entry
+        run: deno task check:mcp-deno
 
-      - name: Build artifact contract tests
-        run: yarn test src/build-artifacts.test.ts
+  publish-jsr-dev:
+    name: Publish JSR dev prerelease
+    needs: [gates]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Knip (unused/missing dependencies)
-        run: yarn knip
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version-file: scripts/deno-version
 
-      - name: Detect version bump vs previous commit
+      - name: Publish timestamped dev version
+        run: |
+          set -euo pipefail
+          BASE="$(jq -r .version deno.json)"
+          STAMP="$(date -u +%Y%m%d%H%M%S)"
+          VER="${BASE}-dev.${STAMP}"
+          echo "Publishing jsr dev version ${VER}"
+          deno publish --set-version "$VER"
+
+  stable-release:
+    name: Stable GitHub Release + JSR
+    needs: [gates]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version-file: scripts/deno-version
+
+      - name: Detect version bump
         id: ver
         env:
           VERSION_OVERRIDE: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          NEW=$(jq -r '.version' package.json)
-          # On workflow_dispatch with an override, use the override and
-          # skip the diff (the user is explicitly asking for a publish).
+          NEW="$(jq -r .version deno.json)"
           if [ -n "${VERSION_OVERRIDE:-}" ]; then
             NEW="$VERSION_OVERRIDE"
-            echo "changed=true (workflow_dispatch override)" >&2
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$NEW" >> "$GITHUB_OUTPUT"
           else
-            # `git show HEAD~1:package.json` works because fetch-depth: 2.
-            OLD=$(git show HEAD~1:package.json | jq -r '.version' || true)
-            if [ -z "${OLD:-}" ] || [ "$OLD" = "null" ]; then
-              echo "::error::Could not read previous package.json version (HEAD~1 missing?). Use fetch-depth: 2 or push to a non-empty main." >&2
-              exit 1
-            fi
+            OLD="$(git show HEAD~1:deno.json | jq -r .version)"
             if [ "$OLD" = "$NEW" ]; then
-              echo "version unchanged ($OLD → $NEW); skipping release" >&2
               echo "changed=false" >> "$GITHUB_OUTPUT"
               echo "version=$NEW" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "version bumped: $OLD → $NEW" >&2
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$NEW" >> "$GITHUB_OUTPUT"
           fi
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "version=$NEW" >> "$GITHUB_OUTPUT"
-          # Pre-release detection: any semver with a hyphen is pre-release
-          # per semver.org §11. Mark the GitHub release accordingly.
           if printf '%s' "$NEW" | grep -q -- '-'; then
             echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
           else
@@ -141,18 +134,19 @@ jobs:
       - name: Skip notice when version unchanged
         if: steps.ver.outputs.changed != 'true'
         run: |
-          echo "::notice::package.json version unchanged from HEAD~1; skipping release."
-          # exit 0 — job succeeds, no release produced.
+          echo "::notice::deno.json version unchanged from HEAD~1; skipping stable release."
 
-      - name: Setup Deno
+      - name: Verify launcher pin matches deno.json version
         if: steps.ver.outputs.changed == 'true'
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version-file: scripts/deno-version
-
-      - name: Check Deno MCP entrypoint
-        if: steps.ver.outputs.changed == 'true'
-        run: yarn check:mcp-deno
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          PIN="$(tr -d '[:space:]' < scripts/argdown-2-mcp.version)"
+          if [ "$PIN" != "$VERSION" ]; then
+            echo "::error::scripts/argdown-2-mcp.version ($PIN) != deno.json version ($VERSION)"
+            exit 1
+          fi
 
       - name: Compile MCP binaries
         if: steps.ver.outputs.changed == 'true'
@@ -160,14 +154,12 @@ jobs:
 
       - name: Probe Linux MCP binary
         if: steps.ver.outputs.changed == 'true'
-        run: yarn probe:mcp ./dist/mcp-bin/argdown-2-mcp-x86_64-unknown-linux-gnu
+        run: deno run -A scripts/probe-mcp-stdio.ts ./dist/mcp-bin/argdown-2-mcp-x86_64-unknown-linux-gnu
 
-      - name: Generate MCP binary checksums
+      - name: Generate checksums
         if: steps.ver.outputs.changed == 'true'
         run: |
           set -euo pipefail
-          # Generate bare filenames (not dist/mcp-bin/...) so the launcher
-          # can match basename(asset) against $2 in sha256sums.txt.
           (
             cd dist/mcp-bin
             sha256sum \
@@ -179,54 +171,26 @@ jobs:
             test "$(wc -l < sha256sums.txt)" -eq 4
           )
 
-      - name: Extract CHANGELOG.md section for this version
+      - name: Extract CHANGELOG notes
         id: notes
         if: steps.ver.outputs.changed == 'true'
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
-          # Escape literal dots in the version so awk treats them as
-          # literal characters instead of regex metacharacters.
           VERSION_ESC=$(printf '%s' "$VERSION" | sed 's/\./\\./g')
-          # Pull the section between "## [<VERSION>]" and the next "## ["
-          # heading. The first match line is consumed by `next`; the
-          # closing match line flips `flag` off.
           awk -v v="$VERSION_ESC" '
             $0 ~ "^## \\[" v "\\]" { flag=1; next }
             /^## \[/ && flag { flag=0 }
             flag
           ' CHANGELOG.md > release-notes.md
           if [ ! -s release-notes.md ]; then
-            echo "::error::No CHANGELOG.md section for version ${VERSION}. Add a '## [${VERSION}] - <date>' entry before bumping package.json." >&2
+            echo "::error::No CHANGELOG.md section for version ${VERSION}" >&2
             exit 1
           fi
-          {
-            echo "notes_path=release-notes.md"
-          } >> "$GITHUB_OUTPUT"
+          echo "notes_path=release-notes.md" >> "$GITHUB_OUTPUT"
 
-      - name: Pack tarball
-        id: pack
-        if: steps.ver.outputs.changed == 'true'
-        env:
-          VERSION: ${{ steps.ver.outputs.version }}
-        run: |
-          set -euo pipefail
-          # `npm pack` reads the `files` field from package.json. Our
-          # package ships `dist` + `package.json` + `README.md`. dist/
-          # exists because the `Build` step ran above.
-          npm pack
-          # npm pack of @casualtheorics/argdown-2@0.1.0-alpha1 produces
-          # `casualtheorics-argdown-2-0.1.0-alpha1.tgz`. Glob for it so
-          # we don't hard-code the version in the path.
-          TARBALL=$(ls -1 *.tgz | head -n1)
-          if [ -z "$TARBALL" ]; then
-            echo "::error::npm pack produced no .tgz" >&2
-            exit 1
-          fi
-          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
-
-      - name: Delete existing tag and release (idempotent re-run)
+      - name: Delete existing tag/release (idempotent)
         if: steps.ver.outputs.changed == 'true'
         env:
           VERSION: ${{ steps.ver.outputs.version }}
@@ -234,14 +198,10 @@ jobs:
         run: |
           set -euo pipefail
           TAG="v${VERSION}"
-          echo "Ensuring ${TAG} does not already exist (idempotent rerun)..."
-          # `gh release delete --cleanup-tag` also removes the tag, but
-          # the explicit git push is a belt-and-suspenders in case `gh`
-          # is unavailable or has changed its argument shape.
           git push origin ":refs/tags/${TAG}" 2>/dev/null || true
           gh release delete "${TAG}" --yes --cleanup-tag 2>/dev/null || true
 
-      - name: Create GitHub Release with tarball and binary assets
+      - name: Create GitHub Release (binaries only)
         if: steps.ver.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
@@ -249,7 +209,6 @@ jobs:
           name: argdown-2 v${{ steps.ver.outputs.version }}
           body_path: ${{ steps.notes.outputs.notes_path }}
           files: |
-            ${{ steps.pack.outputs.tarball }}
             dist/mcp-bin/argdown-2-mcp-x86_64-apple-darwin
             dist/mcp-bin/argdown-2-mcp-aarch64-apple-darwin
             dist/mcp-bin/argdown-2-mcp-x86_64-unknown-linux-gnu
@@ -257,12 +216,27 @@ jobs:
             dist/mcp-bin/sha256sums.txt
           fail_on_unmatched_files: true
           overwrite_files: true
-          # Don't generate GitHub's auto-notes; the CHANGELOG section is
-          # the canonical release body.
           generate_release_notes: false
           draft: false
-          # Set by the "Detect version bump" step based on whether the
-          # version contains a hyphen (semver pre-release suffix).
           prerelease: ${{ steps.ver.outputs.is_prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish stable JSR
+        if: steps.ver.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          # deno publish errors if version exists — treat "already published" as success.
+          set +e
+          OUT="$(deno publish 2>&1)"
+          CODE=$?
+          set -e
+          echo "$OUT"
+          if [ "$CODE" -eq 0 ]; then
+            exit 0
+          fi
+          if echo "$OUT" | grep -qiE 'already (exists|published)|Version already'; then
+            echo "Stable JSR version already published; skipping"
+            exit 0
+          fi
+          exit "$CODE"
