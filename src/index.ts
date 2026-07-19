@@ -12,6 +12,7 @@ import type {
 import {
   BIPOLAR_SOLVER_TAG,
   COMPLETE_SOLVER_TAG,
+  EVIDENTIAL_SOLVER_TAG,
   GROUNDED_SOLVER_TAG,
   PREFERRED_SOLVER_TAG,
   STABLE_SOLVER_TAG,
@@ -24,6 +25,7 @@ import {
 } from "./multi-extension.js";
 import { reduceToBipolar } from "./reduce-bipolar.js";
 import { reduceToDung } from "./reduce-dung.js";
+import { reduceToEvidential } from "./reduce-evidential.js";
 import { decodeWire } from "./schema.js";
 import { validateCandidate } from "./validate.js";
 
@@ -49,6 +51,7 @@ export type {
 export {
   BIPOLAR_SOLVER_TAG,
   COMPLETE_SOLVER_TAG,
+  EVIDENTIAL_SOLVER_TAG,
   GROUNDED_SOLVER_TAG,
   PREFERRED_SOLVER_TAG,
   SOLVER_TAGS,
@@ -68,7 +71,10 @@ export function load(source: string): LoadResult {
 function solveLabels(
   document: GroundedDocument,
   solver: LabelSolverTag,
-  reduce: typeof reduceToDung | typeof reduceToBipolar,
+  reduce:
+    | typeof reduceToBipolar
+    | typeof reduceToDung
+    | typeof reduceToEvidential,
 ): SolveResult {
   const reduced = reduce(document);
   return {
@@ -99,6 +105,8 @@ export function solve(
       return solveLabels(document, GROUNDED_SOLVER_TAG, reduceToDung);
     case BIPOLAR_SOLVER_TAG:
       return solveLabels(document, BIPOLAR_SOLVER_TAG, reduceToBipolar);
+    case EVIDENTIAL_SOLVER_TAG:
+      return solveLabels(document, EVIDENTIAL_SOLVER_TAG, reduceToEvidential);
     case PREFERRED_SOLVER_TAG:
       return solveMultiExtension(
         document,

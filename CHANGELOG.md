@@ -15,6 +15,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Evidential solver (`#casualtheorics.argdown2.solver/evidential`): grounded
+  labels on a Cayrol & Lagasquie-Schiex 2005 §3.3 necessary-support reduction
+  (`A --> B` becomes `A → nec:A->B → B`).
 - Claude Code in-repo marketplace (`.claude-plugin/marketplace.json`) and nested
   plugin (`plugins/argdown-2`) with MCP, three skills, and a soft rule to never
   hand-edit EDN.

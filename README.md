@@ -1,6 +1,6 @@
 # argdown-2
 
-A TypeScript library and MCP server for loading, validating, and solving argument graphs represented in [EDN](https://github.com/edn-format/edn). One input format, one solver, no partial documents on failure.
+A TypeScript library and MCP server for loading, validating, and solving argument graphs represented in [EDN](https://github.com/edn-format/edn). One input format, solver-tagged documents, no partial documents on failure.
 
 > `0.2.0-alpha1` is a breaking pre-1.0 reset from `0.1.0-alpha1`. The custom `.argdown` parser, source AST, Mermaid renderer, CLI, and 15 multi-extension solvers are gone. A builder MCP server replaces the old custom-language MCP. See [CHANGELOG.md](CHANGELOG.md) for history.
 
@@ -37,7 +37,7 @@ The library runs as a three-stage data pipeline:
 
 1. `load(source)` parses the EDN source into a raw value via [`edn-parser-js`](https://www.npmjs.com/package/edn-parser-js).
 2. `validate(value)` runs a recursive Zod schema, then a cross-reference check that every inference premise, inference conclusion, and relation endpoint resolves to an existing statement, argument, or inference.
-3. `solve(document)` reduces the validated document to a Dung framework (dropping `support` and `undercut` with a warning, splitting `contradiction` into two directed attacks) and computes grounded labels by fixed-point iteration: IN iff all attackers are OUT, OUT iff any attacker is IN, UNDEC otherwise. Self-attacks are UNDEC.
+3. `solve(document)` dispatches on the document's solver root tag. Grounded, bipolar, and evidential reduce to a Dung framework and compute grounded labels by fixed-point iteration: IN iff all attackers are OUT, OUT iff any attacker is IN, UNDEC otherwise. Preferred, stable, and complete return extensions instead. Self-attacks are UNDEC.
 
 Because EDN maps directly to JS data, syntax and cross-reference validation collapse into a single pipeline. The custom parser + AST + visitor split from `0.1.0` is no longer present in `0.2.0`.
 
@@ -45,7 +45,18 @@ The MCP server is a co-equal layer above this pipeline. It registers 11 tools th
 
 ## Solver
 
-`solve` implements Dung's grounded semantics: the smallest complete extension containing all arguments that are not attacked and all arguments recursively defended by them. Anything attacked by an IN argument is OUT. Arguments that survive in un-attacked odd cycles or self-attack are UNDEC.
+`solve` dispatches on the document root tag:
+
+| Root tag | Result | Support handling |
+| --- | --- | --- |
+| `#…/solver/grounded` | labels | omitted (`reduce/support-omitted`) |
+| `#…/solver/bipolar` | labels | deductive reduction (`B → sup:A->B → A`) |
+| `#…/solver/evidential` | labels | necessary reduction (`A → nec:A->B → B`) |
+| `#…/solver/preferred` | extensions | omitted (pure-attack Dung) |
+| `#…/solver/stable` | extensions | omitted (pure-attack Dung) |
+| `#…/solver/complete` | extensions | omitted (pure-attack Dung) |
+
+Grounded labeling is Dung's grounded semantics: the smallest complete extension containing all unattacked arguments and all arguments recursively defended by them. Anything attacked by an IN argument is OUT. Arguments that survive in un-attacked odd cycles or self-attack are UNDEC.
 
 Worked example. A document with three statements and one self-attack:
 
@@ -60,7 +71,26 @@ Worked example. A document with three statements and one self-attack:
 
 Labels: `{ a: 'undec', b: 'in', c: 'in' }`. `:a` self-attacks, so it is not IN (no grounded extension accepts it) and not OUT (no IN attacker exists), so UNDEC. `:b` and `:c` have no attackers, so IN.
 
-`support` and `undercut` relations are preserved in the document but emit `reduce/support-omitted` or `reduce/undercut-omitted` warnings and contribute nothing to the Dung reduction.
+Under `grounded`, `support` and `undercut` are preserved in the document but emit omission warnings and contribute nothing to the reduction. Under `bipolar` / `evidential`, `support` is reduced via auxiliaries; `undercut` is still omitted with a warning.
+
+Bipolar vs evidential on the same graph (`A` supports `B`, `C` attacks `A`):
+
+```edn
+#casualtheorics.argdown2.solver/evidential [
+  #casualtheorics.argdown2.argdown/statement {:id :a}
+  #casualtheorics.argdown2.argdown/statement {:id :b}
+  #casualtheorics.argdown2.argdown/statement {:id :c}
+  #casualtheorics.argdown2.argdown/support {:from :a :to :b}
+  #casualtheorics.argdown2.argdown/attack {:from :c :to :a}
+]
+```
+
+| Solver | a | b | c |
+| --- | --- | --- | --- |
+| bipolar | out | in | in |
+| evidential | out | out | in |
+
+Evidential propagates A's defeat to B (necessary support). Bipolar does not (deductive support protects/affects the supporter instead).
 
 ## MCP server
 
@@ -68,7 +98,7 @@ Eleven tools, stdio transport, single binary `argdown-2-mcp`. Every mutating too
 
 | Tool | Purpose |
 | --- | --- |
-| `create_document` | Create an empty grounded document |
+| `create_document` | Create an empty document (optional solver tag; default grounded) |
 | `add_statement` | Add a statement (id + optional prose text) |
 | `update_statement` | Update an existing statement by id |
 | `add_argument` | Add an argument (id + optional description) |
@@ -78,7 +108,7 @@ Eleven tools, stdio transport, single binary `argdown-2-mcp`. Every mutating too
 | `remove_relation` | Remove a relation by kind + endpoints |
 | `list_elements` | List statements, arguments, inferences, and relations |
 | `validate` | Strict-load and return semantic diagnostics |
-| `solve` | Strict-load and compute grounded labels |
+| `solve` | Strict-load and compute labels or extensions for the document's solver |
 
 ### One-click install (Claude Code plugin)
 
@@ -122,14 +152,19 @@ One file contains one solver-tagged root whose value is a vector of theory entri
 
 | Tag | Purpose |
 | --- | --- |
-| `#casualtheorics.argdown2.solver/grounded` | Select grounded evaluation for the document |
+| `#casualtheorics.argdown2.solver/grounded` | Grounded labels; support omitted |
+| `#casualtheorics.argdown2.solver/bipolar` | Grounded labels; deductive support reduction |
+| `#casualtheorics.argdown2.solver/evidential` | Grounded labels; necessary support reduction |
+| `#casualtheorics.argdown2.solver/preferred` | Preferred extensions (pure-attack) |
+| `#casualtheorics.argdown2.solver/stable` | Stable extensions (pure-attack) |
+| `#casualtheorics.argdown2.solver/complete` | Complete extensions (pure-attack) |
 | `#casualtheorics.argdown2.argdown/statement` | Declare a statement node |
 | `#casualtheorics.argdown2.argdown/argument` | Declare an argument and optional inferences |
 | `#casualtheorics.argdown2.argdown/inference` | Link statement premises to a statement conclusion |
-| `#casualtheorics.argdown2.argdown/support` | Represent support; omitted from Dung reduction with a warning |
+| `#casualtheorics.argdown2.argdown/support` | Support; omitted under grounded / multi-extension, reduced under bipolar / evidential |
 | `#casualtheorics.argdown2.argdown/attack` | Add one directed Dung attack |
 | `#casualtheorics.argdown2.argdown/contradiction` | Add attacks in both directions |
-| `#casualtheorics.argdown2.argdown/undercut` | Target an inference; omitted from Dung reduction with a warning |
+| `#casualtheorics.argdown2.argdown/undercut` | Target an inference; omitted from all current reductions with a warning |
 
 IDs and references are EDN keywords. IDs are globally unique across statements, arguments, and inferences.
 
@@ -141,13 +176,13 @@ Use `validate(value)` when EDN has already been read with `edn-parser-js` and yo
 
 ## Project status
 
-What is here: strict EDN loader, Zod schema validation, cross-reference validator, grounded Dung solver, builder MCP server, atomic-write I/O layer, GitHub Actions CI and release workflows.
+What is here: strict EDN loader, Zod schema validation, cross-reference validator, grounded / bipolar / evidential label solvers, preferred / stable / complete multi-extension solvers, builder MCP server, atomic-write I/O layer, GitHub Actions CI and release workflows.
 
-What is not here: a custom `.argdown` language or parser, a source AST, a Mermaid or DOT renderer, a CLI binary (the MCP server is the only shipped binary), preferred/stable/complete or bipolar/ASPIC+/evidential solvers (the reset deleted them along with the parser), a public license (the license will be chosen before the first public release).
+What is not here: a custom `.argdown` language or parser, a source AST, a Mermaid or DOT renderer, a CLI binary (the MCP server is the only shipped binary), ASPIC+ or CLS 2013 full evidential labeling, a public license (the license will be chosen before the first public release).
 
 Distribution: the library is published to [JSR](https://jsr.io/@casualtheorics/argdown-2) (`jsr:@casualtheorics/argdown-2`); every merge to `main` publishes a `*-dev.{utcTimestamp}` prerelease. Native MCP binaries ship via GitHub Releases (`.github/workflows/release.yml`).
 
-The namespaced EDN tags and the `#casualtheorics.argdown2.solver/grounded` root are spec-frozen. Downstream consumers cannot extend the language without forking. This is a deliberate scoping decision.
+The namespaced EDN theory tags are spec-frozen. New solver roots (such as evidential) are additive via `SOLVER_TAGS`. Downstream consumers cannot invent theory tags without forking. This is a deliberate scoping decision.
 
 ## Install (library)
 

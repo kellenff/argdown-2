@@ -8,6 +8,8 @@ export const COMPLETE_SOLVER_TAG =
   "casualtheorics.argdown2.solver/complete" as const;
 export const BIPOLAR_SOLVER_TAG =
   "casualtheorics.argdown2.solver/bipolar" as const;
+export const EVIDENTIAL_SOLVER_TAG =
+  "casualtheorics.argdown2.solver/evidential" as const;
 
 export const SOLVER_TAGS = [
   GROUNDED_SOLVER_TAG,
@@ -15,11 +17,13 @@ export const SOLVER_TAGS = [
   STABLE_SOLVER_TAG,
   COMPLETE_SOLVER_TAG,
   BIPOLAR_SOLVER_TAG,
+  EVIDENTIAL_SOLVER_TAG,
 ] as const;
 
 export type SolverTag = (typeof SOLVER_TAGS)[number];
 export type LabelSolverTag =
   | typeof BIPOLAR_SOLVER_TAG
+  | typeof EVIDENTIAL_SOLVER_TAG
   | typeof GROUNDED_SOLVER_TAG;
 export type MultiExtensionSolverTag =
   | typeof COMPLETE_SOLVER_TAG
