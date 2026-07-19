@@ -85,7 +85,12 @@ jobs:
           STAMP="$(date -u +%Y%m%d%H%M%S)"
           VER="${BASE}-dev.${STAMP}"
           echo "Publishing jsr dev version ${VER}"
-          deno publish --set-version "$VER"
+          # JSR requires deno.json version to match the published version;
+          # --set-version alone is rejected (deno#27428). Patch in-job only.
+          tmp="$(mktemp)"
+          jq --arg v "$VER" '.version = $v' deno.json > "$tmp"
+          mv "$tmp" deno.json
+          deno publish --allow-dirty
 
   stable-release:
     name: Stable GitHub Release + JSR
