@@ -1,7 +1,8 @@
+import { expect } from '@std/expect';
+import { describe, it } from '@std/testing/bdd';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -48,32 +49,23 @@ describe('Cursor plugin MCP config', () => {
     expect(server.command).toBe('bash');
     expect(server.args).toEqual(['scripts/argdown-2-mcp']);
 
-    const packageVersion = (readJson('package.json') as { version: string }).version;
+    const denoVersion = (readJson('deno.json') as { version: string }).version;
     const launcherVersion = readFileSync(
       join(root, 'scripts/argdown-2-mcp.version'),
       'utf8',
     ).trim();
-    expect(launcherVersion).toBe(packageVersion);
+    expect(launcherVersion).toBe(denoVersion);
   });
 
-  it('declares edn-parser-js via the Yarn patch protocol', () => {
-    const pkg = readJson('package.json') as {
-      dependencies: Record<string, string>;
-    };
-    expect(pkg.dependencies['edn-parser-js']).toMatch(
-      /^patch:edn-parser-js@npm%3A2\.0\.2#\.\/\.yarn\/patches\/edn-parser-js-npm-2\.0\.2\.patch$/,
-    );
-  });
-
-  it('keeps a yarn-based project MCP config for local clones', () => {
+  it('keeps a Deno-based project MCP config for local clones', () => {
     const local = readJson('.cursor/mcp.json') as {
       mcpServers: {
         'argdown-2': { command: string; args: string[] };
       };
     };
     expect(local.mcpServers['argdown-2']).toEqual({
-      command: 'yarn',
-      args: ['node', './dist/mcp/cli.js'],
+      command: 'deno',
+      args: ['task', 'mcp'],
     });
   });
 });

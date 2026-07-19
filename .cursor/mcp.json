@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "argdown-2": {
-      "command": "yarn",
-      "args": ["node", "./dist/mcp/cli.js"]
+      "command": "deno",
+      "args": ["task", "mcp"]
     }
   }
 }

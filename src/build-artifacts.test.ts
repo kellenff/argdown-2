@@ -1,43 +1,34 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@std/expect';
+import { describe, it } from '@std/testing/bdd';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const indexJs = 'dist/index.js';
-const indexDts = 'dist/index.d.ts';
-const cliJs = 'dist/mcp/cli.js';
-const built = existsSync(indexJs);
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const externalImport = (pkg: string) =>
-  new RegExp(String.raw`^(?!\s*\*).*\b(?:import|export)\s+[^;]*?\bfrom\s+['"]${pkg}`, 'm');
+function readJson(relativePath: string): unknown {
+  return JSON.parse(readFileSync(join(root, relativePath), 'utf8'));
+}
 
-describe.skipIf(!built)('build artifacts', () => {
-  it('emits library JS, library dts, and MCP CLI', () => {
-    expect(existsSync(indexJs)).toBe(true);
-    expect(existsSync(indexDts)).toBe(true);
-    expect(existsSync(cliJs)).toBe(true);
+describe('deno package contract', () => {
+  it('declares JSR name, version, and library export', () => {
+    const deno = readJson('deno.json') as {
+      name: string;
+      version: string;
+      exports: string | Record<string, string>;
+    };
+    expect(deno.name).toBe('@casualtheorics/argdown-2');
+    expect(deno.version).toMatch(/^\d+\.\d+\.\d+/);
+    const exportPath = typeof deno.exports === 'string'
+      ? deno.exports
+      : deno.exports['.'];
+    expect(exportPath).toBe('./src/index.ts');
+    expect(existsSync(join(root, 'src/index.ts'))).toBe(true);
   });
 
-  it('preserves the MCP CLI shebang', () => {
-    const head = readFileSync(cliJs, 'utf8').slice(0, 32);
-    expect(head.startsWith('#!/usr/bin/env node')).toBe(true);
-  });
-
-  it('builds self-contained entry bundles without shared chunks', () => {
-    const sharedChunks = readdirSync('dist').filter((name) => /^src-.*\.js$/.test(name));
-    expect(sharedChunks).toEqual([]);
-    expect(readFileSync(indexJs, 'utf8')).not.toMatch(/\bfrom\s+['"]\.\/src-/);
-    expect(readFileSync(cliJs, 'utf8')).not.toMatch(/\bfrom\s+['"]\.\/src-/);
-  });
-
-  it('inlines app dependencies in the library bundle', () => {
-    const source = readFileSync(indexJs, 'utf8');
-    expect(source).not.toMatch(externalImport('zod'));
-    expect(source).not.toMatch(externalImport('edn-parser-js'));
-  });
-
-  it('inlines app dependencies in the MCP CLI bundle', () => {
-    const source = readFileSync(cliJs, 'utf8');
-    expect(source).not.toMatch(externalImport('@modelcontextprotocol\\/sdk'));
-    expect(source).not.toMatch(externalImport('zod'));
-    expect(source).not.toMatch(externalImport('edn-parser-js'));
+  it('vendors edn-parser-js instead of npm:', () => {
+    const deno = readJson('deno.json') as { imports: Record<string, string> };
+    expect(deno.imports['edn-parser-js']).toBe('./vendor/edn-parser-js/lib/index.js');
+    expect(existsSync(join(root, 'vendor/edn-parser-js/lib/index.js'))).toBe(true);
   });
 });
