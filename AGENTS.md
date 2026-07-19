@@ -27,6 +27,14 @@ stdio MCP from source; use `deno task check:mcp-deno`, `deno task compile:mcp`,
 and `deno task probe:mcp <bin>` (or `deno run -A scripts/probe-mcp-stdio.ts
 <bin>`) to verify the binary-shipping path.
 
+### Claude Code marketplace
+
+One-click install for Claude Code uses `.claude-plugin/marketplace.json` and
+`plugins/argdown-2/` (MCP via `${CLAUDE_PLUGIN_ROOT}/scripts/argdown-2-mcp`,
+plus skills). Keep the plugin launcher copy in sync with canonical
+`scripts/argdown-2-mcp` and `scripts/argdown-2-mcp.version` (enforced by
+`src/claude-plugin.test.ts`). There is no Cursor plugin packaging in this repo.
+
 ### MCP server smoke test
 
 The MCP server communicates over stdio (JSON-RPC). To exercise it end to end,
