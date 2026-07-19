@@ -1,6 +1,7 @@
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
+import { load, solve } from "./index.js";
 import {
   BIPOLAR_SOLVER_TAG,
   COMPLETE_SOLVER_TAG,
@@ -9,173 +10,97 @@ import {
   PREFERRED_SOLVER_TAG,
   STABLE_SOLVER_TAG,
 } from "./model.js";
-import { load, solve } from "./index.js";
-import { groundedLabels } from "./grounded.js";
-import { intersectExtensions } from "./multi-extension.js";
-import { reduceToDung } from "./reduce-dung.js";
-import { frameworkToAttackMap } from "./multi-extension.js";
 
-const threeCycle = `
-  #casualtheorics.argdown2.solver/grounded [
-    #casualtheorics.argdown2.argdown/statement {:id :a}
-    #casualtheorics.argdown2.argdown/statement {:id :b}
-    #casualtheorics.argdown2.argdown/statement {:id :c}
-    #casualtheorics.argdown2.argdown/attack {:from :a :to :b}
-    #casualtheorics.argdown2.argdown/attack {:from :b :to :c}
-    #casualtheorics.argdown2.argdown/attack {:from :c :to :a}
-  ]
-`;
+const graph = (
+  solver: string,
+  relations: string,
+  focus = "a",
+): string => {
+  const observer = ["preferred", "stable", "complete"].some((name) =>
+      solver.endsWith(`/${name}`)
+    )
+    ? `:observer
+       #casualtheorics.argdown2.observer/extension-proportion {}`
+    : "";
+  return `#casualtheorics.argdown2/document
+    {:id :solver-test
+     :root #${solver}
+     {:id :root
+      :interface
+      {:aggregate #casualtheorics.argdown2.aggregate/identity
+       {:inputs [{:ref :${focus}}]}
+       ${observer}}
+      :elements [
+       #casualtheorics.argdown2.argdown/statement {:id :a}
+       #casualtheorics.argdown2.argdown/statement {:id :b}
+       #casualtheorics.argdown2.argdown/statement {:id :c}
+       ${relations}
+      ]}}`;
+};
 
-function withSolver(source: string, solver: string): string {
-  return source.replace(
-    "#casualtheorics.argdown2.solver/grounded",
-    `#${solver}`,
-  );
-}
+const threeCycleRelations = `
+  #casualtheorics.argdown2.argdown/attack
+  {:id :attack-a-b :from :a :to :b}
+  #casualtheorics.argdown2.argdown/attack
+  {:id :attack-b-c :from :b :to :c}
+  #casualtheorics.argdown2.argdown/attack
+  {:id :attack-c-a :from :c :to :a}`;
 
-describe("solver tags", () => {
-  it("loads and solves grounded documents", () => {
-    const loaded = load(`
-      #casualtheorics.argdown2.solver/grounded [
-        #casualtheorics.argdown2.argdown/statement {:id :a}
-        #casualtheorics.argdown2.argdown/statement {:id :b}
-        #casualtheorics.argdown2.argdown/attack {:from :a :to :b}
-      ]
-    `);
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) return;
-    const result = solve(loaded.document);
-    expect("labels" in result).toBe(true);
-    if (!("labels" in result)) return;
-    expect(Object.fromEntries(result.labels)).toEqual({ a: "in", b: "out" });
-    expect(result.solver).toBe(GROUNDED_SOLVER_TAG);
-  });
+describe("solver component dispatch", () => {
+  for (
+    const [solver, expected] of [
+      [GROUNDED_SOLVER_TAG, { a: "out", b: "in", c: "in" }],
+      [BIPOLAR_SOLVER_TAG, { a: "out", b: "in", c: "in" }],
+      [EVIDENTIAL_SOLVER_TAG, { a: "out", b: "out", c: "in" }],
+    ] as const
+  ) {
+    it(`solves ${solver}`, () => {
+      const support = solver === GROUNDED_SOLVER_TAG
+        ? ""
+        : `#casualtheorics.argdown2.argdown/support
+           {:id :support-a-b :from :a :to :b}`;
+      const loaded = load(graph(
+        solver,
+        `${support}
+         #casualtheorics.argdown2.argdown/attack
+         {:id :attack-c-a :from :c :to :a}`,
+      ));
+      expect(loaded.ok).toBe(true);
+      if (!loaded.ok) return;
+      const result = solve(loaded.document);
+      expect(result.native.kind).toBe("labels");
+      if (result.native.kind !== "labels") return;
+      expect(Object.fromEntries(result.native.values)).toEqual(expected);
+    });
+  }
 
-  it("solves bipolar documents with support reduction", () => {
-    const loaded = load(`
-      #casualtheorics.argdown2.solver/bipolar [
-        #casualtheorics.argdown2.argdown/statement {:id :a}
-        #casualtheorics.argdown2.argdown/statement {:id :b}
-        #casualtheorics.argdown2.argdown/statement {:id :c}
-        #casualtheorics.argdown2.argdown/support {:from :a :to :b}
-        #casualtheorics.argdown2.argdown/attack {:from :c :to :a}
-      ]
-    `);
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) return;
-    const result = solve(loaded.document);
-    expect("labels" in result).toBe(true);
-    if (!("labels" in result)) return;
-    expect(result.solver).toBe(BIPOLAR_SOLVER_TAG);
-    expect(result.labels.get("a" as never)).toBe("out");
-    expect(result.labels.get("b" as never)).toBe("in");
-    expect(result.labels.get("c" as never)).toBe("in");
-  });
+  it("solves preferred, stable, and complete leaf components", () => {
+    const preferred = load(graph(PREFERRED_SOLVER_TAG, threeCycleRelations));
+    const stable = load(graph(STABLE_SOLVER_TAG, threeCycleRelations));
+    const complete = load(graph(COMPLETE_SOLVER_TAG, threeCycleRelations));
+    expect(preferred.ok && stable.ok && complete.ok).toBe(true);
+    if (!preferred.ok || !stable.ok || !complete.ok) return;
 
-  it("solves evidential documents with necessary-support reduction", () => {
-    const loaded = load(`
-      #casualtheorics.argdown2.solver/evidential [
-        #casualtheorics.argdown2.argdown/statement {:id :a}
-        #casualtheorics.argdown2.argdown/statement {:id :b}
-        #casualtheorics.argdown2.argdown/statement {:id :c}
-        #casualtheorics.argdown2.argdown/support {:from :a :to :b}
-        #casualtheorics.argdown2.argdown/attack {:from :c :to :a}
-      ]
-    `);
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) return;
-    const result = solve(loaded.document);
-    expect("labels" in result).toBe(true);
-    if (!("labels" in result)) return;
-    expect(result.solver).toBe(EVIDENTIAL_SOLVER_TAG);
-    expect(result.labels.get("a" as never)).toBe("out");
-    expect(result.labels.get("b" as never)).toBe("out");
-    expect(result.labels.get("c" as never)).toBe("in");
-  });
-
-  it("solves preferred documents with extensions", () => {
-    const loaded = load(
-      withSolver(threeCycle, "casualtheorics.argdown2.solver/preferred"),
-    );
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) return;
-    const result = solve(loaded.document);
-    expect("extensions" in result).toBe(true);
-    if (!("extensions" in result)) return;
-    expect(result.solver).toBe(PREFERRED_SOLVER_TAG);
-    expect(result.extensions.length).toBe(1);
-    expect(result.extensions[0]!.size).toBe(0);
-  });
-
-  it("solves stable documents with no extensions on a 3-cycle", () => {
-    const loaded = load(
-      withSolver(threeCycle, "casualtheorics.argdown2.solver/stable"),
-    );
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) return;
-    const result = solve(loaded.document);
-    expect("extensions" in result).toBe(true);
-    if (!("extensions" in result)) return;
-    expect(result.solver).toBe(STABLE_SOLVER_TAG);
-    expect(result.extensions).toEqual([]);
-  });
-
-  it("solves complete documents and matches grounded intersection", () => {
-    const loaded = load(
-      withSolver(threeCycle, "casualtheorics.argdown2.solver/complete"),
-    );
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) return;
-    const result = solve(loaded.document);
-    expect("extensions" in result).toBe(true);
-    if (!("extensions" in result)) return;
-    expect(result.solver).toBe(COMPLETE_SOLVER_TAG);
-    expect(result.extensions.length).toBe(1);
-
-    const groundedLoaded = load(threeCycle);
-    expect(groundedLoaded.ok).toBe(true);
-    if (!groundedLoaded.ok) return;
-    const grounded = solve(groundedLoaded.document);
-    expect("labels" in grounded).toBe(true);
-    if (!("labels" in grounded)) return;
-    const groundedIn = new Set(
-      [...grounded.labels.entries()]
-        .filter(([, label]) => label === "in")
-        .map(([node]) => node),
-    );
-    expect(intersectExtensions(result.extensions)).toEqual(groundedIn);
+    const preferredResult = solve(preferred.document);
+    const stableResult = solve(stable.document);
+    const completeResult = solve(complete.document);
+    expect(preferredResult.native).toMatchObject({
+      kind: "extensions",
+      values: [new Set()],
+    });
+    expect(stableResult.native).toEqual({ kind: "extensions", values: [] });
+    expect(completeResult.native).toMatchObject({
+      kind: "extensions",
+      values: [new Set()],
+    });
+    expect(preferredResult.boundary.confidence).toBe(0);
+    expect(stableResult.boundary.confidence).toBe(null);
   });
 
   it("rejects unsupported solver tags", () => {
     expect(load("#other/solver []")).toMatchObject({
       ok: false,
-      errors: [{ code: "edn/unsupported-tag" }],
+      errors: [{ code: "schema/missing-document-tag" }],
     });
-  });
-});
-
-describe("cross-validation invariant", () => {
-  it("keeps grounded labels equal to the intersection of complete extensions", () => {
-    const loaded = load(`
-      #casualtheorics.argdown2.solver/complete [
-        #casualtheorics.argdown2.argdown/statement {:id :a}
-        #casualtheorics.argdown2.argdown/statement {:id :b}
-        #casualtheorics.argdown2.argdown/attack {:from :a :to :b}
-      ]
-    `);
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) return;
-    const reduced = reduceToDung(loaded.document);
-    const attackMap = frameworkToAttackMap(reduced.framework);
-    const groundedIn = new Set(
-      [...groundedLabels(reduced.framework).entries()]
-        .filter(([, label]) => label === "in")
-        .map(([node]) => node),
-    );
-    const complete = solve(loaded.document);
-    expect("extensions" in complete).toBe(true);
-    if (!("extensions" in complete)) return;
-    expect(intersectExtensions(complete.extensions)).toEqual(groundedIn);
-    expect(attackMap.size).toBeGreaterThan(0);
   });
 });

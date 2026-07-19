@@ -21,7 +21,7 @@ describe("Argdown 1.x censorship parity", () => {
   it("preserves the reconstructed argument and metadata", () => {
     const loaded = load(source);
     if (!loaded.ok) throw new Error("fixture did not load");
-    const freedom = loaded.document.elements.find(
+    const freedom = loaded.document.root.elements.find(
       (element) =>
         element.kind === "argument" && element.id === "freedom-of-speech",
     );
@@ -42,17 +42,17 @@ describe("Argdown 1.x censorship parity", () => {
     const loaded = load(source);
     if (!loaded.ok) throw new Error("fixture did not load");
     const result = solve(loaded.document);
-    expect("labels" in result).toBe(true);
-    if (!("labels" in result)) return;
-    expect(result.labels.get(id("inclusive-debate"))).toBe("in");
-    expect(result.labels.get(id("racial-hatred"))).toBe("out");
-    expect(result.labels.get(id("causal-link-questionable"))).toBe("in");
-    expect(result.labels.get(id("excessive-sex-violence"))).toBe("out");
-    expect(result.labels.get(id("no-harm-trumps-freedom"))).toBe("in");
-    expect(result.labels.get(id("absolute-freedom"))).toBe("out");
-    expect(result.labels.get(id("freedom-of-speech"))).toBe("in");
-    expect(result.labels.get(id("censorship"))).toBe("out");
-    expect(result.labels.get(id("censorship-wrong"))).toBe("in");
+    expect(result.native.kind).toBe("labels");
+    if (result.native.kind !== "labels") return;
+    expect(result.native.values.get(id("inclusive-debate"))).toBe("in");
+    expect(result.native.values.get(id("racial-hatred"))).toBe("out");
+    expect(result.native.values.get(id("causal-link-questionable"))).toBe("in");
+    expect(result.native.values.get(id("excessive-sex-violence"))).toBe("out");
+    expect(result.native.values.get(id("no-harm-trumps-freedom"))).toBe("in");
+    expect(result.native.values.get(id("absolute-freedom"))).toBe("out");
+    expect(result.native.values.get(id("freedom-of-speech"))).toBe("in");
+    expect(result.native.values.get(id("censorship"))).toBe("out");
+    expect(result.native.values.get(id("censorship-wrong"))).toBe("in");
   });
 
   it("warns once for each represented support relation", () => {

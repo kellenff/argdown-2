@@ -23,6 +23,7 @@ describe("writeEdn", () => {
     doc = apply(doc, { type: "add_statement", id: "b", text: "Beta" }).document;
     doc = apply(doc, {
       type: "add_relation",
+      id: "attack-a-b",
       kind: "attack",
       from: "a",
       to: "b",
@@ -31,7 +32,7 @@ describe("writeEdn", () => {
     const loaded = load(edn);
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    expect(loaded.document.elements).toHaveLength(3);
+    expect(loaded.document.root.elements).toHaveLength(3);
   });
 
   it("loads the hand fixture", () => {
@@ -60,7 +61,9 @@ describe("writeEdn", () => {
     const parsed = softParse(edn);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    const arg = parsed.document.elements.find((e) => e.kind === "argument");
+    const arg = parsed.document.root.elements.find((e) =>
+      e.kind === "argument"
+    );
     expect(arg?.kind).toBe("argument");
     if (arg?.kind !== "argument") return;
     expect(arg.inferences[0]).toMatchObject({
@@ -100,8 +103,10 @@ describe("writeEdn", () => {
     const loaded = load(edn);
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    expect(loaded.document.elements).toHaveLength(4);
-    const arg = loaded.document.elements.find((e) => e.kind === "argument");
+    expect(loaded.document.root.elements).toHaveLength(4);
+    const arg = loaded.document.root.elements.find((e) =>
+      e.kind === "argument"
+    );
     expect(arg?.kind).toBe("argument");
     if (arg?.kind !== "argument") return;
     expect(arg.inferences).toHaveLength(1);

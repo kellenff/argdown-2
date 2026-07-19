@@ -8,8 +8,9 @@ import type { CandidateDocument } from "../model.js";
 function docWithStatements(): CandidateDocument {
   return {
     ...emptyDocument(),
-    elements: [
-      {
+    root: {
+      ...emptyDocument().root,
+      elements: [{
         kind: "statement",
         id: "a",
         text: "Alpha claim",
@@ -37,8 +38,8 @@ function docWithStatements(): CandidateDocument {
         tags: [],
         inferences: [],
         extra: [],
-      },
-    ],
+      }],
+    },
   };
 }
 

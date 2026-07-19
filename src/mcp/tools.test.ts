@@ -27,13 +27,22 @@ describe("mcp tool handlers", () => {
     expect(parseBody(created).ok).toBe(true);
     await runAddStatement({ path, id: "a", text: "A" });
     await runAddStatement({ path, id: "b", text: "B" });
-    await runAddRelation({ path, kind: "attack", from: "a", to: "b" });
+    await runAddRelation({
+      path,
+      id: "attack-a-b",
+      kind: "attack",
+      from: "a",
+      to: "b",
+    });
     const validated = await runValidate({ path });
     expect(parseBody(validated).ok).toBe(true);
     const solved = await runSolve({ path });
     const body = parseBody(solved);
     expect(body.ok).toBe(true);
-    expect(body.labels).toMatchObject({ a: "in", b: "out" });
+    expect(body.native).toMatchObject({
+      kind: "labels",
+      values: { a: "in", b: "out" },
+    });
     const disk = await readFile(path, "utf8");
     expect(disk).toContain(":a");
   });
@@ -76,6 +85,7 @@ describe("mcp tool handlers", () => {
 
     const addAttack = await runAddRelation({
       source,
+      id: "freedom-attacks-censorship",
       kind: "attack",
       from: "absolute-freedom",
       to: "censorship",
@@ -88,9 +98,12 @@ describe("mcp tool handlers", () => {
     const solved = await runSolve({ source });
     const body = parseBody(solved);
     expect(body.ok).toBe(true);
-    expect(body.labels).toMatchObject({
-      censorship: "out",
-      "absolute-freedom": "in",
+    expect(body.native).toMatchObject({
+      kind: "labels",
+      values: {
+        censorship: "out",
+        "absolute-freedom": "in",
+      },
     });
     expect(source).toContain("Censorship is not wrong in principle.");
     expect(source).toContain("Freedom of speech is an absolute right.");

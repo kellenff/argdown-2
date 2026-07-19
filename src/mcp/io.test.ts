@@ -19,15 +19,16 @@ describe("mcp io", () => {
     if (!loaded.ok) return;
     const next = {
       ...loaded.document,
-      elements: [
-        {
+      root: {
+        ...loaded.document.root,
+        elements: [{
           kind: "statement" as const,
           id: "a",
           text: "A",
           tags: [],
           extra: [],
-        },
-      ],
+        }],
+      },
     };
     const saved = await saveDocumentRef({ path }, next);
     expect(saved.ok).toBe(true);
