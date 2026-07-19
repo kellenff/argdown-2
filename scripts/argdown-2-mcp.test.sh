@@ -50,6 +50,14 @@ if XDG_CACHE_HOME="$TMP/cache" \
   exit 1
 fi
 grep -qi 'checksum' "$TMP/err2"
+if [[ -e "$CACHE/argdown-2-mcp-$TARGET" ]]; then
+  echo "error: expected bad cached binary to be deleted" >&2
+  exit 1
+fi
+if [[ -e "$CACHE/sha256sums.txt" ]]; then
+  echo "error: expected bad cached checksums to be deleted" >&2
+  exit 1
+fi
 echo "ok: checksum mismatch"
 
 echo "argdown-2-mcp.test.sh: all ok"

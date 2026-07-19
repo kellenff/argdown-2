@@ -30,12 +30,18 @@ sha256_file() {
 }
 
 verify_checksum() {
-  local file="$1" sums="$2" base expected actual
+  local file="$1" sums="$2" cleanup="${3:-}" base expected actual
   base="$(basename "$file")"
   expected="$(awk -v b="$base" '$2 == b || $2 == ("*" b) || $2 == ("./" b) { print $1; exit }' "$sums")"
-  [[ -n "$expected" ]] || die "no checksum entry for $base in $sums"
+  if [[ -z "$expected" ]]; then
+    [[ "$cleanup" == "delete" ]] && rm -f "$file" "$sums"
+    die "no checksum entry for $base in $sums"
+  fi
   actual="$(sha256_file "$file")"
-  [[ "$actual" == "$expected" ]] || die "checksum mismatch for $base (got $actual want $expected)"
+  if [[ "$actual" != "$expected" ]]; then
+    [[ "$cleanup" == "delete" ]] && rm -f "$file" "$sums"
+    die "checksum mismatch for $base (got $actual want $expected)"
+  fi
 }
 
 resolve_target() {
@@ -94,7 +100,7 @@ SUMS="$CACHE/sha256sums.txt"
 mkdir -p "$CACHE" || die "cache not writable: $CACHE"
 
 if [[ -x "$CACHED" && -f "$SUMS" ]]; then
-  verify_checksum "$CACHED" "$SUMS"
+  verify_checksum "$CACHED" "$SUMS" delete
   strip_quarantine "$CACHED"
   exec "$CACHED" "$@"
 fi
