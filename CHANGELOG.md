@@ -17,9 +17,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Enable JSR [slow-types](https://jsr.io/docs/about-slow-types) compliance:
-  `isolatedDeclarations` in `deno.json` and `deno task publish:dry-run` for local
-  verification (PR CI already runs this via the `dry-run-publish` job).
+- Enable JSR [slow-types](https://jsr.io/docs/about-slow-types) compliance via
+  `deno task publish:dry-run` (PR CI runs this in the `dry-run-publish` job).
 - Enable `noImplicitAny` in `deno.json` compiler options.
 
 ## [0.2.0-alpha3] - 2026-07-19

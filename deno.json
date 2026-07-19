@@ -60,7 +60,6 @@
       "deno.window"
     ],
     "strict": true,
-    "noImplicitAny": true,
-    "isolatedDeclarations": true
+    "noImplicitAny": true
   }
 }

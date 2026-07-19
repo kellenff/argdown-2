@@ -41,11 +41,13 @@ describe("deno package contract", () => {
     expect(existsSync(join(root, "package.json"))).toBe(false);
   });
 
-  it("enables isolatedDeclarations for JSR slow-types compliance", () => {
+  it("declares publish:dry-run task for JSR slow-types verification", () => {
     const deno = readJson("deno.json") as {
-      compilerOptions?: { isolatedDeclarations?: boolean };
+      tasks?: Record<string, string>;
     };
-    expect(deno.compilerOptions?.isolatedDeclarations).toBe(true);
+    expect(deno.tasks?.["publish:dry-run"]).toBe(
+      "deno publish --dry-run --allow-dirty",
+    );
   });
 });
 
