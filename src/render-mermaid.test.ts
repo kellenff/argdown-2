@@ -131,6 +131,20 @@ const ESCAPE = `
    {:id :s :text "Use & <angles>"}]}}
 `;
 
+const RESERVED_ID = `
+#casualtheorics.argdown2/document
+{:id :reserved-id
+ :root
+ #casualtheorics.argdown2.solver/grounded
+ {:id :root
+  :interface
+  {:aggregate
+   #casualtheorics.argdown2.aggregate/identity
+   {:inputs [{:ref :end}]}}
+  :elements
+  [#casualtheorics.argdown2.argdown/statement {:id :end :text "End"}]}}
+`;
+
 const EMPTY = `
 #casualtheorics.argdown2/document
 {:id :empty
@@ -242,5 +256,12 @@ describe("renderMermaid", () => {
     const out = renderMermaid(doc);
     expect(out).toContain("&amp;");
     expect(out).toContain("&lt;angles&gt;");
+  });
+
+  it("prefixes node ids that collide with Mermaid keywords", () => {
+    const doc = loadDoc(RESERVED_ID);
+    const out = renderMermaid(doc);
+    expect(out).toContain('node_end["End"]');
+    expect(out).not.toMatch(/^ {4}end\[/m);
   });
 });
