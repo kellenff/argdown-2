@@ -1,8 +1,12 @@
 # argdown-2
 
-A TypeScript library and MCP server for loading, validating, and solving argument graphs represented in [EDN](https://github.com/edn-format/edn). Solver components are identified nodes, relations have stable IDs, and nested components evaluate bottom-up.
+A TypeScript library and MCP server for loading, validating, and solving argument graphs represented in [EDN](https://github.com/edn-format/edn). Six solvers. Nested solver composition. The library never throws and never produces a partial document.
 
-> `0.2.0-alpha1` is a breaking pre-1.0 reset from `0.1.0-alpha1`. The custom `.argdown` parser, source AST, Mermaid renderer, CLI, and 15 multi-extension solvers are gone. A builder MCP server replaces the old custom-language MCP. See [CHANGELOG.md](CHANGELOG.md) for history.
+> `0.2.0-alpha4` is a breaking pre-1.0 reset from `0.1.0-alpha1`. The custom `.argdown` parser, source AST, Mermaid renderer, CLI, and 15-solver surface are gone. A builder MCP server replaces the old custom-language MCP. See [CHANGELOG.md](CHANGELOG.md) for history.
+
+## What is EDN?
+
+EDN is a Clojure-origin data notation that maps directly to JS values. Keywords start with `:`, tagged literals with `#`, vectors with `[]`, maps with `{}`. It is the canonical source format for `argdown-2`.
 
 ## Quick start
 
@@ -36,11 +40,34 @@ if (!loaded.ok) {
 
 Three functions, one return shape: `{ ok: true, ... } | { ok: false, errors }`. The library never throws and never produces a partial document.
 
+Three install paths:
+
+| You want to... | Use this |
+| --- | --- |
+| Use the library from Deno | `deno add jsr:@casualtheorics/argdown-2` |
+| Run the MCP server in any MCP client | `bash scripts/argdown-2-mcp` (downloads the pinned native binary) |
+| Install in Claude Code | `/plugin marketplace add kellenff/argdown-2` then `/plugin install argdown-2@argdown-2` |
+
 ## Status and rigor
 
-Seven EDN fixtures live in `src/bench.fixtures/` and are exercised by every commit: `small-minimal`, `small-relations`, `small-argument`, `medium-censorship`, `heavy-attacks`, `deep-arguments`, `large-stress`. [`examples/argdown1-censorship.edn`](examples/argdown1-censorship.edn) ports the [Argdown 1.x censorship tutorial](https://argdown.org/guide/a-first-example.html); `src/parity.test.ts` verifies that the grounded labels match the pure-attack expected set.
+Seven EDN fixtures in `src/bench.fixtures/` are exercised by every commit: `small-minimal`, `small-relations`, `small-argument`, `medium-censorship`, `heavy-attacks`, `deep-arguments`, `large-stress`. [`examples/argdown1-censorship.edn`](examples/argdown1-censorship.edn) ports the [Argdown 1.x censorship tutorial](https://argdown.org/guide/a-first-example.html); [`src/parity.test.ts`](src/parity.test.ts) verifies that the grounded labels match the pure-attack expected set.
 
 ## Architecture
+
+```mermaid
+flowchart LR
+  src["EDN source"] --> load["load(source)<br/>readEdn + Zod + cross-ref"]
+  load -->|Document| solve["solve(document)<br/>evaluateComponent post-order"]
+  solve --> native["native<br/>per-solver result"]
+  solve --> aggregate["aggregate<br/>parent view"]
+  solve --> boundary["boundary<br/>projection"]
+
+  mcp["MCP builder<br/>14 tools"] --> load
+  mcp --> solve
+
+  classDef pure fill:#eef,stroke:#446
+  class load,solve pure
+```
 
 The library runs as a three-stage data pipeline:
 
@@ -48,7 +75,7 @@ The library runs as a three-stage data pipeline:
 2. `validate(value)` decodes the document and recursively checks each component's local endpoint scope, interface selection, relation identity, and child import compatibility.
 3. `solve(document)` folds the component tree post-order. Each component returns `native`, `aggregate`, and `boundary` layers; a parent sees only each child's boundary confidence.
 
-Because EDN maps directly to JS data, syntax and cross-reference validation collapse into a single pipeline. The custom parser + AST + visitor split from `0.1.0` is no longer present in `0.2.0`.
+Because EDN maps directly to JS data, syntax and cross-reference validation collapse into a single pipeline. The custom parser, AST, and visitor split from `0.1.0` is no longer present in `0.2.0`.
 
 The MCP server is a co-equal layer above this pipeline. It registers 14 tools that call `load`, `validate`, `solve`, and the builder functions directly. There is no separate code path; an agent-constructed graph goes through the same validation and solver as a programmatic one.
 
@@ -59,28 +86,26 @@ The MCP server is a co-equal layer above this pipeline. It registers 14 tools th
 | Root tag | Result | Support handling |
 | --- | --- | --- |
 | `#…/solver/grounded` | labels | rejected at validation |
-| `#…/solver/bipolar` | labels | deductive reduction (`B → sup:A->B → A`) |
-| `#…/solver/evidential` | labels | necessary reduction (`A → nec:A->B → B`) |
+| `#…/solver/bipolar` | labels | deductive reduction (`B → sup:A→B → A`) |
+| `#…/solver/evidential` | labels | necessary reduction (`A → nec:A→B → B`) |
 | `#…/solver/preferred` | extensions | rejected at validation |
 | `#…/solver/stable` | extensions | rejected at validation |
 | `#…/solver/complete` | extensions | rejected at validation |
 
 Grounded labeling is Dung's grounded semantics: the smallest complete extension containing all unattacked arguments and all arguments recursively defended by them. Anything attacked by an IN argument is OUT. Arguments that survive in un-attacked odd cycles or self-attack are UNDEC.
 
-Each solver declares the relation kinds it consumes. Unsupported kinds fail validation with `semantic/unsupported-relation-kind` (and the builder refuses them early). Current consumers: grounded / preferred / stable / complete accept `attack` and `contradiction`; bipolar / evidential also accept `support`. No current solver consumes `undercut`.
+Each solver declares the relation kinds it consumes. Unsupported kinds fail validation with `semantic/unsupported-relation-kind` (and the builder refuses them early with `builder/unsupported-relation-kind`). Current consumers: grounded / preferred / stable / complete accept `attack` and `contradiction`; bipolar / evidential also accept `support`. No current solver consumes `undercut`.
 
 | Solver | a | b | c |
 | --- | --- | --- | --- |
 | bipolar | out | in | in |
 | evidential | out | out | in |
 
-Evidential propagates A's defeat to B (necessary support). Bipolar does not (deductive support protects/affects the supporter instead).
+Evidential propagates A's defeat to B (necessary support). Bipolar does not (deductive support protects the supporter instead).
 
-### First-class solver components
+## First-class solver components
 
-A solver is an identified element in its parent's local scope. Child internals
-remain private, but the child ID is a valid parent relation endpoint. Evaluation
-is strictly bottom-up, so parent relations cannot feed state back into a child.
+A solver is an identified element in its parent's local scope. Child internals remain private, but the child ID is a valid parent relation endpoint. Evaluation is strictly bottom-up, so parent relations cannot feed state back into a child.
 
 ```edn
 #casualtheorics.argdown2/document
@@ -102,11 +127,7 @@ is strictly bottom-up, so parent relations cannot feed state back into a child.
    {:id :child-attacks-target :from :child :to :target}]}}
 ```
 
-Grounded boundaries map `IN` to `1`, `OUT` to `0`, and `UNDEC` to `nil`.
-Grounded parents import these as ordinary, intrinsically defeated, or
-self-attacking proxy nodes. See the
-[data design](docs/snowball/specs/2026-07-19-first-class-solver-components-design.md)
-and [formal companion](docs/snowball/specs/2026-07-19-first-class-solver-components-category-theory.md).
+`solve(document).native` is per-solver. `.aggregate` is the parent's view. `.boundary` is the typed confidence projection. `.children` is the per-child evaluation record. `.warnings` collects non-fatal diagnostics. Grounded boundaries map `IN` to `1`, `OUT` to `0`, and `UNDEC` to `nil`. Grounded parents import these as ordinary, intrinsically defeated, or self-attacking proxy nodes. See the [data design](docs/snowball/specs/2026-07-19-first-class-solver-components-design.md) and [formal companion](docs/snowball/specs/2026-07-19-first-class-solver-components-category-theory.md).
 
 ## MCP server
 
@@ -129,7 +150,7 @@ Fourteen tools, stdio transport, single binary `argdown-2-mcp`. Every mutating t
 | `validate` | Strict-load and return semantic diagnostics |
 | `solve` | Strict-load and compute component-native, aggregate, and boundary results |
 
-### One-click install (Claude Code plugin)
+### Claude Code plugin (one-click install)
 
 This repo is a Claude Code marketplace. Installing the `argdown-2` plugin registers the MCP server and ships skills for build / validate / solve.
 
@@ -137,7 +158,7 @@ This repo is a Claude Code marketplace. Installing the `argdown-2` plugin regist
 2. `/plugin install argdown-2@argdown-2`
 3. Enable the plugin if prompted. MCP starts via the checked-in binary launcher.
 
-**Never hand-edit EDN** while using the plugin — mutate graphs only through the builder MCP tools (`create_document`, `add_statement`, …).
+**Never hand-edit EDN** while using the plugin. Mutate graphs only through the builder MCP tools (`create_document`, `add_statement`, ...).
 
 Optional checks after changing plugin files:
 
@@ -164,7 +185,9 @@ This loads the shared skills under `plugins/argdown-2/skills` and a Pi extension
 
 **Never hand-edit EDN** — use the builder MCP tools only.
 
-**Claude Desktop** (`claude_desktop_config.json`) or other MCP clients via root [`mcp.json`](mcp.json):
+### Claude Desktop and other MCP clients
+
+For [`claude_desktop_config.json`](https://docs.claude.com/en/docs/claude-desktop/mcp) or any MCP client via the root [`mcp.json`](mcp.json):
 
 ```json
 {
@@ -181,9 +204,7 @@ Call `validate` before `solve` when you need a hard gate on incremental authorin
 
 ## Canonical EDN shape
 
-One file contains a `#casualtheorics.argdown2/document` map with `:id` and an
-identified `:root` solver map. Solver maps contain `:id`, `:interface`, optional
-`:imports`, and an `:elements` vector.
+One file contains a `#casualtheorics.argdown2/document` map with `:id` and an identified `:root` solver map. Solver maps contain `:id`, `:interface`, optional `:imports`, and an `:elements` vector.
 
 | Tag | Purpose |
 | --- | --- |
@@ -201,9 +222,7 @@ identified `:root` solver map. Solver maps contain `:id`, `:interface`, optional
 | `#casualtheorics.argdown2.argdown/contradiction` | Add attacks in both directions |
 | `#casualtheorics.argdown2.argdown/undercut` | Target an inference or relation; rejected by all current solvers |
 
-IDs and references are EDN keywords. IDs are unique within one solver component
-across statements, arguments, inferences, relations, and immediate child
-solvers. Sibling components may reuse local IDs.
+IDs and references are EDN keywords. IDs are unique within one solver component across statements, arguments, inferences, relations, and immediate child solvers. Sibling components may reuse local IDs.
 
 ## Validation
 
@@ -213,7 +232,7 @@ Use `validate(value)` when EDN has already been read with `edn-parser-js` and yo
 
 ## Project status
 
-What is here: strict EDN loader, Zod schema validation, cross-reference validator, grounded / bipolar / evidential label solvers, preferred / stable / complete multi-extension solvers, builder MCP server, atomic-write I/O layer, GitHub Actions CI and release workflows.
+What is here: strict EDN loader, Zod schema validation, cross-reference validator, six label solvers (grounded, bipolar, evidential) and three multi-extension solvers (preferred, stable, complete), first-class nested solver composition, builder MCP server, atomic-write I/O layer, Claude Code plugin marketplace, GitHub Actions CI and release workflows.
 
 What is not here: a custom `.argdown` language or parser, a source AST, a Mermaid or DOT renderer, a CLI binary (the MCP server is the only shipped binary), ASPIC+ or CLS 2013 full evidential labeling, a public license (the license will be chosen before the first public release).
 
@@ -233,7 +252,7 @@ import { load, solve } from "jsr:@casualtheorics/argdown-2";
 
 ## MCP (consumers)
 
-Use the checked-in launcher (`bash scripts/argdown-2-mcp`) which downloads the pinned native binary from GitHub Releases. No Deno/Node required on the consumer machine.
+Use the checked-in launcher (`bash scripts/argdown-2-mcp`) which downloads the pinned native binary from GitHub Releases. No Deno or Node required on the consumer machine.
 
 ## Development
 
