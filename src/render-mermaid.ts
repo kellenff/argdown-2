@@ -127,6 +127,7 @@ export function renderMermaid(
       }
     }
     const slug = allocateSlug(`sub_${child.id}`, usedSlugs);
+    idToSlug.set(child.id, slug);
     subgraphs.push(`    subgraph ${slug}["${child.id} - ${child.solver}"]`);
     for (const s of localSlugs) {
       subgraphs.push(`        ${s}`);
