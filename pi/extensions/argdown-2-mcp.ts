@@ -19,15 +19,22 @@ function parametersFromInputSchema(
 export default async function (pi: ExtensionAPI): Promise<void> {
   let session: ArgdownMcpSession | null = null;
   let connecting: Promise<void> | null = null;
+  let connectGeneration = 0;
 
   async function ensureConnected(ctx: {
     ui: { notify: (message: string, level?: string) => void };
   }): Promise<ArgdownMcpSession | null> {
     if (session) return session;
     if (!connecting) {
+      const generation = connectGeneration;
       connecting = (async () => {
         try {
-          session = await connectArgdownMcp(import.meta.url);
+          const connected = await connectArgdownMcp(import.meta.url);
+          if (generation !== connectGeneration) {
+            await connected.close();
+            return;
+          }
+          session = connected;
         } catch (error) {
           const message = error instanceof Error
             ? error.message
@@ -87,7 +94,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
                 type: "text",
                 text: `argdown-2 MCP error: ${message}. Try /reload`,
               }],
-              details: {},
+              details: { isError: true },
             };
           }
         },
@@ -96,6 +103,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   });
 
   pi.on("session_shutdown", async () => {
+    connectGeneration++;
     if (session) {
       await session.close();
       session = null;
