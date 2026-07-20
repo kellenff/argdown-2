@@ -98,18 +98,29 @@ describe("Pi package", () => {
     const source = readText("pi/extensions/argdown-2-mcp.ts");
     expect(source).toMatch(/export\s+default\s+async\s+function/);
   });
+});
 
-  it("bridges MCP over bash launcher (initialize + listTools)", async () => {
-    const extensionUrl = new URL(
-      "../pi/extensions/argdown-2-mcp.ts",
-      import.meta.url,
-    ).href;
-    const session = await connectArgdownMcp(extensionUrl);
+// StdioClientTransport.close() races a 2s setTimeout; Deno 2.4.5 sanitizeOps
+// treats that timer as a leak even when .unref()'d. Isolate the subprocess
+// bridge test so shape checks stay strict.
+describe({
+  name: "Pi package MCP bridge",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn() {
+    it("bridges MCP over bash launcher (initialize + listTools)", async () => {
+      const extensionUrl = new URL(
+        "../pi/extensions/argdown-2-mcp.ts",
+        import.meta.url,
+      ).href;
+      const session = await connectArgdownMcp(extensionUrl);
 
-    try {
-      expect(session.tools.map((t) => t.name).sort()).toEqual(TOOL_NAMES);
-    } finally {
-      await session.close();
-    }
-  });
+      try {
+        expect(session.tools.map((t: { name: string }) => t.name).sort())
+          .toEqual(TOOL_NAMES);
+      } finally {
+        await session.close();
+      }
+    });
+  },
 });

@@ -26,7 +26,8 @@ export async function connectArgdownMcp(
   const transport = new StdioClientTransport({
     command: "bash",
     args: [launcher],
-    stderr: "pipe",
+    // Avoid an unread PassThrough when stderr is "pipe".
+    stderr: "ignore",
   });
 
   await client.connect(transport);
@@ -43,7 +44,8 @@ export async function connectArgdownMcp(
       inputSchema: tool.inputSchema as Record<string, unknown> | undefined,
     }));
   } catch (error) {
-    await client.close();
+    await client.close().catch(() => {});
+    await transport.close().catch(() => {});
     throw error;
   }
 
@@ -51,7 +53,8 @@ export async function connectArgdownMcp(
     client,
     tools,
     close: async () => {
-      await client.close();
+      await client.close().catch(() => {});
+      await transport.close().catch(() => {});
     },
   };
 }
