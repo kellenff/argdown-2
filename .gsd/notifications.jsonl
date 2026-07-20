@@ -1,0 +1,4 @@
+{"id":"f2df2a53-e4d9-46d7-8d27-e237d1b434d2","ts":"2026-07-20T19:56:10.452Z","severity":"info","message":"Use /gsd prefs project to update project preferences.","source":"notify","read":false}
+{"id":"9bc4bb7a-c4b9-490f-ad08-13d239b2da74","ts":"2026-07-20T19:56:16.418Z","severity":"info","message":"Using existing global GSD skill preferences at /Users/kellen/.gsd/PREFERENCES.md","source":"notify","read":false}
+{"id":"2bcba47f-720e-4cd0-ae81-14fb3599a2e3","ts":"2026-07-20T19:56:16.425Z","severity":"info","message":"GSD preferences (global) — pick a category to configure.","source":"notify","read":false}
+{"id":"0db87cb4-ef65-46ab-a885-5636a745c101","ts":"2026-07-20T19:56:35.687Z","severity":"info","message":"→ /gsd quick config global","source":"notify","read":false}

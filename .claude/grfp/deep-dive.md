@@ -1,265 +1,207 @@
-# Deep Dive — argdown-2 (EDN pipeline)
+# Deep-Dive Report — argdown-2
 
-**Stage:** 1 of 5 (Deep Dive) — fresh run, 2026-07-18
-**Codebase HEAD:** `main`, version `0.2.0-alpha1` (post-breaking-reset)
-**Graph tools available:** Partial — codebase-memory `available: true` (`Users-kellen-Projects-argdown-2`, 520 nodes, 1200 edges, status `ready`), but the `claudikins-tool-executor` plugin is **not installed** in this session. The `mcp__plugin_serena_serena__*` family (list_dir, get_symbols_overview, find_symbol, find_referencing_symbols, read_file) was used in place of `search_graph` / `trace_path` / `get_code_snippet` / `query_graph` / `get_architecture`. **Method:** symbol-level + Read; no Cypher, no graph degrees.
-**Note on prior 2026-06-27 deep-dive:** describes parser + Chevrotain + Mermaid + 15-solver surface that the breaking reset (commit `73a9ba1`) deleted. **Stale** as a description of current code. Replaced wholesale below.
-
----
-
-## 0. Drift status (vs prior 2026-06-27 deep-dive)
-
-| Item | Prior report | Current state |
-| --- | --- | --- |
-| Language surface | Custom `.argdown` + BNF | **EDN only.** `#casualtheorics.argdown2.solver/grounded` roots, `#casualtheorics.argdown2.argdown/{statement,argument,inference,support,attack,contradiction,undercut}` entries |
-| Parser | Chevrotain 11 | **None.** `edn-parser-js@2.0.2` (with `.yarn/patches/`) is the only reader |
-| Public API | 31 functions, 38 types | **3 functions, 14 types** (`load`, `validate`, `solve`; 14 type aliases) |
-| Solvers | 15 (Dung, Bipolar, ASPIC+, Evidential × grounded/preferred/stable/complete) | **1.** Grounded Dung. Other solvers deleted in reset |
-| Renderer | Mermaid `flowchart TD` | **None.** EDN round-trip via `writeEdn()` only |
-| CLI surface | `argdown <subcommand> <file>` | **None.** Sole binary is `argdown-2-mcp` (the MCP server) |
-| MCP surface | Legacy custom-language MCP | **Builder MCP** (11 tools, stdio, `path` or `source` modes) |
-| Bench | 7 parser fixtures × parser benches + 4 solver benches | **7 EDN fixtures × 3 task types** (`load`, `solve`, `load-solve`) over `tinybench` |
-| Stryker | 80%+ threshold, parser+15-solver module set | **80% break, 4 behavioral files** (`edn.ts`, `grounded.ts`, `reduce-dung.ts`, `validate.ts`). `schema.ts` deliberately excluded as low-value mutants |
-| Distribution | Pre-publish | **GitHub Releases tarball via `.github/workflows/release.yml`** — no npm publish |
-| Spec doc | `docs/GRAMMAR.bnf` (640 lines) | **None.** Pre-reset only. Spec lives in code (the namespace + tag set) |
-
-**Resolution:** The prior 2026-06-27 deep-dive no longer reflects current state in any section. This report is the new baseline. The previous artifacts under `.claude/grfp/{deep-dive,crystal-ball,brain-jam,think-tank,pen-wielding}.md` from 2026-06-27 are historical, not authoritative.
+**Date:** 2026-07-19
+**Project version:** 0.2.0-alpha4 (with significant Unreleased changes)
+**Graph tools:** partial (Serena cache present, but `find_symbol`/`search_for_pattern` return empty → fell back to Read/Bash)
+**Method:** filename-fallback for everything (Read, Bash with wc/find/grep; project is small enough — 6075 LOC src/)
+**Note on prior 2026-06-27 / 2026-07-18 deep-dives:** describe 0.1.0-alpha1 parser / 0.2.0-alpha1 reset state; current run captures alpha4 + Unreleased (first-class solver components, evidential solver, builder nesting, marketplace plugin, removed Cursor plugin).
 
 ---
 
 ## 1. What problem does this solve?
 
-`argdown-2` is a small TypeScript library that takes an **EDN document** describing a theory of statements, arguments, and relations, validates it strictly, and computes **grounded Dung labels** for every entity. Its second surface is an **MCP builder server** that lets a model (or human) author or edit the same document incrementally through tool calls.
+`argdown-2` is a **deterministic, formally grounded argument-graph solver** delivered as a TypeScript library and an MCP server. Concretely:
 
-The pitch in one sentence: *argument maps are data, and the right format is EDN, and the right label set is grounded Dung's in / out / undec.*
+- Loads, validates, and solves **argument graphs encoded in EDN** (Extensible Data Notation).
+- Implements Dung-style abstract argumentation semantics (grounded, preferred, stable, complete) plus bipolar / evidential reductions of support.
+- Replaces the original Argdown 1.x custom `.argdown` language pipeline with a **canonical EDN-only representation** — parser/AST/Mermaid/CLI are gone in 0.2.0.
 
-It sits in two places simultaneously:
+Two audiences:
+1. **Library users** who want a strict, EDN-native argumentation solver in TypeScript/Deno.
+2. **LLM agents** (Claude Code, Claude Desktop, any MCP client) who build and solve argument graphs through 14 MCP builder tools.
 
-- Between argument-mining pipelines and formal-semantics evaluators. The EDN layer separates "how the document is stored" from "how it is computed over."
-- Between LLM agents and an authoritative theory. The MCP server turns the document into something an agent can edit, list, validate, and solve through tool calls, with the same validation the library enforces.
+## 2. Tech stack
 
-The "post-reset" qualifier is the project's deliberate bet. `0.1.0-alpha1` shipped a custom `.argdown` language, parser, AST, Mermaid renderer, MCP server, and 15-solver surface. `0.2.0-alpha1` deleted all of that in favor of EDN-only input, grounded-Dung-only output, and a builder MCP server. **No migration tool, no shim, no two-track API.** `0.1.0` is in `CHANGELOG.md` for history, not for export.
+| Layer | Tech |
+|---|---|
+| Runtime | **Deno** (no Node-only path; release binaries compiled from `src/mcp/cli.ts`) |
+| Language | TypeScript strict + `noImplicitAny` |
+| Validation | **Zod 4.4.3** (cross-reference checks layered on top) |
+| EDN parsing | `edn-parser-js` (vendored at `./vendor/edn-parser-js/lib/index.js`) |
+| MCP | `@modelcontextprotocol/sdk` 1.29.0 (stdio transport) |
+| Testing | `deno test -A --frozen --parallel` over 14 `*.test.ts` files |
+| Mutation testing | Stryker + Vitest (alpha2 added it; current status unclear) |
+| Distribution | JSR (`@casualtheorics/argdown-2`), GitHub Releases (native MCP binaries) |
 
-The EDN choice matters for two reasons:
-
-- The wire format is **parseable by any EDN library, in any language**. Any pipeline that can read EDN can already take a `0.2.0-alpha1` document; the library sits at the validation and computation layer, not at the file-format layer.
-- The theory is **explicitly namespaced**. Every tag carries `#casualtheorics.argdown2.solver/...` or `#casualtheorics.argdown2.argdown/...`. There is no inference to do from the document about which theory it belongs to.
-
-## 2. Who is it for?
-
-- **Argument-mining / RAG teams** who already have an EDN-shaped pipeline and want a strict, type-safe, mutation-tested library that turns their document into grounded labels. The discriminated-union `model.ts` types and the explicit `EntityId` / `InferenceId` brand types are exactly what TS consumers want.
-- **LLM agent authors** writing evaluation or argumentation tooling. The MCP builder server is the cheap path: 11 tools, all `path` or `source` mode, soft-warning-but-still-succeeds apply model, hard-error `validate` and `solve` paths.
-- **Formal-reasoning engineers** who want grounded Dung evaluation as a pure function over a typed AST, not as a side effect of an editor session.
-- **The same project's TypeScript monorepo (future)** — `CHANGELOG.md` describes a release tarball distribution that is itself the integration artifact.
-
-It is **not yet**: a public npm package (`CHANGELOG.md` is explicit: install from a GitHub Release tarball, not npm). It is **not**: a multi-solver library (preferred / stable / complete / bipolar / ASPIC+ / evidential are gone in the reset — though `examples/argdown1-censorship.edn` retains `support` and `undercut` tags that emit `reduce/<kind>-omitted` warnings rather than contributing to the Dung reduction).
-
-## 3. Core features
-
-| Feature | Status | Notes |
-| --- | --- | --- |
-| `load(source)` → typed `GroundedDocument` *or* diagnostics | Yes | Three-stage: EDN read → Zod schema → cross-reference validate. Failures are diagnostic objects with semantic paths, **never partial documents**. `index.test.ts` 37-50 confirms no `document` field on `ok: false` |
-| `validate(value)` for pre-parsed EDN values | Yes | Reuses stages 2 + 3 only (skips the EDN read). `index.test.ts` 52-56 |
-| `solve(document)` → grounded labels (in/out/undec) | Yes | Pinned to `casualtheorics.argdown2.solver/grounded` only. Returns `{ labels, solver, warnings }`. `reduce/support-omitted` and `reduce/undercut-omitted` for relations that are preserved but ignored |
-| `readEdn` / `decodeWire` / `validateCandidate` exports | Indirect | Library only exposes `load`, `validate`, `solve`. The pipeline pieces are package-internal |
-| `writeEdn(doc)` round-trip | Yes | Used by `edn-write.test.ts` for round-trip tests, by `soft-parse.test.ts`, by `builder/apply.ts`. Not exported from `index.ts` (deliberate — see Project Status below) |
-| MCP builder server (11 tools, stdio) | Yes | `create_document`, `add_statement`, `update_statement`, `add_argument`, `add_inference`, `add_relation`, `remove_element`, `remove_relation`, `list_elements`, `validate`, `solve`. Single namespace, MCP v1.29.0 SDK |
-| Soft-warning mutations | Yes | `apply(doc, edit)` may emit `builder/unresolved-ref` and proceed; `builder/duplicate-id` and `builder/missing-id` **refuse** the edit (return `{ refused, warnings, diff: [] }`) |
-| Text-or-id reference resolution | Yes | `resolveRef(doc, raw)` returns `via: 'id' \| 'text'`. `text` mode is exact-match-only and treats ambiguity as a soft warning with slugified stored id (`softRefId`) |
-| Bench harness + baseline JSON | Yes | tinybench, `perf-baseline.json` schema v1, `--baseline` and `--check` modes |
-| 7 EDN bench fixtures | Yes | `small-minimal`, `small-relations`, `small-argument`, `medium-censorship`, `heavy-attacks`, `deep-arguments`, `large-stress`. `pipeline.bench.test.ts` confirms each fixture loads cleanly |
-| Stryker mutation testing, 80% break | Yes | Focused on `edn.ts`, `grounded.ts`, `reduce-dung.ts`, `validate.ts`. `schema.ts` excluded (declarative Zod schemas produce equivalent mutants) |
-| Broken-on-error documents | **No (deliberate)** | `index.test.ts` 37-50: malformed input returns diagnostics and no document field. There is no partial-AST-on-error in this codebase |
-
-## 4. Architecture
+## 3. Dependencies (from `deno.json`)
 
 ```
-[ EDN source string ]
-        |
-        |  readEdn  (edn-parser-js 2.0.2 + 1 patch)
-        v
-[ Raw EDN value ]  -----  schema.ts: decodeWire (Zod + per-tag decoder)
-        |
-        |  Zod union of: number|boolean|string|keyword|symbol|char|
-        |                array|map|set|list|tagged|metadata
-        |  Plus per-namespace decoders for the 4 element tags.
-        v
-[ CandidateDocument ]  -----  validate.ts: validateCandidate
-        |
-        |  1. collectKinds (statement/argument/inference id space)
-        |  2. validateInferenceReferences (every premise + conclusion is a statement id)
-        |  3. validateRelationReferences (attack/contradiction/support endpoints are
-        |     statement or argument; undercut endpoints are inference)
-        v
-[ GroundedDocument ]  -----  reduce-dung.ts: reduceToDung
-        |
-        |  Drops support + undercut with a reduce/<kind>-omitted warning.
-        |  Contradiction becomes two attacks.
-        v
-[ DungFramework ]  -----  grounded.ts: groundedLabels
-        |
-        |  Fixed-point iteration: IN iff all attackers are OUT;
-        |  OUT iff any attacker is IN. Self-attacks stay UNDEC.
-        v
-[ Map<EntityId, 'in' | 'out' | 'undec'> ]
+"edn-parser-js": "./vendor/edn-parser-js/lib/index.js"
+"zod": "npm:zod@4.4.3"
+"@modelcontextprotocol/sdk/": "npm:/@modelcontextprotocol/sdk@1.29.0/"
+"@std/assert": "jsr:@std/assert@1"
+"@std/expect": "jsr:@std/expect@1"
+"@std/testing/bdd": "jsr:@std/testing@1/bdd"
+"@std/testing/": "jsr:@std/testing@1/"
 ```
 
-The library surface (`index.ts`) is exactly three functions: `load`, `validate`, `solve`. Everything else in the diagram (`readEdn`, `decodeWire`, `validateCandidate`, `reduceToDung`, `groundedLabels`) is exported from its own file for testing but is not part of the public package surface.
+`nodeModulesDir: "auto"`, `unstable: ["npm-lazy-caching", "sloppy-imports", "node-globals"]`, strict TS with `lib: ["es2022", "deno.window"]`.
 
-The MCP server surface is parallel, not orthogonal. `mcp/tools.ts` calls `load` / `solve` / `validate` directly, then wraps the result in MCP-shaped JSON. `mcp/io.ts` adds a `path` / `source` document ref on top. The MCP server can mutate (`create_document`, `add_*`, `remove_*`) by going through `builder/apply.ts`, which mutates a `CandidateDocument` and round-trips through `writeEdn` to produce the new persisted form.
+**Contradiction to flag:** `deno.json` declares `"license": "Unlicense"`. README says "Private. The license will be chosen before the first public release." These are inconsistent — README is current posture; deno.json field is likely aspirational.
 
-### Why EDN and not the prior custom language
+## 4. Entry points
 
-The `0.2.0-alpha1` reset `CHANGELOG.md` is explicit on this:
+### Library
+- `src/index.ts` — re-exports types + three functions: `load`, `validate`, `solve`
+- `src/index.ts:63` — `load(source: string): LoadResult` (EDN → validated Document)
+- `src/index.ts:58` — `validate(value: unknown): ValidationResult`
+- `src/index.ts:68` — `solve(document: Document): ComponentSolveResult`
 
-> ### Removed
-> - Custom `.argdown` lexer, parser, source AST, stringifier, CLI, MCP server, and Mermaid renderer.
-> - Bipolar, ASPIC+, evidential, preferred, stable, and complete solver surfaces.
-> - Parser and solver benchmark/mutation infrastructure.
->
-> ### Fixed
-> - Grounded labeling now applies the formal conditions: IN iff all attackers are OUT; OUT iff any attacker is IN. Self-attacks are UNDEC.
+### MCP server
+- `src/mcp/cli.ts:3` — `run()` from `./server.js`
+- `src/mcp/server.ts:19` — `buildServer()` registers 14 tools via `McpServer`
+- Binary: `argdown-2-mcp` (stdio), launched via `bash scripts/argdown-2-mcp`
 
-The reset's stated motivation: the custom parser was the source of complexity, and the custom solver surfaces had drifted from formal correctness. EDN + grounded Dung is the smallest thing that is both standards-based and formally correct.
+### Solver pipeline (dataflow)
+1. `src/edn.ts` — strict EDN reader → raw JS value
+2. `src/schema.ts` (877 lines — largest file) — Zod decoding into typed `Document`
+3. `src/validate.ts` (422 lines) — identity, reference, endpoint, per-solver relation-kind validation
+4. `src/component-eval.ts` (167 lines) — folds component tree post-order
+5. `src/reduce-dung.ts`, `src/reduce-bipolar.ts`, `src/reduce-evidential.ts`, `src/multi-extension.ts` (263 lines) — solver reducers
 
-## 5. Entry points
+### Builder MCP
+- `src/builder/apply.ts` (703 lines) — pure apply function for builder ops (add/remove/update)
+- `src/mcp/tools.ts` — wraps builder ops as MCP tool handlers
 
-- `src/index.ts:load` (library) — `package.json` `main: "./dist/index.js"`, `types: "./dist/index.d.ts"`. Called by `index.test.ts`, `edn-write.test.ts`, `parity.test.ts`, `soft-parse.test.ts`, `pipeline.bench.ts`, `mcp/tools.ts` (transitively through `runSolve`/`runValidate`)
-- `src/index.ts:solve` — same callers as `load` plus `pipeline.bench.ts` directly
-- `src/mcp/cli.ts` — `package.json` `bin.argdown-2-mcp: "./dist/mcp/cli.js"`. 9-line shim that calls `run()`. `run()` is exported from `src/mcp/server.ts:130` and `src/mcp/server.ts:buildServer()` is the only other entry into the MCP tree
-- `src/pipeline.bench.ts:main` — `yarn bench` / `yarn bench:baseline` / `yarn bench:check`. Reads `src/bench.fixtures/*.edn`, runs tinybench across `TASK_TYPES = ['load', 'solve', 'load-solve']`, writes or compares `perf-baseline.json`
+## 5. Core features
 
-Distribution: `.github/workflows/release.yml` (CHANGELOG references it) builds, tests, packs the tarball, and attaches it to a GitHub Release whenever `package.json` version changes on `main`. There is no `publish.yml` to npm; the CHANGELOG is explicit that the npm tarball is from a GitHub Release URL, not the registry.
+### 5.1 Library API (`{ ok: true, ... } | { ok: false, errors }`)
+**Single return-shape invariant**: every entry point returns a tagged result. Library never throws, never returns partial documents. Strongest framing in the codebase.
 
-## 6. Modules by file
+### 5.2 Solver catalog
+| Solver | Output | Support | Reduction |
+|---|---|---|---|
+| `grounded` | labels | rejected at validation | — |
+| `bipolar` | labels | yes | deductive (`B → sup:A->B → A`) |
+| `evidential` | labels | yes | necessary (`A → nec:A->B → B`) |
+| `preferred` | extensions | rejected | multi-extension |
+| `stable` | extensions | rejected | multi-extension |
+| `complete` | extensions | rejected | multi-extension |
 
-| File | Responsibility | LOC (approx) | Tests |
-| --- | --- | --- | --- |
-| `src/index.ts` | Public surface (`load`, `validate`, `solve`) + type re-exports | 38 | `index.test.ts` |
-| `src/edn.ts` | EDN read; one top-level value; diagnostic on parse failure or wrong form count | 32 | `edn.test.ts` |
-| `src/schema.ts` | Zod recursive `ednValueSchema`, `decodeWire`, per-tag decoders, collection uniqueness check | ~270 | `schema.test.ts` |
-| `src/validate.ts` | `validateCandidate` — collect id kinds, validate inference refs, validate relation refs, brand `EntityId` / `InferenceId` | ~245 | `validate.test.ts` |
-| `src/model.ts` | Types: `EntityId`, `InferenceId`, `Label`, `Diagnostic`, candidate vs. validated, `DungFramework`, `GROUNDED_SOLVER_TAG` constant | 113 | (covered transitively) |
-| `src/grounded.ts` | Iterative fixed-point labeling | 30 | `grounded.test.ts` |
-| `src/reduce-dung.ts` | `reduceToDung` — drop support/undercut with warning; contradiction becomes 2 attacks | 50 | `reduce-dung.test.ts` |
-| `src/edn-write.ts` | `writeEdn`, `printWire`, per-element printers | ~245 | `edn-write.test.ts` |
-| `src/builder/apply.ts` | `apply(doc, edit)` — pure document-edit application. Refuses duplicates, slugifies unresolved refs | ~250+ | `builder/apply.test.ts` |
-| `src/builder/soft-parse.ts` | `softParse` = `readEdn` + `decodeWire` (no semantic validation; the builder uses this so it can ingest documents with missing refs and resolve them) | 13 | `builder/soft-parse.test.ts` |
-| `src/builder/resolve-ref.ts` | `resolveRef` (statement/argument, id-or-text), `resolveInferenceRef` (id only) | 50 | `builder/resolve-ref.test.ts` |
-| `src/builder/types.ts` | `DocumentEdit`, `DiffOp`, `ApplyResult`, `BuilderWarning`, `RefResolution` | 65 | (covered transitively) |
-| `src/mcp/server.ts` | `buildServer()` registers 11 tools; `run()` connects stdio transport | ~135 | `mcp/server.test.ts` |
-| `src/mcp/tools.ts` | 11 `run*` functions: `runCreateDocument`, `runAddStatement`, `runUpdateStatement`, `runAddArgument`, `runAddInference`, `runAddRelation`, `runRemoveElement`, `runRemoveRelation`, `runListElements`, `runValidate`, `runSolve` | ~345 | `mcp/tools.test.ts` |
-| `src/mcp/io.ts` | `DocumentRef` (path or text), `loadDocumentRef`, `saveDocumentRef`, `createDocumentRef` (atomic write via temp + rename) | ~110 | `mcp/io.test.ts` |
-| `src/pipeline.bench.ts` | tinybench harness, baseline JSON loader/checker | ~318 | `pipeline.bench.test.ts` |
-| `examples/argdown1-censorship.edn` + `examples/argdown1-censorship.mapping.md` | The canonical port. Medium-censorship fixture in `src/bench.fixtures/` is a derivative | — | — |
+### 5.3 First-class solver components (Unreleased)
+- Solver is an **identified element** in its parent's local scope.
+- Child internals private; child ID is a valid parent relation endpoint.
+- Evaluation strictly **bottom-up** (parent relations can't feed back into child).
+- Boundary layers: `native`, `aggregate`, `boundary`, `children`, `warnings`.
+- Parent sees only the child's boundary confidence — clean modular composition.
 
-## 7. Tooling
+### 5.4 MCP server (14 tools)
+| Category | Tools |
+|---|---|
+| Document lifecycle | `create_document`, `list_elements` |
+| Statements/Args/Inferences | `add_statement`, `update_statement`, `add_argument`, `add_inference` |
+| Relations | `add_relation`, `remove_relation` |
+| Solver nesting | `add_solver`, `set_import`, `remove_import` |
+| Removal | `remove_element` |
+| Validation/Solving | `validate`, `solve` |
 
-| Tool | Pin | Role |
-| --- | --- | --- |
-| `edn-parser-js` | `2.0.2` (patched) | EDN read; single source of truth for the wire format |
-| `zod` | `^4.4.3` | Recursive `ednValueSchema` for raw EDN value validation; used in MCP tool input shapes |
-| `@modelcontextprotocol/sdk` | `^1.29.0` | The MCP server (`McpServer`, `StdioServerTransport`) |
-| `vitest` | `^3` | Test runner; required by `@stryker-mutator/vitest-runner` 9.x |
-| `typescript` | `^5.4.5` | Build + type-check |
-| `oxlint`, `oxfmt` | `^0.6.0` | Lint + format; pre-commit via husky + lint-staged |
-| `@stryker-mutator/{api,core,typescript-checker,vitest-runner}` | `^9.6.1` | Mutation testing with Vitest runner and TypeScript checker |
-| `tinybench` | `^2.6.0` | Pipeline benchmark harness |
-| `tsx` | `^4.0.0` | TS execution for bench runner |
-| `@types/node` | `^20.12.0` | Node 18+ types |
-| `husky` + `lint-staged` | `^9.1.7` / `^17.0.8` | Pre-commit `oxfmt` |
-| `knip` | `6.27.0` (patched) | Unused/missing dependency check |
+Mutating tools accept `path` (atomic write via temp+rename) **or** `source` (returns updated text). Optional `parentId` scopes mutation to a nested solver. Builder refuses `builder/duplicate-id`, `builder/missing-id`, `builder/unsupported-relation-kind` with a `refused` field and no document change.
 
-Patches: `.yarn/patches/edn-parser-js-npm-2.0.2.patch` and `.yarn/patches/knip-npm-6.27.0-648296b906.patch`. Both referenced from `package.json` `resolutions`.
+### 5.5 Claude Code plugin (one-click install)
+- Marketplace: `.claude-plugin/marketplace.json` registers `argdown-2` plugin at `./plugins/argdown-2`
+- Plugin bundles: MCP launcher + 3 skills (`build-graph`, `interpret-solve`, `validate-debug`)
+- Distribution: launch via `bash ${CLAUDE_PLUGIN_ROOT}/scripts/argdown-2-mcp`
+- Version pinned in `scripts/argdown-2-mcp.version` (CI enforces pin matches `deno.json` version)
 
-No security advisories visible. No hardcoded secrets.
+## 6. Architecture (dataflow)
 
-## 8. Tests
-
-- `src/index.test.ts` — public API smoke (loads, fails, validates pre-parsed)
-- `src/edn.test.ts`, `src/schema.test.ts`, `src/validate.test.ts`, `src/grounded.test.ts`, `src/reduce-dung.test.ts` — per-module behavioral coverage
-- `src/edn-write.test.ts` — round-trip via builder → `writeEdn` → `load`
-- `src/builder/{apply,soft-parse,resolve-ref}.test.ts` — builder semantics
-- `src/mcp/{server,tools,io}.test.ts` — server registration, tool handlers, I/O atomicity
-- `src/parity.test.ts` — loads `examples/argdown1-censorship.edn`, checks labels against the pure-attack expected set, asserts support/warning count
-- `src/pipeline.bench.test.ts` — every fixture in `FIXTURES` loads cleanly
-
-The `08aab62` commit on `main` adds a "refuse no-write" test pattern to MCP tools, indicating a recent tightening: pass both `path` and `source` to a mutating tool, expect `refused`.
-
-## 9. CI / Automation
-
-`.github/workflows/release.yml` is referenced by `CHANGELOG.md` as the single workflow. It auto-builds, tests, mutates (?), packs the tarball, and attaches to a GitHub Release on every `package.json` version bump on `main`. No additional CI files visible. **To be confirmed during Stage 2 (Crystal Ball) by listing `.github/workflows/` directly.**
-
-Local validation:
-```bash
-yarn lint           # oxlint src
-yarn format:check   # oxfmt --check --threads=1 src
-yarn typecheck      # tsc --noEmit
-yarn test           # vitest run --passWithNoTests
-yarn mutate         # stryker run, 80% threshold
-yarn bench          # tinybench pipeline
-yarn bench:check    # vs perf-baseline.json
-yarn knip           # dead-dep check
-yarn build          # tsc to dist/
-yarn mcp            # node ./dist/mcp/cli.js
+```
+                ┌─────────────────────┐
+   raw source → │  load(source)       │
+                │  ├─ readEdn (EDN)   │
+                │  ├─ decodeWire (Zod)│
+                │  └─ validate        │
+                │     ├─ endpoints    │
+                │     ├─ references   │
+                │     └─ relation-kind│
+                └─────────┬───────────┘
+                          │ Document
+                          ▼
+                ┌─────────────────────┐
+                │  solve(document)    │
+                │  evaluateComponent  │
+                │  post-order fold:   │
+                │   ├─ native layer   │
+                │   ├─ aggregate layer│
+                │   └─ boundary layer │
+                └─────────────────────┘
 ```
 
-## 10. Chat History Context
+Key invariant: **parent relations cannot feed state back into a child**. Children are sealed; their boundaries are the only thing visible upward.
 
-The project's auto-memory at `.claude/projects/-Users-kellen-Projects-argdown-2/memory/MEMORY.md` carries 7 entries:
+## 7. CI / Release
 
-- `always-commit-pnp-loaders.md` — `.pnp.cjs` and `.pnp.loader.mjs` are tracked; `node_modules/` is gitignored (Yarn 4 PnP).
-- `grfp-aborted-grammar-drift.md` — README pipeline paused; the BNF describes `:-` rules, code removed them in `73a9ba1`. Fix spec or re-add rules before resuming. **(This memory is the root cause of the 2026-06-27 stale artifacts — the reset moot'd it.)**
-- `scc-grounded-incorrect.md` — SCC-based Modgil labeling omits args attacked only by a cyclic-SCC member that's counter-attacked externally. Use argument-level Modgil via `defenseClosure(new Set(), map)`. Tarjan SCC kept for topological-order optimizations elsewhere. **(Note: with the reset deleting preferred/stable/complete ASPIC+ surfaces, SCC no longer applies at the Dung reduction level. May still apply if a future solver re-introduces SCC — stale in current code.)**
-- `defense-closure-full-map.md` — `isClosedUnderDefense(lifted, map)` must use the FULL map, not `subMap`. **(Reset deleted the function — stale.)**
-- `residue-search-full-map.md` — All residue-search checks on T ∪ G use full map. **(Stale in current code.)**
-- `branded-attack-map.md` — Brand `Map<string, string[]>` to express 'attackers-of' direction. **Still relevant** — `model.ts:97-100` already uses `attackersByTarget: ReadonlyMap<EntityId, ReadonlySet<EntityId>>`, but the brand is on the value side (`EntityId`), not the key. Branded AttackMap was deferred per the memory note.
+- `.github/workflows/ci.yml` (PR to main):
+  - `npm: allowlist` → `lint` → `fmt:check` → `typecheck` (`deno check`) → `test` → `check:mcp-deno` → `compile:mcp` → probe binary
+  - `dry-run-publish` job verifies JSR slow-types compliance
+- `.github/workflows/release.yml` (push to main):
+  - Always publishes timestamped `*-dev.<UTC>` prerelease to JSR (OIDC, no mutable "latest")
+  - On `deno.json` version bump → compiles 4 MCP binaries (linux/darwin × x86_64/aarch64), probes Linux, generates checksums, publishes stable JSR + GitHub Release with binaries + checksums
+  - Concurrency: release queue does NOT cancel-in-progress (back-to-back merges both publish)
 
-The reset has demolished most of these. Stage 5 (Pen Wielding) must not surface them as live architecture; they are **historical** reasoning about code that is gone.
+## 8. What makes it unique
 
-## 11. Output Format
+1. **EDN as canonical.** Most argumentation frameworks expose JSON or custom DSLs. EDN gives namespaced tagged literals (`#casualtheorics.argdown2.solver/grounded`), keywords-as-IDs, and rich structural data without losing human readability.
+2. **One return shape.** `{ok, ...} | {ok, errors}` for every entry point — no exceptions, no partial documents.
+3. **First-class nested solvers.** Solvers are identified, scoped, and composable — unusual for argumentation libraries that treat the whole graph as one solver.
+4. **MCP-as-API.** The same validation/solver pipeline powers library calls AND agent tool calls. There's no separate code path.
+5. **Atomic-write I/O.** MCP tools either succeed with the new file in place, or don't touch the existing file — backed by temp+rename.
+6. **CLAUDE.md for plugins.** Soft rule "never hand-edit EDN; use builder MCP tools only" is enforced in the plugin's own skills.
 
-The pen-wielding-stage deliverable will be an updated `README.md`. Today the README is already a post-reset artifact — accurate, has EDN quick start, MCP server section, validation section, grounded reduction section, Argdown 1.x parity example, breaking-reset note, Development section. Stage 5 will verify and tighten (the pen-wielding-skill sets the section order and the sound-check rules).
+## 9. Test fixtures and rigor
 
-## 12. Snapshot Summary
+- 7 EDN fixtures in `src/bench.fixtures/` — `small-minimal`, `small-relations`, `small-argument`, `medium-censorship`, `heavy-attacks`, `deep-arguments`, `large-stress`
+- `src/parity.test.ts` — verifies that grounded labels match the **pure-attack expected set** from the Argdown 1.x censorship tutorial
+- Tests run on every PR (gates quality → publish dry-run)
 
-```markdown
-# Deep Dive Findings
+## 10. Open threads / contradictions
 
-## Project Overview
-- Type: Library + MCP server (TypeScript, ESM, Node ≥18, Yarn 4 PnP)
-- Tech Stack: TypeScript, edn-parser-js (patched), Zod 4, @modelcontextprotocol/sdk, Vitest 3, Stryker 9, tinybench, oxlint/oxfmt
-- Value Proposition: strict EDN loader + ground Dung labeling + builder MCP server for theory-of-arguments documents
-- Entry Point: `load(source)` / `validate(value)` / `solve(document)` (library); `argdown-2-mcp` stdio server (binary)
-- Architecture: three-stage pipeline (EDN read → Zod validate with namespaced decoders → cross-reference validate) → reduce-to-Dung → iterative fixed-point labeling; MCP tools wrap the library and add a builder layer
+- **License.** `deno.json` declares `"license": "Unlicense"`. README says "Private. The license will be chosen before the first public release." Inconsistent; README is current posture.
+- **Status.** 0.2.0-alpha4 is pre-1.0. Lots of `Unreleased` work (first-class solver components, evidential solver, builder nesting) — public release posture is "early".
+- **Cursor plugin removed.** Was in alpha2, gone in unreleased. Codebase is now Claude-Code-only for plugin distribution.
+- **Mutation testing paused?** Alpha2 added Stryker; not mentioned in alpha3/4 changelogs or current README.
+- **EDN learning curve.** Most JS/TS developers don't know EDN. README opens with raw EDN syntax before explaining the rationale.
 
-## Dependencies
-- Runtime: Node ≥18, edn-parser-js@2.0.2 (patched), zod@^4.4.3, @modelcontextprotocol/sdk@^1.29.0
-- Dev: vitest, typescript, oxlint, oxfmt, @stryker-mutator/*, tinybench, tsx, @types/node, husky, lint-staged, knip
+## 11. Vocabulary / framing candidates
 
-## Entry Points (from find_referencing_symbols + Read)
-- `src/index.ts:load` (used in: index.test, edn-write.test, parity.test, soft-parse.test, pipeline.bench, mcp/tools.test transitively)
-- `src/index.ts:solve` (same set)
-- `src/index.ts:validate` (index.test 52-56 + load internal)
-- `src/mcp/cli.ts:1` (calls `run()` from server.ts)
-- `src/pipeline.bench.ts:main` (yarn bench / yarn bench:check)
+The README already leads with strong framings:
+- "Three functions, one return shape"
+- "The library never throws and never produces a partial document"
+- "First-class solver components"
+- "MCP-as-API" (implied — "no separate code path")
 
-## CI / Automation
-- Build: `.github/workflows/release.yml` (per CHANGELOG), packages a tarball attached to a GitHub Release on version bump
-- Badge sources: none currently configured
+Anti-slop risks:
+- Heavy EDN exposure before explaining why EDN was chosen
+- Solver table is dense; bipolar vs evidential difference is subtle
+- Plugin install steps assume Claude Code context — desktop / generic MCP consumers need a different path
 
-## User Context (from prior staging + repo history)
-- Common Struggles: clarity about what is "the project" after the breaking reset; the readme must reflect EDN-only input, not the prior custom language; the prior custom-language memories are stale and should not appear in the README
-- Decisions Made: EDN-only canonical, grounded-Dung-only solver, namespaced tags, MCP builder replaces custom-language MCP, GitHub Releases tarball (no npm publish)
-- Focus Areas: parse correctness (Zod schema), solve correctness (formal grounded labeling), builder ergonomics (soft-warning mutations, hard-error validation), bench regression safety
+## 12. Sources read
 
-## Missing Information (Stage 2 follow-ups)
-- [ ] Confirm `.github/workflows/release.yml` is present and matches CHANGELOG description
-- [ ] Confirm exact stryker score on last run (CHANGELOG notes 80%+ threshold, no number)
-- [ ] Confirm whether `apply` returning `refused` is observable from MCP `tools.ts` (the recent commit `08aab62` adds a test for "refuse no-write")
-- [ ] Confirm whether `text:` matches in `resolveRef` are case-sensitive
-
-## Graph Index State
-- Indexed: Yes (`Users-kellen-Projects-argdown-2`, 520 nodes, 1200 edges)
-- Method: serena semantic tools (list_dir, get_symbols_overview, find_referencing_symbols, read_file) — no claudikins-tool-executor available in this session
-```
+| File | Purpose |
+|---|---|
+| `deno.json` | tasks, imports, version, license |
+| `README.md` | current README state |
+| `CHANGELOG.md` (200 lines) | version history |
+| `AGENTS.md` | Cursor Cloud agent instructions |
+| `src/index.ts` | library entry |
+| `src/mcp/cli.ts` | MCP entry |
+| `src/mcp/server.ts` | tool registration |
+| `src/model.ts` | type definitions, solver tags |
+| `src/validate.ts` | validation logic |
+| `examples/argdown1-censorship.edn` | sample input |
+| `examples/argdown1-censorship.mapping.md` | parity-check mapping |
+| `.github/workflows/ci.yml` | CI pipeline |
+| `.github/workflows/release.yml` | release pipeline |
+| `.claude-plugin/marketplace.json` | marketplace manifest |
+| `plugins/argdown-2/.claude-plugin/plugin.json` | plugin manifest |
+| `.brainstorm/graph-status.json` | Phase 0 status |
