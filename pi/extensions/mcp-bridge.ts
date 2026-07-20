@@ -30,16 +30,22 @@ export async function connectArgdownMcp(
   });
 
   await client.connect(transport);
-  const listed = await client.listTools();
-  const tools: McpToolSummary[] = listed.tools.map((tool: {
-    name: string;
-    description?: string;
-    inputSchema?: unknown;
-  }) => ({
-    name: tool.name,
-    description: tool.description,
-    inputSchema: tool.inputSchema as Record<string, unknown> | undefined,
-  }));
+  let tools: McpToolSummary[];
+  try {
+    const listed = await client.listTools();
+    tools = listed.tools.map((tool: {
+      name: string;
+      description?: string;
+      inputSchema?: unknown;
+    }) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema as Record<string, unknown> | undefined,
+    }));
+  } catch (error) {
+    await client.close();
+    throw error;
+  }
 
   return {
     client,
@@ -54,12 +60,16 @@ export async function callArgdownTool(
   session: ArgdownMcpSession,
   name: string,
   args: Record<string, unknown>,
-  _signal?: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<{ text: string; isError: boolean }> {
-  const result = await session.client.callTool({
-    name,
-    arguments: args,
-  });
+  const result = await session.client.callTool(
+    {
+      name,
+      arguments: args,
+    },
+    undefined,
+    { signal },
+  );
   const parts = (result.content ?? []) as Array<
     { type: string; text?: string }
   >;
