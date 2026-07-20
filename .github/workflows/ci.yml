@@ -35,14 +35,17 @@ jobs:
       - name: Typecheck
         run: deno task check
 
-      - name: Test
-        run: deno task test
-
       - name: Check MCP Deno entry
         run: deno task check:mcp-deno
 
       - name: Compile host MCP binary
+        # Compile before Test so the bridge test can exercise the
+        # launcher's local-binary path without depending on a tagged
+        # GitHub Release for the pinned version.
         run: deno task compile:mcp
+
+      - name: Test
+        run: deno task test
 
       - name: Probe host MCP binary
         run: |

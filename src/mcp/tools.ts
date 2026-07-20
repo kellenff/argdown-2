@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { apply } from "../builder/apply.js";
 import type { DocumentEdit } from "../builder/types.js";
-import { load, solve } from "../index.js";
+import { load, renderMermaid, solve } from "../index.js";
 import type {
   CandidateDocument,
   CandidateSolverComponent,
@@ -551,4 +551,31 @@ function serializeSolveResult(
     children,
     warnings: solved.warnings,
   };
+}
+
+export async function runRenderMermaid(
+  args: DocRefInput & { includeLabels?: boolean | undefined },
+): Promise<McpResult> {
+  const sourceResult = await readSource(args);
+  if (!sourceResult.ok) {
+    return jsonResult(
+      { ok: false, errors: sourceResult.errors },
+      sourceResult.isError ?? false,
+    );
+  }
+  const result = load(sourceResult.source);
+  if (!result.ok) {
+    return jsonResult({ ok: false, errors: result.errors });
+  }
+  let labels:
+    | ReadonlyMap<import("../model.js").EntityId, import("../model.js").Label>
+    | undefined;
+  if (args.includeLabels === true) {
+    const solved = solve(result.document);
+    if (solved.native.kind === "labels") {
+      labels = solved.native.values;
+    }
+  }
+  const text = renderMermaid(result.document, labels ? { labels } : {});
+  return jsonResult({ ok: true, text });
 }

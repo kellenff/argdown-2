@@ -1,6 +1,6 @@
 {
   "name": "argdown-2-pi",
-  "version": "0.2.0-alpha4",
+  "version": "0.2.0-alpha5",
   "private": true,
   "description": "Pi package: shared argdown-2 skills plus an MCP bridge extension for grounded EDN argument graphs. Unix only. Never hand-edit EDN; use builder MCP tools.",
   "keywords": [

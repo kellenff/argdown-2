@@ -12,6 +12,7 @@ import {
   runAddSolver,
   runAddStatement,
   runCreateDocument,
+  runRenderMermaid,
   runSetImport,
   runSolve,
   runValidate,
@@ -58,6 +59,55 @@ describe("mcp tool handlers", () => {
     });
     const disk = await readFile(path, "utf8");
     expect(disk).toContain(":a");
+  });
+
+  it("render_mermaid: path mode emits flowchart TD string", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "argdown-mcp-"));
+    const path = join(dir, "doc.edn");
+    await runCreateDocument({ path });
+    await runAddStatement({ path, id: "a", text: "A" });
+    await runAddStatement({ path, id: "b", text: "B" });
+    await runAddRelation({
+      path,
+      id: "attack-a-b",
+      kind: "attack",
+      from: "a",
+      to: "b",
+    });
+    const rendered = await runRenderMermaid({ path });
+    const body = parseBody(rendered);
+    expect(body.ok).toBe(true);
+    expect(typeof body.text).toBe("string");
+    const text = body.text as string;
+    expect(text).toContain("flowchart TD");
+    expect(text).toContain('-.->|"attack"|');
+    expect(text).not.toContain("classDef");
+  });
+
+  it("render_mermaid: includeLabels adds classDef lines", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "argdown-mcp-"));
+    const path = join(dir, "doc.edn");
+    await runCreateDocument({ path });
+    await runAddStatement({ path, id: "a", text: "A" });
+    await runAddStatement({ path, id: "b", text: "B" });
+    await runAddRelation({
+      path,
+      id: "attack-a-b",
+      kind: "attack",
+      from: "a",
+      to: "b",
+    });
+    const rendered = await runRenderMermaid({ path, includeLabels: true });
+    const body = parseBody(rendered);
+    expect(body.ok).toBe(true);
+    expect(body.text as string).toContain("classDef in");
+  });
+
+  it("render_mermaid: returns errors for an invalid document", async () => {
+    const rendered = await runRenderMermaid({ source: "{:broken" });
+    const body = parseBody(rendered);
+    expect(body.ok).toBe(false);
+    expect(Array.isArray(body.errors)).toBe(true);
   });
 
   it("source mode: create, add_statement, validate", async () => {

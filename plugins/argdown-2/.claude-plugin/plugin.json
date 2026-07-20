@@ -1,7 +1,7 @@
 {
   "name": "argdown-2",
   "displayName": "argdown-2",
-  "version": "0.2.0-alpha4",
+  "version": "0.2.0-alpha5",
   "description": "MCP server plus skills for loading, validating, and solving EDN argument graphs with grounded Dung semantics. Never hand-edit EDN; use builder MCP tools only.",
   "author": {
     "name": "kellenff"

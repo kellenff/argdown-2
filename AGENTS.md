@@ -47,5 +47,5 @@ live in `src/pi-package.test.ts`.
 
 The MCP server communicates over stdio (JSON-RPC). To exercise it end to end,
 run `deno task mcp` (or connect an MCP client to a compiled binary), then call
-`create_document` → `add_statement` → `add_relation` → `solve`. The 14 tools
-call the same `load`/`validate`/`solve` pipeline as the library.
+`create_document` → `add_statement` → `add_relation` → `solve`. The 15 tools
+call the same `load`/`validate`/`solve`/`renderMermaid` pipeline as the library.
