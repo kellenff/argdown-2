@@ -157,6 +157,9 @@ export function renderMermaid(
     const toSlug = idToSlug.get(el.to)!;
     const glyph = ARROW_GLYPH[el.kind];
     edges.push(`    ${fromSlug} ${glyph}|"${el.kind}"| ${toSlug}`);
+    if (el.kind === "contradiction") {
+      edges.push(`    ${toSlug} ${glyph}|"${el.kind}"| ${fromSlug}`);
+    }
   }
 
   let body: string[];
