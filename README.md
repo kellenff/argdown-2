@@ -47,7 +47,7 @@ if (!loaded.ok) {
 }
 ```
 
-Four public functions: `load` and `validate` return discriminated results,
+Four primary operations: `load` and `validate` return discriminated results,
 `solve` returns a component result, and `renderMermaid` returns Mermaid source.
 The library never throws and never produces a partial document.
 
@@ -311,7 +311,7 @@ you only need the schema and semantic checks.
 ## Project status
 
 What is here: strict EDN loader, Zod schema validation, cross-reference
-validator, six label solvers (grounded, bipolar, evidential) and three
+validator, three label solvers (grounded, bipolar, evidential) and three
 multi-extension solvers (preferred, stable, complete), first-class nested solver
 composition, builder MCP server, atomic-write I/O layer, Claude Code plugin
 marketplace, GitHub Actions CI and release workflows.
