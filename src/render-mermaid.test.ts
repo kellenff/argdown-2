@@ -165,6 +165,17 @@ describe("renderMermaid", () => {
     expect(out).toContain('["D"]');
   });
 
+  it("renders contradiction as reciprocal thick edges", () => {
+    const doc = loadDoc(MINIMAL);
+    const edges = renderMermaid(doc).split("\n").filter((line) =>
+      line.includes('==>|"contradiction"|')
+    );
+    expect(edges).toHaveLength(2);
+    const first = edges[0]?.match(/^\s*(\w+) ==>\|"contradiction"\| (\w+)$/);
+    const second = edges[1]?.match(/^\s*(\w+) ==>\|"contradiction"\| (\w+)$/);
+    expect(first?.slice(1)).toEqual(second?.slice(1).reverse());
+  });
+
   it("renders a child solver as a subgraph", () => {
     const doc = loadDoc(NESTED);
     const out = renderMermaid(doc);
