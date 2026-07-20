@@ -9,17 +9,30 @@ import {
   runAddArgument,
   runAddInference,
   runAddRelation,
+  runAddSolver,
   runAddStatement,
   runCreateDocument,
+  runSetImport,
   runSolve,
   runValidate,
 } from "./tools.js";
+import { GROUNDED_SOLVER_TAG, PREFERRED_SOLVER_TAG } from "../model.js";
 
 function parseBody(res: { content: { type: string; text: string }[] }) {
   return JSON.parse(res.content[0]!.text) as Record<string, unknown>;
 }
 
 describe("mcp tool handlers", () => {
+  it("rejects document ids that are not EDN keywords", async () => {
+    const created = await runCreateDocument({
+      source: "",
+      documentId: "bad id",
+    });
+    const body = parseBody(created);
+    expect(body.ok).toBe(false);
+    expect(created.isError).toBe(true);
+  });
+
   it("create + add_statement + validate + solve on a path", async () => {
     const dir = await mkdtemp(join(tmpdir(), "argdown-mcp-"));
     const path = join(dir, "doc.edn");
@@ -27,13 +40,22 @@ describe("mcp tool handlers", () => {
     expect(parseBody(created).ok).toBe(true);
     await runAddStatement({ path, id: "a", text: "A" });
     await runAddStatement({ path, id: "b", text: "B" });
-    await runAddRelation({ path, kind: "attack", from: "a", to: "b" });
+    await runAddRelation({
+      path,
+      id: "attack-a-b",
+      kind: "attack",
+      from: "a",
+      to: "b",
+    });
     const validated = await runValidate({ path });
     expect(parseBody(validated).ok).toBe(true);
     const solved = await runSolve({ path });
     const body = parseBody(solved);
     expect(body.ok).toBe(true);
-    expect(body.labels).toMatchObject({ a: "in", b: "out" });
+    expect(body.native).toMatchObject({
+      kind: "labels",
+      values: { a: "in", b: "out" },
+    });
     const disk = await readFile(path, "utf8");
     expect(disk).toContain(":a");
   });
@@ -76,6 +98,7 @@ describe("mcp tool handlers", () => {
 
     const addAttack = await runAddRelation({
       source,
+      id: "freedom-attacks-censorship",
       kind: "attack",
       from: "absolute-freedom",
       to: "censorship",
@@ -88,9 +111,12 @@ describe("mcp tool handlers", () => {
     const solved = await runSolve({ source });
     const body = parseBody(solved);
     expect(body.ok).toBe(true);
-    expect(body.labels).toMatchObject({
-      censorship: "out",
-      "absolute-freedom": "in",
+    expect(body.native).toMatchObject({
+      kind: "labels",
+      values: {
+        censorship: "out",
+        "absolute-freedom": "in",
+      },
     });
     expect(source).toContain("Censorship is not wrong in principle.");
     expect(source).toContain("Freedom of speech is an absolute right.");
@@ -155,5 +181,68 @@ describe("mcp tool handlers", () => {
     const stmtBody = parseBody(addStatement);
     expect(stmtBody.ok).toBe(true);
     expect(typeof stmtBody.source).toBe("string");
+  });
+
+  it("builds a nested grounded child via add_solver and set_import", async () => {
+    const created = await runCreateDocument({ source: "" });
+    let body = parseBody(created);
+    expect(body.ok).toBe(true);
+    let source = body.source as string;
+
+    await runAddStatement({ source, id: "target", text: "Target" }).then(
+      (res) => {
+        body = parseBody(res);
+        source = body.source as string;
+      },
+    );
+
+    const child = await runAddSolver({
+      source,
+      id: "child",
+      solver: PREFERRED_SOLVER_TAG,
+    });
+    body = parseBody(child);
+    expect(body.ok).toBe(true);
+    source = body.source as string;
+
+    const claim = await runAddStatement({
+      source,
+      id: "claim",
+      text: "Claim",
+      parentId: "child",
+    });
+    body = parseBody(claim);
+    expect(body.ok).toBe(true);
+    source = body.source as string;
+
+    const imported = await runSetImport({
+      source,
+      childId: "child",
+      outAtMost: 0.2,
+      inAtLeast: 0.8,
+    });
+    body = parseBody(imported);
+    expect(body.ok).toBe(true);
+    source = body.source as string;
+
+    const attack = await runAddRelation({
+      source,
+      id: "child-attacks-target",
+      kind: "attack",
+      from: "child",
+      to: "target",
+    });
+    body = parseBody(attack);
+    expect(body.ok).toBe(true);
+    source = body.source as string;
+
+    const validated = await runValidate({ source });
+    expect(parseBody(validated).ok).toBe(true);
+
+    const solved = await runSolve({ source });
+    body = parseBody(solved);
+    expect(body.ok).toBe(true);
+    expect(body.solver).toBe(GROUNDED_SOLVER_TAG);
+    expect((body.children as Record<string, unknown>).child).toBeDefined();
   });
 });

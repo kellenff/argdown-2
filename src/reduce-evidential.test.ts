@@ -1,8 +1,14 @@
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
-import type { EntityId, GroundedDocument, TheoryElement } from "./model.js";
+import type {
+  EntityId,
+  SolverComponent,
+  SolverTag,
+  TheoryElement,
+} from "./model.js";
 import {
+  AGGREGATE_IDENTITY_TAG,
   BIPOLAR_SOLVER_TAG,
   EVIDENTIAL_SOLVER_TAG,
   GROUNDED_SOLVER_TAG,
@@ -14,11 +20,31 @@ import { groundedLabels } from "./grounded.js";
 
 const id = (value: string) => value as EntityId;
 
-function document(...elements: readonly TheoryElement[]): GroundedDocument {
-  return { solver: EVIDENTIAL_SOLVER_TAG, elements };
+function component(
+  solver: SolverTag,
+  elements: readonly TheoryElement[],
+): SolverComponent {
+  return {
+    kind: "solver",
+    solver,
+    id: id("root"),
+    interface: {
+      aggregate: {
+        tag: AGGREGATE_IDENTITY_TAG,
+        inputs: [{ ref: "a" }],
+      },
+    },
+    imports: new Map(),
+    elements,
+    extra: [],
+  };
 }
 
-function labelsOf(doc: GroundedDocument) {
+function document(...elements: readonly TheoryElement[]): SolverComponent {
+  return component(EVIDENTIAL_SOLVER_TAG, elements);
+}
+
+function labelsOf(doc: SolverComponent) {
   return groundedLabels(reduceToEvidential(doc).framework);
 }
 
@@ -29,6 +55,7 @@ describe("reduceToEvidential", () => {
       { kind: "statement", id: id("b"), tags: [], extra: [] },
       {
         kind: "support",
+        id: id("support-a-b"),
         from: id("a"),
         to: id("b"),
         extra: [],
@@ -47,12 +74,14 @@ describe("reduceToEvidential", () => {
       { kind: "statement", id: id("c"), tags: [], extra: [] },
       {
         kind: "support",
+        id: id("support-a-b"),
         from: id("a"),
         to: id("b"),
         extra: [],
       },
       {
         kind: "attack",
+        id: id("attack-c-a"),
         from: id("c"),
         to: id("a"),
         extra: [],
@@ -74,22 +103,24 @@ describe("reduceToEvidential", () => {
       { kind: "statement", id: id("c"), tags: [], extra: [] },
       {
         kind: "support",
+        id: id("support-a-b"),
         from: id("a"),
         to: id("b"),
         extra: [],
       },
       {
         kind: "attack",
+        id: id("attack-c-a"),
         from: id("c"),
         to: id("a"),
         extra: [],
       },
     ];
     const evidential = groundedLabels(
-      reduceToEvidential({ solver: EVIDENTIAL_SOLVER_TAG, elements }).framework,
+      reduceToEvidential(component(EVIDENTIAL_SOLVER_TAG, elements)).framework,
     );
     const bipolar = groundedLabels(
-      reduceToBipolar({ solver: BIPOLAR_SOLVER_TAG, elements }).framework,
+      reduceToBipolar(component(BIPOLAR_SOLVER_TAG, elements)).framework,
     );
     expect(evidential.get(id("a"))).toBe("out");
     expect(evidential.get(id("b"))).toBe("out");
@@ -104,6 +135,7 @@ describe("reduceToEvidential", () => {
       { kind: "statement", id: id("a"), tags: [], extra: [] },
       {
         kind: "support",
+        id: id("support-a-a"),
         from: id("a"),
         to: id("a"),
         extra: [],
@@ -118,12 +150,14 @@ describe("reduceToEvidential", () => {
       { kind: "statement", id: id("b"), tags: [], extra: [] },
       {
         kind: "support",
+        id: id("support-a-b"),
         from: id("a"),
         to: id("b"),
         extra: [],
       },
       {
         kind: "support",
+        id: id("support-b-a"),
         from: id("b"),
         to: id("a"),
         extra: [],
@@ -140,18 +174,21 @@ describe("reduceToEvidential", () => {
       { kind: "statement", id: id("c"), tags: [], extra: [] },
       {
         kind: "support",
+        id: id("support-a-b"),
         from: id("a"),
         to: id("b"),
         extra: [],
       },
       {
         kind: "support",
+        id: id("support-b-c"),
         from: id("b"),
         to: id("c"),
         extra: [],
       },
       {
         kind: "support",
+        id: id("support-c-a"),
         from: id("c"),
         to: id("a"),
         extra: [],
@@ -169,22 +206,24 @@ describe("reduceToEvidential", () => {
       { kind: "statement", id: id("c"), tags: [], extra: [] },
       {
         kind: "support",
+        id: id("support-a-b"),
         from: id("a"),
         to: id("b"),
         extra: [],
       },
       {
         kind: "attack",
+        id: id("attack-c-b"),
         from: id("c"),
         to: id("b"),
         extra: [],
       },
     ];
     const evidential = groundedLabels(
-      reduceToEvidential({ solver: EVIDENTIAL_SOLVER_TAG, elements }).framework,
+      reduceToEvidential(component(EVIDENTIAL_SOLVER_TAG, elements)).framework,
     );
     const bipolar = groundedLabels(
-      reduceToBipolar({ solver: BIPOLAR_SOLVER_TAG, elements }).framework,
+      reduceToBipolar(component(BIPOLAR_SOLVER_TAG, elements)).framework,
     );
     // Direct attack on B: A stays in under evidential (nec is out, A unaffected).
     expect(evidential.get(id("a"))).toBe("in");
@@ -216,6 +255,7 @@ describe("reduceToEvidential", () => {
       },
       {
         kind: "undercut",
+        id: id("undercut-a-inf1"),
         from: id("a"),
         to: "inf1" as never,
         extra: [],
@@ -236,6 +276,7 @@ describe("reduceToEvidential", () => {
       { kind: "statement", id: id("b"), tags: [], extra: [] },
       {
         kind: "attack",
+        id: id("attack-a-b"),
         from: id("a"),
         to: id("b"),
         extra: [],

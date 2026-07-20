@@ -1,9 +1,10 @@
 import type {
+  Confidence,
   Diagnostic,
   DungFramework,
   EntityId,
-  GroundedDocument,
   Relation,
+  SolverComponent,
 } from "./model.js";
 
 export type ReduceResult = {
@@ -16,8 +17,10 @@ function addAttack(
   from: EntityId,
   to: EntityId,
 ): void {
-  const attackers = attackersByTarget.get(to);
-  if (attackers !== undefined) attackers.add(from);
+  const attackers = attackersByTarget.get(to) ?? new Set<EntityId>();
+  attackers.add(from);
+  attackersByTarget.set(to, attackers);
+  if (!attackersByTarget.has(from)) attackersByTarget.set(from, new Set());
 }
 
 function omissionWarning(
@@ -47,10 +50,24 @@ function reduceRelation(
   }
 }
 
-export function reduceToDung(document: GroundedDocument): ReduceResult {
+const blockerId = (child: EntityId): EntityId =>
+  `\0argdown:blocker:${child}` as EntityId;
+
+export function isSyntheticEntity(id: EntityId): boolean {
+  return id.startsWith("\0argdown:");
+}
+
+export function reduceToDung(
+  component: SolverComponent,
+  childBoundaries: ReadonlyMap<EntityId, Confidence> = new Map(),
+): ReduceResult {
   const nodes = new Set<EntityId>();
-  for (const element of document.elements) {
-    if (element.kind === "statement" || element.kind === "argument") {
+  for (const element of component.elements) {
+    if (
+      element.kind === "statement" ||
+      element.kind === "argument" ||
+      element.kind === "solver"
+    ) {
       nodes.add(element.id);
     }
   }
@@ -58,8 +75,18 @@ export function reduceToDung(document: GroundedDocument): ReduceResult {
   const attackersByTarget = new Map<EntityId, Set<EntityId>>();
   for (const node of nodes) attackersByTarget.set(node, new Set());
 
+  for (const [child, confidence] of childBoundaries) {
+    if (confidence === 0) {
+      const blocker = blockerId(child);
+      nodes.add(blocker);
+      addAttack(attackersByTarget, blocker, child);
+    } else if (confidence === null) {
+      addAttack(attackersByTarget, child, child);
+    }
+  }
+
   const warnings: Diagnostic[] = [];
-  document.elements.forEach((element, index) => {
+  component.elements.forEach((element, index) => {
     if (
       element.kind === "attack" ||
       element.kind === "contradiction" ||

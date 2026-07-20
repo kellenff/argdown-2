@@ -20,7 +20,7 @@ describe("softParse", () => {
     const parsed = softParse(source);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.document.elements).toHaveLength(3);
+    expect(parsed.document.root.elements).toHaveLength(3);
   });
 
   it("round-trips fixture through writeEdn then load", () => {

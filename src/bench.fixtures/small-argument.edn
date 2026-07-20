@@ -1,6 +1,15 @@
-#casualtheorics.argdown2.solver/grounded
-[
-  #casualtheorics.argdown2.argdown/statement {:id :premise-a :text "Premise A"}
+#casualtheorics.argdown2/document
+{:id :small-argument
+ :root
+ #casualtheorics.argdown2.solver/grounded
+ {:id :root
+  :interface
+  {:aggregate
+   #casualtheorics.argdown2.aggregate/identity
+   {:inputs [{:ref :premise-a}]}}
+  :elements
+  [
+#casualtheorics.argdown2.argdown/statement {:id :premise-a :text "Premise A"}
   #casualtheorics.argdown2.argdown/statement {:id :premise-b :text "Premise B"}
   #casualtheorics.argdown2.argdown/statement {:id :conclusion :text "Conclusion"}
   #casualtheorics.argdown2.argdown/argument
@@ -13,4 +22,5 @@
      :premises [:premise-a :premise-b]
      :conclusion :conclusion
      :rules [:modus-ponens]}]}
-]
+
+  ]}}

@@ -1,6 +1,15 @@
-#casualtheorics.argdown2.solver/grounded
-[
-  #casualtheorics.argdown2.argdown/statement {:id :p0-a}
+#casualtheorics.argdown2/document
+{:id :deep-arguments
+ :root
+ #casualtheorics.argdown2.solver/grounded
+ {:id :root
+  :interface
+  {:aggregate
+   #casualtheorics.argdown2.aggregate/identity
+   {:inputs [{:ref :p0-a}]}}
+  :elements
+  [
+#casualtheorics.argdown2.argdown/statement {:id :p0-a}
   #casualtheorics.argdown2.argdown/statement {:id :p0-b}
   #casualtheorics.argdown2.argdown/statement {:id :p0-c}
   #casualtheorics.argdown2.argdown/argument
@@ -300,4 +309,5 @@
      :premises [:p24-a :p24-b]
      :conclusion :p24-c
      :rules [:rule-24]}]}
-]
+
+  ]}}

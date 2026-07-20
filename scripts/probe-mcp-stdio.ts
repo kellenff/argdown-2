@@ -72,6 +72,53 @@ try {
       `create_document did not return ok: ${JSON.stringify(payload)}`,
     );
   }
+  let source = payload.source as string;
+  for (const [id, text] of [["a", "A"], ["b", "B"]] as const) {
+    const added = parseToolResult(
+      await client.callTool({
+        name: "add_statement",
+        arguments: { source, id, text },
+      }) as { content?: Array<{ type: string; text?: string }> },
+    );
+    if (added.ok !== true) {
+      throw new Error(
+        `add_statement did not return ok: ${JSON.stringify(added)}`,
+      );
+    }
+    source = added.source;
+  }
+  const related = parseToolResult(
+    await client.callTool({
+      name: "add_relation",
+      arguments: {
+        source,
+        id: "attack-a-b",
+        kind: "attack",
+        from: "a",
+        to: "b",
+      },
+    }) as { content?: Array<{ type: string; text?: string }> },
+  );
+  if (related.ok !== true) {
+    throw new Error(
+      `add_relation did not return ok: ${JSON.stringify(related)}`,
+    );
+  }
+  const solved = parseToolResult(
+    await client.callTool({
+      name: "solve",
+      arguments: { source: related.source },
+    }) as { content?: Array<{ type: string; text?: string }> },
+  );
+  if (
+    solved.ok !== true ||
+    solved.native?.values?.a !== "in" ||
+    solved.native?.values?.b !== "out"
+  ) {
+    throw new Error(
+      `solve returned unexpected result: ${JSON.stringify(solved)}`,
+    );
+  }
   console.log(`probe-mcp-stdio: ok (${basename(host)})`);
 } catch (error) {
   failed = true;

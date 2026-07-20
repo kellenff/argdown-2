@@ -2,22 +2,36 @@ import type {
   Argument,
   CandidateArgument,
   CandidateDocument,
-  CandidateElement,
   CandidateInference,
   CandidateRelation,
+  CandidateSolverComponent,
   CandidateStatement,
   Diagnostic,
+  Document,
   EntityId,
-  GroundedDocument,
   Inference,
   InferenceId,
   Relation,
+  SolverComponent,
   Statement,
   TheoryElement,
   ValidationResult,
 } from "./model.js";
+import {
+  COMPLETE_SOLVER_TAG,
+  PREFERRED_SOLVER_TAG,
+  STABLE_SOLVER_TAG,
+  supportedRelationKinds,
+} from "./model.js";
 
-type Kind = "argument" | "inference" | "statement";
+type EndpointKind =
+  | "argument"
+  | "child-solver"
+  | "inference"
+  | "relation"
+  | "statement";
+
+type Path = readonly (number | string)[];
 
 function entityId(value: string): EntityId {
   return value as EntityId;
@@ -27,230 +41,382 @@ function inferenceId(value: string): InferenceId {
   return value as InferenceId;
 }
 
-function collectKinds(
-  elements: readonly CandidateElement[],
+function addEndpoint(
+  endpoints: Map<string, EndpointKind>,
+  id: string,
+  kind: EndpointKind,
+  path: Path,
   errors: Diagnostic[],
-): ReadonlyMap<string, Kind> {
-  const kinds = new Map<string, Kind>();
-  const add = (id: string, kind: Kind, path: readonly (number | string)[]) => {
-    if (kinds.has(id)) {
-      errors.push({
-        code: "semantic/duplicate-id",
-        message: `Duplicate id :${id}`,
-        path,
-      });
-    } else {
-      kinds.set(id, kind);
+): void {
+  if (endpoints.has(id)) {
+    errors.push({
+      code: "semantic/duplicate-id",
+      message: `Duplicate id :${id}`,
+      path,
+    });
+    return;
+  }
+  endpoints.set(id, kind);
+}
+
+function collectEndpoints(
+  component: CandidateSolverComponent,
+  path: Path,
+  errors: Diagnostic[],
+): ReadonlyMap<string, EndpointKind> {
+  const endpoints = new Map<string, EndpointKind>();
+  component.elements.forEach((element, index) => {
+    const elementPath = [...path, ":elements", index];
+    if (element.kind === "solver") {
+      addEndpoint(
+        endpoints,
+        element.id,
+        "child-solver",
+        [...elementPath, ":id"],
+        errors,
+      );
+      return;
     }
-  };
-  elements.forEach((element, index) => {
-    if (element.kind === "statement" || element.kind === "argument") {
-      add(element.id, element.kind, [index, ":id"]);
-    }
+    addEndpoint(
+      endpoints,
+      element.id,
+      element.kind === "statement" || element.kind === "argument"
+        ? element.kind
+        : "relation",
+      [...elementPath, ":id"],
+      errors,
+    );
     if (element.kind === "argument") {
       element.inferences.forEach((inference, inferenceIndex) => {
-        add(inference.id, "inference", [
-          index,
-          ":inferences",
-          inferenceIndex,
-          ":id",
-        ]);
+        addEndpoint(
+          endpoints,
+          inference.id,
+          "inference",
+          [...elementPath, ":inferences", inferenceIndex, ":id"],
+          errors,
+        );
       });
     }
   });
-  return kinds;
+  return endpoints;
 }
 
-function isEntityKind(
-  kind: Kind | undefined,
-): kind is "argument" | "statement" {
-  return kind === "argument" || kind === "statement";
-}
-
-function reportMissingReference(
+function missingReference(
   id: string,
-  path: readonly (number | string)[],
+  path: Path,
   errors: Diagnostic[],
 ): void {
   errors.push({
     code: "semantic/missing-reference",
-    message: `Unknown id :${id}`,
+    message: `Unknown local id :${id}`,
     path,
   });
 }
 
-function validateStatementReference(
-  id: string,
-  path: readonly (number | string)[],
-  kinds: ReadonlyMap<string, Kind>,
-  errors: Diagnostic[],
-): void {
-  const kind = kinds.get(id);
-  if (kind === undefined) {
-    reportMissingReference(id, path, errors);
-  } else if (kind !== "statement") {
-    errors.push({
-      code: "semantic/invalid-reference-kind",
-      message: `Expected :${id} to be a statement`,
-      path,
-    });
-  }
-}
-
 function validateInferenceReferences(
-  elements: readonly CandidateElement[],
-  kinds: ReadonlyMap<string, Kind>,
+  component: CandidateSolverComponent,
+  endpoints: ReadonlyMap<string, EndpointKind>,
+  path: Path,
   errors: Diagnostic[],
 ): void {
-  elements.forEach((element, index) => {
+  component.elements.forEach((element, index) => {
     if (element.kind !== "argument") return;
     element.inferences.forEach((inference, inferenceIndex) => {
-      inference.premises.forEach((premise, premiseIndex) => {
-        validateStatementReference(
-          premise,
-          [index, ":inferences", inferenceIndex, ":premises", premiseIndex],
-          kinds,
-          errors,
-        );
+      const inferencePath = [
+        ...path,
+        ":elements",
+        index,
+        ":inferences",
+        inferenceIndex,
+      ];
+      const refs = [
+        ...inference.premises.map((id, premiseIndex) =>
+          [id, [...inferencePath, ":premises", premiseIndex]] as const
+        ),
+        [inference.conclusion, [...inferencePath, ":conclusion"]] as const,
+      ];
+      refs.forEach(([id, refPath]) => {
+        const kind = endpoints.get(id);
+        if (kind === undefined) missingReference(id, refPath, errors);
+        else if (kind !== "statement") {
+          errors.push({
+            code: "semantic/invalid-reference-kind",
+            message: `Expected :${id} to be a statement`,
+            path: refPath,
+          });
+        }
       });
-      validateStatementReference(
-        inference.conclusion,
-        [index, ":inferences", inferenceIndex, ":conclusion"],
-        kinds,
-        errors,
-      );
     });
   });
 }
 
-function validateEntityEndpoint(
-  id: string,
-  path: readonly (number | string)[],
-  kinds: ReadonlyMap<string, Kind>,
-  errors: Diagnostic[],
-): void {
-  const kind = kinds.get(id);
-  if (kind === undefined) {
-    reportMissingReference(id, path, errors);
-  } else if (!isEntityKind(kind)) {
-    errors.push({
-      code: "semantic/invalid-endpoint",
-      message: `Expected :${id} to be a statement or argument`,
-      path,
-    });
-  }
+function isEntityLike(kind: EndpointKind | undefined): boolean {
+  return kind === "statement" || kind === "argument" ||
+    kind === "child-solver";
 }
 
 function validateRelationReferences(
-  elements: readonly CandidateElement[],
-  kinds: ReadonlyMap<string, Kind>,
+  component: CandidateSolverComponent,
+  endpoints: ReadonlyMap<string, EndpointKind>,
+  path: Path,
   errors: Diagnostic[],
 ): void {
-  elements.forEach((element, index) => {
+  const supportedKinds = supportedRelationKinds(component.solver);
+  component.elements.forEach((element, index) => {
     if (
-      element.kind !== "support" &&
-      element.kind !== "attack" &&
-      element.kind !== "contradiction" &&
-      element.kind !== "undercut"
+      element.kind === "statement" ||
+      element.kind === "argument" ||
+      element.kind === "solver"
     ) {
       return;
     }
-
-    const fromPath = [index, ":from"] as const;
-    const toPath = [index, ":to"] as const;
-
-    if (element.kind === "undercut") {
-      validateEntityEndpoint(element.from, fromPath, kinds, errors);
-      const toKind = kinds.get(element.to);
-      if (toKind === undefined) {
-        reportMissingReference(element.to, toPath, errors);
-      } else if (toKind !== "inference") {
-        errors.push({
-          code: "semantic/invalid-endpoint",
-          message: `Expected :${element.to} to be an inference`,
-          path: toPath,
-        });
-      }
-    } else {
-      validateEntityEndpoint(element.from, fromPath, kinds, errors);
-      validateEntityEndpoint(element.to, toPath, kinds, errors);
+    const relationPath = [...path, ":elements", index];
+    if (!supportedKinds.has(element.kind)) {
+      errors.push({
+        code: "semantic/unsupported-relation-kind",
+        message:
+          `${component.solver} does not consume ${element.kind} relations`,
+        path: relationPath,
+      });
+      return;
+    }
+    const fromKind = endpoints.get(element.from);
+    const toKind = endpoints.get(element.to);
+    if (fromKind === undefined) {
+      missingReference(element.from, [...relationPath, ":from"], errors);
+    }
+    if (toKind === undefined) {
+      missingReference(element.to, [...relationPath, ":to"], errors);
+    }
+    if (fromKind !== undefined && !isEntityLike(fromKind)) {
+      errors.push({
+        code: "semantic/unsupported-endpoint",
+        message:
+          `${component.solver} does not support ${fromKind} as relation source`,
+        path: [...relationPath, ":from"],
+      });
+    }
+    if (toKind === undefined) return;
+    const supportedTarget = element.kind === "undercut"
+      ? toKind === "inference" || toKind === "relation"
+      : isEntityLike(toKind);
+    if (!supportedTarget) {
+      errors.push({
+        code: "semantic/unsupported-endpoint",
+        message:
+          `${component.solver} does not support ${toKind} as ${element.kind} target`,
+        path: [...relationPath, ":to"],
+      });
     }
   });
 }
 
-function toValidatedInference(inference: CandidateInference): Inference {
-  return {
-    ...inference,
-    id: inferenceId(inference.id),
-    premises: inference.premises.map(entityId),
-    conclusion: entityId(inference.conclusion),
-  };
-}
+function validateInterface(
+  component: CandidateSolverComponent,
+  endpoints: ReadonlyMap<string, EndpointKind>,
+  path: Path,
+  errors: Diagnostic[],
+): void {
+  if (component.interface === undefined) {
+    errors.push({
+      code: "semantic/missing-interface",
+      message: `Solver :${component.id} requires an interface`,
+      path: [...path, ":interface"],
+    });
+    return;
+  }
+  const ref = component.interface.aggregate.inputs[0].ref;
+  const kind = endpoints.get(ref);
+  const refPath = [
+    ...path,
+    ":interface",
+    ":aggregate",
+    ":inputs",
+    0,
+    ":ref",
+  ];
+  if (kind === undefined) {
+    missingReference(ref, refPath, errors);
+  } else if (!isEntityLike(kind)) {
+    errors.push({
+      code: "semantic/non-selectable-endpoint",
+      message:
+        `Solver ${component.solver} has no native result for ${kind} :${ref}`,
+      path: refPath,
+    });
+  }
 
-function toValidatedStatement(statement: CandidateStatement): Statement {
-  return {
-    ...statement,
-    id: entityId(statement.id),
-  };
-}
-
-function toValidatedArgument(argument: CandidateArgument): Argument {
-  return {
-    ...argument,
-    id: entityId(argument.id),
-    inferences: argument.inferences.map(toValidatedInference),
-  };
-}
-
-function toValidatedRelation(relation: CandidateRelation): Relation {
-  const base = { extra: relation.extra };
-  switch (relation.kind) {
-    case "undercut":
-      return {
-        ...base,
-        kind: "undercut",
-        from: entityId(relation.from),
-        to: inferenceId(relation.to),
-      };
-    case "support":
-    case "attack":
-    case "contradiction":
-      return {
-        ...base,
-        kind: relation.kind,
-        from: entityId(relation.from),
-        to: entityId(relation.to),
-      };
+  const multi = component.solver === PREFERRED_SOLVER_TAG ||
+    component.solver === STABLE_SOLVER_TAG ||
+    component.solver === COMPLETE_SOLVER_TAG;
+  if (multi && component.interface.observer === undefined) {
+    errors.push({
+      code: "semantic/missing-observer",
+      message: `Solver ${component.solver} requires an extension observer`,
+      path: [...path, ":interface", ":observer"],
+    });
+  } else if (!multi && component.interface.observer !== undefined) {
+    errors.push({
+      code: "semantic/unsupported-observer",
+      message:
+        `Solver ${component.solver} does not accept an extension observer`,
+      path: [...path, ":interface", ":observer"],
+    });
   }
 }
 
-function toValidatedElement(element: CandidateElement): TheoryElement {
-  switch (element.kind) {
-    case "statement":
-      return toValidatedStatement(element);
-    case "argument":
-      return toValidatedArgument(element);
-    case "support":
-    case "attack":
-    case "contradiction":
-    case "undercut":
-      return toValidatedRelation(element);
+function validateImports(
+  component: CandidateSolverComponent,
+  path: Path,
+  errors: Diagnostic[],
+): void {
+  const children = new Map(
+    component.elements
+      .filter((element): element is CandidateSolverComponent =>
+        element.kind === "solver"
+      )
+      .map((child) => [child.id, child] as const),
+  );
+  const compositeMulti = component.solver === PREFERRED_SOLVER_TAG ||
+    component.solver === STABLE_SOLVER_TAG ||
+    component.solver === COMPLETE_SOLVER_TAG;
+  if (
+    children.size > 0 &&
+    component.solver !== "casualtheorics.argdown2.solver/grounded"
+  ) {
+    errors.push({
+      code: "semantic/unsupported-composite-parent",
+      message: `Composite parent ${component.solver} has no import adapter`,
+      path,
+    });
   }
+  for (const [childId, projection] of component.imports) {
+    if (!children.has(childId)) {
+      errors.push({
+        code: "semantic/invalid-import-key",
+        message: `Import :${childId} is not an immediate child solver`,
+        path: [...path, ":imports", childId],
+      });
+    }
+    if (
+      projection.outAtMost < 0 ||
+      projection.inAtLeast > 1 ||
+      projection.outAtMost >= projection.inAtLeast
+    ) {
+      errors.push({
+        code: "semantic/invalid-projection-bounds",
+        message: "Threshold requires 0 <= :out-at-most < :in-at-least <= 1",
+        path: [...path, ":imports", childId],
+      });
+    }
+  }
+  if (
+    !compositeMulti &&
+    component.solver === "casualtheorics.argdown2.solver/grounded"
+  ) {
+    for (const child of children.values()) {
+      const multiChild = child.solver === PREFERRED_SOLVER_TAG ||
+        child.solver === STABLE_SOLVER_TAG ||
+        child.solver === COMPLETE_SOLVER_TAG;
+      if (multiChild && !component.imports.some(([id]) => id === child.id)) {
+        errors.push({
+          code: "semantic/incompatible-boundary-range",
+          message:
+            `Child :${child.id} may emit fractional confidence; parent import projection required`,
+          path: [...path, ":imports", child.id],
+        });
+      }
+    }
+  }
+}
+
+function toInference(candidate: CandidateInference): Inference {
+  return {
+    ...candidate,
+    id: inferenceId(candidate.id),
+    premises: candidate.premises.map(entityId),
+    conclusion: entityId(candidate.conclusion),
+  };
+}
+
+function toStatement(candidate: CandidateStatement): Statement {
+  return { ...candidate, id: entityId(candidate.id) };
+}
+
+function toArgument(candidate: CandidateArgument): Argument {
+  return {
+    ...candidate,
+    id: entityId(candidate.id),
+    inferences: candidate.inferences.map(toInference),
+  };
+}
+
+function toRelation(candidate: CandidateRelation): Relation {
+  return {
+    ...candidate,
+    id: entityId(candidate.id),
+    from: entityId(candidate.from),
+    to: entityId(candidate.to),
+  };
+}
+
+function validateComponent(
+  candidate: CandidateSolverComponent,
+  path: Path,
+  errors: Diagnostic[],
+): SolverComponent | undefined {
+  const start = errors.length;
+  const endpoints = collectEndpoints(candidate, path, errors);
+  validateInferenceReferences(candidate, endpoints, path, errors);
+  validateRelationReferences(candidate, endpoints, path, errors);
+  validateInterface(candidate, endpoints, path, errors);
+  validateImports(candidate, path, errors);
+
+  const elements: TheoryElement[] = [];
+  candidate.elements.forEach((element, index) => {
+    if (element.kind === "solver") {
+      const child = validateComponent(
+        element,
+        [...path, ":elements", index],
+        errors,
+      );
+      if (child !== undefined) elements.push(child);
+    } else if (element.kind === "statement") {
+      elements.push(toStatement(element));
+    } else if (element.kind === "argument") {
+      elements.push(toArgument(element));
+    } else {
+      elements.push(toRelation(element));
+    }
+  });
+  if (errors.length > start || candidate.interface === undefined) {
+    return undefined;
+  }
+  return {
+    kind: "solver",
+    solver: candidate.solver,
+    id: entityId(candidate.id),
+    interface: candidate.interface,
+    imports: new Map(
+      candidate.imports.map(([id, projection]) =>
+        [entityId(id), projection] as const
+      ),
+    ),
+    elements,
+    extra: candidate.extra,
+  };
 }
 
 export function validateCandidate(
   candidate: CandidateDocument,
 ): ValidationResult {
   const errors: Diagnostic[] = [];
-  const kinds = collectKinds(candidate.elements, errors);
-  validateInferenceReferences(candidate.elements, kinds, errors);
-  validateRelationReferences(candidate.elements, kinds, errors);
-  if (errors.length > 0) return { ok: false, errors };
-
-  const elements = candidate.elements.map(toValidatedElement);
-  const document: GroundedDocument = {
-    elements,
-    solver: candidate.solver,
+  const root = validateComponent(candidate.root, [":root"], errors);
+  if (root === undefined || errors.length > 0) return { ok: false, errors };
+  const document: Document = {
+    id: candidate.id,
+    root,
+    extra: candidate.extra,
   };
   return { ok: true, document };
 }

@@ -1,61 +1,58 @@
+import { evaluateComponent } from "./component-eval.js";
 import { readEdn } from "./edn.js";
-import { groundedLabels } from "./grounded.js";
 import type {
-  GroundedDocument,
-  LabelSolverTag,
+  ComponentSolveResult,
+  Document,
   LoadResult,
-  MultiExtensionSolverTag,
-  MultiSolveResult,
-  SolveResult,
   ValidationResult,
 } from "./model.js";
-import {
-  BIPOLAR_SOLVER_TAG,
-  COMPLETE_SOLVER_TAG,
-  EVIDENTIAL_SOLVER_TAG,
-  GROUNDED_SOLVER_TAG,
-  PREFERRED_SOLVER_TAG,
-  STABLE_SOLVER_TAG,
-} from "./model.js";
-import {
-  findCompleteExtensions,
-  findPreferredExtensions,
-  findStableExtensions,
-  frameworkToAttackMap,
-} from "./multi-extension.js";
-import { reduceToBipolar } from "./reduce-bipolar.js";
-import { reduceToDung } from "./reduce-dung.js";
-import { reduceToEvidential } from "./reduce-evidential.js";
 import { decodeWire } from "./schema.js";
 import { validateCandidate } from "./validate.js";
 
 export type {
+  AggregateResult,
   Argument,
+  CandidateDocument,
+  CandidateSolverComponent,
+  ComponentSolveResult,
+  Confidence,
   Diagnostic,
+  Document,
   DungFramework,
   EntityId,
+  ExtensionNativeResult,
   GroundedDocument,
+  IdentityAggregate,
   Inference,
   InferenceId,
   Label,
+  LabelNativeResult,
   LoadResult,
   MultiSolveResult,
   Relation,
+  SolverComponent,
   SolveResult,
+  SolverInterface,
   SolverTag,
   Statement,
   TheoryElement,
+  ThresholdProjection,
   ValidationResult,
 } from "./model.js";
 
 export {
+  AGGREGATE_IDENTITY_TAG,
   BIPOLAR_SOLVER_TAG,
   COMPLETE_SOLVER_TAG,
+  DOCUMENT_TAG,
   EVIDENTIAL_SOLVER_TAG,
+  EXTENSION_PROPORTION_OBSERVER_TAG,
   GROUNDED_SOLVER_TAG,
   PREFERRED_SOLVER_TAG,
+  PROJECTION_THRESHOLD_TAG,
   SOLVER_TAGS,
   STABLE_SOLVER_TAG,
+  supportedRelationKinds,
 } from "./model.js";
 
 export function validate(value: unknown): ValidationResult {
@@ -68,62 +65,6 @@ export function load(source: string): LoadResult {
   return read.ok ? validate(read.value) : read;
 }
 
-function solveLabels(
-  document: GroundedDocument,
-  solver: LabelSolverTag,
-  reduce:
-    | typeof reduceToBipolar
-    | typeof reduceToDung
-    | typeof reduceToEvidential,
-): SolveResult {
-  const reduced = reduce(document);
-  return {
-    labels: groundedLabels(reduced.framework),
-    solver,
-    warnings: reduced.warnings,
-  };
-}
-
-function solveMultiExtension(
-  document: GroundedDocument,
-  solver: MultiExtensionSolverTag,
-  findExtensions:
-    | typeof findCompleteExtensions
-    | typeof findPreferredExtensions
-    | typeof findStableExtensions,
-): MultiSolveResult {
-  const reduced = reduceToDung(document);
-  const extensions = findExtensions(frameworkToAttackMap(reduced.framework));
-  return { extensions, solver, warnings: reduced.warnings };
-}
-
-export function solve(
-  document: GroundedDocument,
-): MultiSolveResult | SolveResult {
-  switch (document.solver) {
-    case GROUNDED_SOLVER_TAG:
-      return solveLabels(document, GROUNDED_SOLVER_TAG, reduceToDung);
-    case BIPOLAR_SOLVER_TAG:
-      return solveLabels(document, BIPOLAR_SOLVER_TAG, reduceToBipolar);
-    case EVIDENTIAL_SOLVER_TAG:
-      return solveLabels(document, EVIDENTIAL_SOLVER_TAG, reduceToEvidential);
-    case PREFERRED_SOLVER_TAG:
-      return solveMultiExtension(
-        document,
-        PREFERRED_SOLVER_TAG,
-        findPreferredExtensions,
-      );
-    case STABLE_SOLVER_TAG:
-      return solveMultiExtension(
-        document,
-        STABLE_SOLVER_TAG,
-        findStableExtensions,
-      );
-    case COMPLETE_SOLVER_TAG:
-      return solveMultiExtension(
-        document,
-        COMPLETE_SOLVER_TAG,
-        findCompleteExtensions,
-      );
-  }
+export function solve(document: Document): ComponentSolveResult {
+  return evaluateComponent(document.root);
 }

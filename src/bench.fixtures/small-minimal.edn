@@ -1,6 +1,16 @@
-#casualtheorics.argdown2.solver/grounded
-[
-  #casualtheorics.argdown2.argdown/statement {:id :a}
+#casualtheorics.argdown2/document
+{:id :small-minimal
+ :root
+ #casualtheorics.argdown2.solver/grounded
+ {:id :root
+  :interface
+  {:aggregate
+   #casualtheorics.argdown2.aggregate/identity
+   {:inputs [{:ref :a}]}}
+  :elements
+  [
+#casualtheorics.argdown2.argdown/statement {:id :a}
   #casualtheorics.argdown2.argdown/statement {:id :b}
-  #casualtheorics.argdown2.argdown/attack {:from :a :to :b}
-]
+  #casualtheorics.argdown2.argdown/attack {:id :attack-1 :from :a :to :b}
+
+  ]}}

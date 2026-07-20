@@ -1,6 +1,15 @@
-#casualtheorics.argdown2.solver/grounded
-[
-  #casualtheorics.argdown2.argdown/statement {:id :s0 :text "Statement 0 with some padding text to increase size."}
+#casualtheorics.argdown2/document
+{:id :large-stress
+ :root
+ #casualtheorics.argdown2.solver/grounded
+ {:id :root
+  :interface
+  {:aggregate
+   #casualtheorics.argdown2.aggregate/identity
+   {:inputs [{:ref :s0}]}}
+  :elements
+  [
+#casualtheorics.argdown2.argdown/statement {:id :s0 :text "Statement 0 with some padding text to increase size."}
   #casualtheorics.argdown2.argdown/statement {:id :s1 :text "Statement 1 with some padding text to increase size."}
   #casualtheorics.argdown2.argdown/statement {:id :s2 :text "Statement 2 with some padding text to increase size."}
   #casualtheorics.argdown2.argdown/statement {:id :s3 :text "Statement 3 with some padding text to increase size."}
@@ -300,224 +309,205 @@
      :premises [:s24 :s25]
      :conclusion :s26
      :rules [:r24]}]}
-  #casualtheorics.argdown2.argdown/attack {:from :s0 :to :s13}
-  #casualtheorics.argdown2.argdown/attack {:from :s1 :to :s14}
-  #casualtheorics.argdown2.argdown/attack {:from :s2 :to :s15}
-  #casualtheorics.argdown2.argdown/attack {:from :s3 :to :s16}
-  #casualtheorics.argdown2.argdown/attack {:from :s4 :to :s17}
-  #casualtheorics.argdown2.argdown/attack {:from :s5 :to :s18}
-  #casualtheorics.argdown2.argdown/attack {:from :s6 :to :s19}
-  #casualtheorics.argdown2.argdown/attack {:from :s7 :to :s20}
-  #casualtheorics.argdown2.argdown/attack {:from :s8 :to :s21}
-  #casualtheorics.argdown2.argdown/attack {:from :s9 :to :s22}
-  #casualtheorics.argdown2.argdown/attack {:from :s10 :to :s23}
-  #casualtheorics.argdown2.argdown/attack {:from :s11 :to :s24}
-  #casualtheorics.argdown2.argdown/attack {:from :s12 :to :s25}
-  #casualtheorics.argdown2.argdown/attack {:from :s13 :to :s26}
-  #casualtheorics.argdown2.argdown/attack {:from :s14 :to :s27}
-  #casualtheorics.argdown2.argdown/attack {:from :s15 :to :s28}
-  #casualtheorics.argdown2.argdown/attack {:from :s16 :to :s29}
-  #casualtheorics.argdown2.argdown/attack {:from :s17 :to :s30}
-  #casualtheorics.argdown2.argdown/attack {:from :s18 :to :s31}
-  #casualtheorics.argdown2.argdown/attack {:from :s19 :to :s32}
-  #casualtheorics.argdown2.argdown/attack {:from :s20 :to :s33}
-  #casualtheorics.argdown2.argdown/attack {:from :s21 :to :s34}
-  #casualtheorics.argdown2.argdown/attack {:from :s22 :to :s35}
-  #casualtheorics.argdown2.argdown/attack {:from :s23 :to :s36}
-  #casualtheorics.argdown2.argdown/attack {:from :s24 :to :s37}
-  #casualtheorics.argdown2.argdown/attack {:from :s25 :to :s38}
-  #casualtheorics.argdown2.argdown/attack {:from :s26 :to :s39}
-  #casualtheorics.argdown2.argdown/attack {:from :s27 :to :s40}
-  #casualtheorics.argdown2.argdown/attack {:from :s28 :to :s41}
-  #casualtheorics.argdown2.argdown/attack {:from :s29 :to :s42}
-  #casualtheorics.argdown2.argdown/attack {:from :s30 :to :s43}
-  #casualtheorics.argdown2.argdown/attack {:from :s31 :to :s44}
-  #casualtheorics.argdown2.argdown/attack {:from :s32 :to :s45}
-  #casualtheorics.argdown2.argdown/attack {:from :s33 :to :s46}
-  #casualtheorics.argdown2.argdown/attack {:from :s34 :to :s47}
-  #casualtheorics.argdown2.argdown/attack {:from :s35 :to :s48}
-  #casualtheorics.argdown2.argdown/attack {:from :s36 :to :s49}
-  #casualtheorics.argdown2.argdown/attack {:from :s37 :to :s0}
-  #casualtheorics.argdown2.argdown/attack {:from :s38 :to :s1}
-  #casualtheorics.argdown2.argdown/attack {:from :s39 :to :s2}
-  #casualtheorics.argdown2.argdown/attack {:from :s40 :to :s3}
-  #casualtheorics.argdown2.argdown/attack {:from :s41 :to :s4}
-  #casualtheorics.argdown2.argdown/attack {:from :s42 :to :s5}
-  #casualtheorics.argdown2.argdown/attack {:from :s43 :to :s6}
-  #casualtheorics.argdown2.argdown/attack {:from :s44 :to :s7}
-  #casualtheorics.argdown2.argdown/attack {:from :s45 :to :s8}
-  #casualtheorics.argdown2.argdown/attack {:from :s46 :to :s9}
-  #casualtheorics.argdown2.argdown/attack {:from :s47 :to :s10}
-  #casualtheorics.argdown2.argdown/attack {:from :s48 :to :s11}
-  #casualtheorics.argdown2.argdown/attack {:from :s49 :to :s12}
-  #casualtheorics.argdown2.argdown/attack {:from :s0 :to :s13}
-  #casualtheorics.argdown2.argdown/attack {:from :s1 :to :s14}
-  #casualtheorics.argdown2.argdown/attack {:from :s2 :to :s15}
-  #casualtheorics.argdown2.argdown/attack {:from :s3 :to :s16}
-  #casualtheorics.argdown2.argdown/attack {:from :s4 :to :s17}
-  #casualtheorics.argdown2.argdown/attack {:from :s5 :to :s18}
-  #casualtheorics.argdown2.argdown/attack {:from :s6 :to :s19}
-  #casualtheorics.argdown2.argdown/attack {:from :s7 :to :s20}
-  #casualtheorics.argdown2.argdown/attack {:from :s8 :to :s21}
-  #casualtheorics.argdown2.argdown/attack {:from :s9 :to :s22}
-  #casualtheorics.argdown2.argdown/attack {:from :s10 :to :s23}
-  #casualtheorics.argdown2.argdown/attack {:from :s11 :to :s24}
-  #casualtheorics.argdown2.argdown/attack {:from :s12 :to :s25}
-  #casualtheorics.argdown2.argdown/attack {:from :s13 :to :s26}
-  #casualtheorics.argdown2.argdown/attack {:from :s14 :to :s27}
-  #casualtheorics.argdown2.argdown/attack {:from :s15 :to :s28}
-  #casualtheorics.argdown2.argdown/attack {:from :s16 :to :s29}
-  #casualtheorics.argdown2.argdown/attack {:from :s17 :to :s30}
-  #casualtheorics.argdown2.argdown/attack {:from :s18 :to :s31}
-  #casualtheorics.argdown2.argdown/attack {:from :s19 :to :s32}
-  #casualtheorics.argdown2.argdown/attack {:from :s20 :to :s33}
-  #casualtheorics.argdown2.argdown/attack {:from :s21 :to :s34}
-  #casualtheorics.argdown2.argdown/attack {:from :s22 :to :s35}
-  #casualtheorics.argdown2.argdown/attack {:from :s23 :to :s36}
-  #casualtheorics.argdown2.argdown/attack {:from :s24 :to :s37}
-  #casualtheorics.argdown2.argdown/attack {:from :s25 :to :s38}
-  #casualtheorics.argdown2.argdown/attack {:from :s26 :to :s39}
-  #casualtheorics.argdown2.argdown/attack {:from :s27 :to :s40}
-  #casualtheorics.argdown2.argdown/attack {:from :s28 :to :s41}
-  #casualtheorics.argdown2.argdown/attack {:from :s29 :to :s42}
-  #casualtheorics.argdown2.argdown/attack {:from :s30 :to :s43}
-  #casualtheorics.argdown2.argdown/attack {:from :s31 :to :s44}
-  #casualtheorics.argdown2.argdown/attack {:from :s32 :to :s45}
-  #casualtheorics.argdown2.argdown/attack {:from :s33 :to :s46}
-  #casualtheorics.argdown2.argdown/attack {:from :s34 :to :s47}
-  #casualtheorics.argdown2.argdown/attack {:from :s35 :to :s48}
-  #casualtheorics.argdown2.argdown/attack {:from :s36 :to :s49}
-  #casualtheorics.argdown2.argdown/attack {:from :s37 :to :s0}
-  #casualtheorics.argdown2.argdown/attack {:from :s38 :to :s1}
-  #casualtheorics.argdown2.argdown/attack {:from :s39 :to :s2}
-  #casualtheorics.argdown2.argdown/attack {:from :s40 :to :s3}
-  #casualtheorics.argdown2.argdown/attack {:from :s41 :to :s4}
-  #casualtheorics.argdown2.argdown/attack {:from :s42 :to :s5}
-  #casualtheorics.argdown2.argdown/attack {:from :s43 :to :s6}
-  #casualtheorics.argdown2.argdown/attack {:from :s44 :to :s7}
-  #casualtheorics.argdown2.argdown/attack {:from :s45 :to :s8}
-  #casualtheorics.argdown2.argdown/attack {:from :s46 :to :s9}
-  #casualtheorics.argdown2.argdown/attack {:from :s47 :to :s10}
-  #casualtheorics.argdown2.argdown/attack {:from :s48 :to :s11}
-  #casualtheorics.argdown2.argdown/attack {:from :s49 :to :s12}
-  #casualtheorics.argdown2.argdown/attack {:from :s0 :to :s13}
-  #casualtheorics.argdown2.argdown/attack {:from :s1 :to :s14}
-  #casualtheorics.argdown2.argdown/attack {:from :s2 :to :s15}
-  #casualtheorics.argdown2.argdown/attack {:from :s3 :to :s16}
-  #casualtheorics.argdown2.argdown/attack {:from :s4 :to :s17}
-  #casualtheorics.argdown2.argdown/attack {:from :s5 :to :s18}
-  #casualtheorics.argdown2.argdown/attack {:from :s6 :to :s19}
-  #casualtheorics.argdown2.argdown/attack {:from :s7 :to :s20}
-  #casualtheorics.argdown2.argdown/attack {:from :s8 :to :s21}
-  #casualtheorics.argdown2.argdown/attack {:from :s9 :to :s22}
-  #casualtheorics.argdown2.argdown/attack {:from :s10 :to :s23}
-  #casualtheorics.argdown2.argdown/attack {:from :s11 :to :s24}
-  #casualtheorics.argdown2.argdown/attack {:from :s12 :to :s25}
-  #casualtheorics.argdown2.argdown/attack {:from :s13 :to :s26}
-  #casualtheorics.argdown2.argdown/attack {:from :s14 :to :s27}
-  #casualtheorics.argdown2.argdown/attack {:from :s15 :to :s28}
-  #casualtheorics.argdown2.argdown/attack {:from :s16 :to :s29}
-  #casualtheorics.argdown2.argdown/attack {:from :s17 :to :s30}
-  #casualtheorics.argdown2.argdown/attack {:from :s18 :to :s31}
-  #casualtheorics.argdown2.argdown/attack {:from :s19 :to :s32}
-  #casualtheorics.argdown2.argdown/attack {:from :s20 :to :s33}
-  #casualtheorics.argdown2.argdown/attack {:from :s21 :to :s34}
-  #casualtheorics.argdown2.argdown/attack {:from :s22 :to :s35}
-  #casualtheorics.argdown2.argdown/attack {:from :s23 :to :s36}
-  #casualtheorics.argdown2.argdown/attack {:from :s24 :to :s37}
-  #casualtheorics.argdown2.argdown/attack {:from :s25 :to :s38}
-  #casualtheorics.argdown2.argdown/attack {:from :s26 :to :s39}
-  #casualtheorics.argdown2.argdown/attack {:from :s27 :to :s40}
-  #casualtheorics.argdown2.argdown/attack {:from :s28 :to :s41}
-  #casualtheorics.argdown2.argdown/attack {:from :s29 :to :s42}
-  #casualtheorics.argdown2.argdown/attack {:from :s30 :to :s43}
-  #casualtheorics.argdown2.argdown/attack {:from :s31 :to :s44}
-  #casualtheorics.argdown2.argdown/attack {:from :s32 :to :s45}
-  #casualtheorics.argdown2.argdown/attack {:from :s33 :to :s46}
-  #casualtheorics.argdown2.argdown/attack {:from :s34 :to :s47}
-  #casualtheorics.argdown2.argdown/attack {:from :s35 :to :s48}
-  #casualtheorics.argdown2.argdown/attack {:from :s36 :to :s49}
-  #casualtheorics.argdown2.argdown/attack {:from :s37 :to :s0}
-  #casualtheorics.argdown2.argdown/attack {:from :s38 :to :s1}
-  #casualtheorics.argdown2.argdown/attack {:from :s39 :to :s2}
-  #casualtheorics.argdown2.argdown/attack {:from :s40 :to :s3}
-  #casualtheorics.argdown2.argdown/attack {:from :s41 :to :s4}
-  #casualtheorics.argdown2.argdown/attack {:from :s42 :to :s5}
-  #casualtheorics.argdown2.argdown/attack {:from :s43 :to :s6}
-  #casualtheorics.argdown2.argdown/attack {:from :s44 :to :s7}
-  #casualtheorics.argdown2.argdown/attack {:from :s45 :to :s8}
-  #casualtheorics.argdown2.argdown/attack {:from :s46 :to :s9}
-  #casualtheorics.argdown2.argdown/attack {:from :s47 :to :s10}
-  #casualtheorics.argdown2.argdown/attack {:from :s48 :to :s11}
-  #casualtheorics.argdown2.argdown/attack {:from :s49 :to :s12}
-  #casualtheorics.argdown2.argdown/attack {:from :s0 :to :s13}
-  #casualtheorics.argdown2.argdown/attack {:from :s1 :to :s14}
-  #casualtheorics.argdown2.argdown/attack {:from :s2 :to :s15}
-  #casualtheorics.argdown2.argdown/attack {:from :s3 :to :s16}
-  #casualtheorics.argdown2.argdown/attack {:from :s4 :to :s17}
-  #casualtheorics.argdown2.argdown/attack {:from :s5 :to :s18}
-  #casualtheorics.argdown2.argdown/attack {:from :s6 :to :s19}
-  #casualtheorics.argdown2.argdown/attack {:from :s7 :to :s20}
-  #casualtheorics.argdown2.argdown/attack {:from :s8 :to :s21}
-  #casualtheorics.argdown2.argdown/attack {:from :s9 :to :s22}
-  #casualtheorics.argdown2.argdown/attack {:from :s10 :to :s23}
-  #casualtheorics.argdown2.argdown/attack {:from :s11 :to :s24}
-  #casualtheorics.argdown2.argdown/attack {:from :s12 :to :s25}
-  #casualtheorics.argdown2.argdown/attack {:from :s13 :to :s26}
-  #casualtheorics.argdown2.argdown/attack {:from :s14 :to :s27}
-  #casualtheorics.argdown2.argdown/attack {:from :s15 :to :s28}
-  #casualtheorics.argdown2.argdown/attack {:from :s16 :to :s29}
-  #casualtheorics.argdown2.argdown/attack {:from :s17 :to :s30}
-  #casualtheorics.argdown2.argdown/attack {:from :s18 :to :s31}
-  #casualtheorics.argdown2.argdown/attack {:from :s19 :to :s32}
-  #casualtheorics.argdown2.argdown/attack {:from :s20 :to :s33}
-  #casualtheorics.argdown2.argdown/attack {:from :s21 :to :s34}
-  #casualtheorics.argdown2.argdown/attack {:from :s22 :to :s35}
-  #casualtheorics.argdown2.argdown/attack {:from :s23 :to :s36}
-  #casualtheorics.argdown2.argdown/attack {:from :s24 :to :s37}
-  #casualtheorics.argdown2.argdown/attack {:from :s25 :to :s38}
-  #casualtheorics.argdown2.argdown/attack {:from :s26 :to :s39}
-  #casualtheorics.argdown2.argdown/attack {:from :s27 :to :s40}
-  #casualtheorics.argdown2.argdown/attack {:from :s28 :to :s41}
-  #casualtheorics.argdown2.argdown/attack {:from :s29 :to :s42}
-  #casualtheorics.argdown2.argdown/attack {:from :s30 :to :s43}
-  #casualtheorics.argdown2.argdown/attack {:from :s31 :to :s44}
-  #casualtheorics.argdown2.argdown/attack {:from :s32 :to :s45}
-  #casualtheorics.argdown2.argdown/attack {:from :s33 :to :s46}
-  #casualtheorics.argdown2.argdown/attack {:from :s34 :to :s47}
-  #casualtheorics.argdown2.argdown/attack {:from :s35 :to :s48}
-  #casualtheorics.argdown2.argdown/attack {:from :s36 :to :s49}
-  #casualtheorics.argdown2.argdown/attack {:from :s37 :to :s0}
-  #casualtheorics.argdown2.argdown/attack {:from :s38 :to :s1}
-  #casualtheorics.argdown2.argdown/attack {:from :s39 :to :s2}
-  #casualtheorics.argdown2.argdown/attack {:from :s40 :to :s3}
-  #casualtheorics.argdown2.argdown/attack {:from :s41 :to :s4}
-  #casualtheorics.argdown2.argdown/attack {:from :s42 :to :s5}
-  #casualtheorics.argdown2.argdown/attack {:from :s43 :to :s6}
-  #casualtheorics.argdown2.argdown/attack {:from :s44 :to :s7}
-  #casualtheorics.argdown2.argdown/attack {:from :s45 :to :s8}
-  #casualtheorics.argdown2.argdown/attack {:from :s46 :to :s9}
-  #casualtheorics.argdown2.argdown/attack {:from :s47 :to :s10}
-  #casualtheorics.argdown2.argdown/attack {:from :s48 :to :s11}
-  #casualtheorics.argdown2.argdown/attack {:from :s49 :to :s12}
-  #casualtheorics.argdown2.argdown/support {:from :a0 :to :s0}
-  #casualtheorics.argdown2.argdown/support {:from :a1 :to :s2}
-  #casualtheorics.argdown2.argdown/support {:from :a2 :to :s4}
-  #casualtheorics.argdown2.argdown/support {:from :a3 :to :s6}
-  #casualtheorics.argdown2.argdown/support {:from :a4 :to :s8}
-  #casualtheorics.argdown2.argdown/support {:from :a5 :to :s10}
-  #casualtheorics.argdown2.argdown/support {:from :a6 :to :s12}
-  #casualtheorics.argdown2.argdown/support {:from :a7 :to :s14}
-  #casualtheorics.argdown2.argdown/support {:from :a8 :to :s16}
-  #casualtheorics.argdown2.argdown/support {:from :a9 :to :s18}
-  #casualtheorics.argdown2.argdown/support {:from :a10 :to :s20}
-  #casualtheorics.argdown2.argdown/support {:from :a11 :to :s22}
-  #casualtheorics.argdown2.argdown/support {:from :a12 :to :s24}
-  #casualtheorics.argdown2.argdown/support {:from :a13 :to :s26}
-  #casualtheorics.argdown2.argdown/support {:from :a14 :to :s28}
-  #casualtheorics.argdown2.argdown/support {:from :a15 :to :s30}
-  #casualtheorics.argdown2.argdown/support {:from :a16 :to :s32}
-  #casualtheorics.argdown2.argdown/support {:from :a17 :to :s34}
-  #casualtheorics.argdown2.argdown/support {:from :a18 :to :s36}
-  #casualtheorics.argdown2.argdown/support {:from :a19 :to :s38}
-]
+  #casualtheorics.argdown2.argdown/attack {:id :attack-1 :from :s0 :to :s13}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-2 :from :s1 :to :s14}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-3 :from :s2 :to :s15}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-4 :from :s3 :to :s16}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-5 :from :s4 :to :s17}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-6 :from :s5 :to :s18}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-7 :from :s6 :to :s19}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-8 :from :s7 :to :s20}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-9 :from :s8 :to :s21}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-10 :from :s9 :to :s22}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-11 :from :s10 :to :s23}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-12 :from :s11 :to :s24}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-13 :from :s12 :to :s25}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-14 :from :s13 :to :s26}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-15 :from :s14 :to :s27}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-16 :from :s15 :to :s28}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-17 :from :s16 :to :s29}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-18 :from :s17 :to :s30}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-19 :from :s18 :to :s31}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-20 :from :s19 :to :s32}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-21 :from :s20 :to :s33}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-22 :from :s21 :to :s34}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-23 :from :s22 :to :s35}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-24 :from :s23 :to :s36}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-25 :from :s24 :to :s37}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-26 :from :s25 :to :s38}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-27 :from :s26 :to :s39}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-28 :from :s27 :to :s40}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-29 :from :s28 :to :s41}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-30 :from :s29 :to :s42}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-31 :from :s30 :to :s43}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-32 :from :s31 :to :s44}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-33 :from :s32 :to :s45}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-34 :from :s33 :to :s46}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-35 :from :s34 :to :s47}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-36 :from :s35 :to :s48}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-37 :from :s36 :to :s49}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-38 :from :s37 :to :s0}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-39 :from :s38 :to :s1}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-40 :from :s39 :to :s2}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-41 :from :s40 :to :s3}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-42 :from :s41 :to :s4}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-43 :from :s42 :to :s5}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-44 :from :s43 :to :s6}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-45 :from :s44 :to :s7}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-46 :from :s45 :to :s8}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-47 :from :s46 :to :s9}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-48 :from :s47 :to :s10}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-49 :from :s48 :to :s11}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-50 :from :s49 :to :s12}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-51 :from :s0 :to :s13}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-52 :from :s1 :to :s14}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-53 :from :s2 :to :s15}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-54 :from :s3 :to :s16}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-55 :from :s4 :to :s17}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-56 :from :s5 :to :s18}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-57 :from :s6 :to :s19}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-58 :from :s7 :to :s20}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-59 :from :s8 :to :s21}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-60 :from :s9 :to :s22}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-61 :from :s10 :to :s23}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-62 :from :s11 :to :s24}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-63 :from :s12 :to :s25}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-64 :from :s13 :to :s26}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-65 :from :s14 :to :s27}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-66 :from :s15 :to :s28}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-67 :from :s16 :to :s29}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-68 :from :s17 :to :s30}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-69 :from :s18 :to :s31}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-70 :from :s19 :to :s32}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-71 :from :s20 :to :s33}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-72 :from :s21 :to :s34}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-73 :from :s22 :to :s35}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-74 :from :s23 :to :s36}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-75 :from :s24 :to :s37}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-76 :from :s25 :to :s38}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-77 :from :s26 :to :s39}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-78 :from :s27 :to :s40}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-79 :from :s28 :to :s41}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-80 :from :s29 :to :s42}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-81 :from :s30 :to :s43}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-82 :from :s31 :to :s44}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-83 :from :s32 :to :s45}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-84 :from :s33 :to :s46}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-85 :from :s34 :to :s47}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-86 :from :s35 :to :s48}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-87 :from :s36 :to :s49}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-88 :from :s37 :to :s0}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-89 :from :s38 :to :s1}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-90 :from :s39 :to :s2}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-91 :from :s40 :to :s3}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-92 :from :s41 :to :s4}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-93 :from :s42 :to :s5}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-94 :from :s43 :to :s6}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-95 :from :s44 :to :s7}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-96 :from :s45 :to :s8}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-97 :from :s46 :to :s9}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-98 :from :s47 :to :s10}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-99 :from :s48 :to :s11}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-100 :from :s49 :to :s12}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-101 :from :s0 :to :s13}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-102 :from :s1 :to :s14}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-103 :from :s2 :to :s15}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-104 :from :s3 :to :s16}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-105 :from :s4 :to :s17}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-106 :from :s5 :to :s18}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-107 :from :s6 :to :s19}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-108 :from :s7 :to :s20}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-109 :from :s8 :to :s21}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-110 :from :s9 :to :s22}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-111 :from :s10 :to :s23}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-112 :from :s11 :to :s24}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-113 :from :s12 :to :s25}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-114 :from :s13 :to :s26}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-115 :from :s14 :to :s27}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-116 :from :s15 :to :s28}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-117 :from :s16 :to :s29}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-118 :from :s17 :to :s30}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-119 :from :s18 :to :s31}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-120 :from :s19 :to :s32}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-121 :from :s20 :to :s33}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-122 :from :s21 :to :s34}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-123 :from :s22 :to :s35}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-124 :from :s23 :to :s36}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-125 :from :s24 :to :s37}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-126 :from :s25 :to :s38}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-127 :from :s26 :to :s39}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-128 :from :s27 :to :s40}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-129 :from :s28 :to :s41}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-130 :from :s29 :to :s42}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-131 :from :s30 :to :s43}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-132 :from :s31 :to :s44}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-133 :from :s32 :to :s45}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-134 :from :s33 :to :s46}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-135 :from :s34 :to :s47}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-136 :from :s35 :to :s48}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-137 :from :s36 :to :s49}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-138 :from :s37 :to :s0}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-139 :from :s38 :to :s1}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-140 :from :s39 :to :s2}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-141 :from :s40 :to :s3}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-142 :from :s41 :to :s4}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-143 :from :s42 :to :s5}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-144 :from :s43 :to :s6}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-145 :from :s44 :to :s7}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-146 :from :s45 :to :s8}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-147 :from :s46 :to :s9}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-148 :from :s47 :to :s10}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-149 :from :s48 :to :s11}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-150 :from :s49 :to :s12}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-151 :from :s0 :to :s13}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-152 :from :s1 :to :s14}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-153 :from :s2 :to :s15}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-154 :from :s3 :to :s16}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-155 :from :s4 :to :s17}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-156 :from :s5 :to :s18}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-157 :from :s6 :to :s19}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-158 :from :s7 :to :s20}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-159 :from :s8 :to :s21}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-160 :from :s9 :to :s22}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-161 :from :s10 :to :s23}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-162 :from :s11 :to :s24}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-163 :from :s12 :to :s25}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-164 :from :s13 :to :s26}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-165 :from :s14 :to :s27}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-166 :from :s15 :to :s28}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-167 :from :s16 :to :s29}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-168 :from :s17 :to :s30}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-169 :from :s18 :to :s31}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-170 :from :s19 :to :s32}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-171 :from :s20 :to :s33}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-172 :from :s21 :to :s34}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-173 :from :s22 :to :s35}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-174 :from :s23 :to :s36}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-175 :from :s24 :to :s37}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-176 :from :s25 :to :s38}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-177 :from :s26 :to :s39}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-178 :from :s27 :to :s40}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-179 :from :s28 :to :s41}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-180 :from :s29 :to :s42}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-181 :from :s30 :to :s43}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-182 :from :s31 :to :s44}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-183 :from :s32 :to :s45}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-184 :from :s33 :to :s46}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-185 :from :s34 :to :s47}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-186 :from :s35 :to :s48}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-187 :from :s36 :to :s49}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-188 :from :s37 :to :s0}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-189 :from :s38 :to :s1}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-190 :from :s39 :to :s2}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-191 :from :s40 :to :s3}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-192 :from :s41 :to :s4}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-193 :from :s42 :to :s5}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-194 :from :s43 :to :s6}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-195 :from :s44 :to :s7}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-196 :from :s45 :to :s8}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-197 :from :s46 :to :s9}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-198 :from :s47 :to :s10}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-199 :from :s48 :to :s11}
+  #casualtheorics.argdown2.argdown/attack {:id :attack-200 :from :s49 :to :s12}
+
+  ]}}

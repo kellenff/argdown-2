@@ -2,6 +2,7 @@ import type {
   CandidateDocument,
   CandidateElement,
   RelationKind,
+  SolverTag,
 } from "../model.js";
 
 export type BuilderWarning = {
@@ -24,15 +25,15 @@ export type DiffOp =
   | {
     op: "add-relation";
     kind: RelationKind;
-    from: string;
-    to: string;
+    id: string;
   }
   | {
     op: "remove-relation";
     kind: RelationKind;
-    from: string;
-    to: string;
-  };
+    id: string;
+  }
+  | { op: "set-import"; parentId: string; childId: string }
+  | { op: "remove-import"; parentId: string; childId: string };
 
 export type ApplyResult = {
   document: CandidateDocument;
@@ -41,25 +42,27 @@ export type ApplyResult = {
   diff: readonly DiffOp[];
 };
 
+type Scoped = { parentId?: string };
+
 export type DocumentEdit =
   | {
     type: "add_statement";
     id: string;
     text?: string;
     tags?: readonly string[];
-  }
+  } & Scoped
   | {
     type: "update_statement";
     id: string;
     text?: string;
     tags?: readonly string[];
-  }
+  } & Scoped
   | {
     type: "add_argument";
     id: string;
     description?: string;
     tags?: readonly string[];
-  }
+  } & Scoped
   | {
     type: "add_inference";
     argumentId: string;
@@ -67,17 +70,25 @@ export type DocumentEdit =
     premises: readonly string[];
     conclusion: string;
     rules?: readonly string[];
-  }
+  } & Scoped
   | {
     type: "add_relation";
     kind: RelationKind;
+    id: string;
     from: string;
     to: string;
-  }
-  | { type: "remove_element"; id: string }
+  } & Scoped
+  | ({ type: "remove_element"; id: string } & Scoped)
+  | ({ type: "remove_relation"; id: string } & Scoped)
   | {
-    type: "remove_relation";
-    kind: RelationKind;
-    from: string;
-    to: string;
-  };
+    type: "add_solver";
+    id: string;
+    solver: SolverTag;
+  } & Scoped
+  | {
+    type: "set_import";
+    childId: string;
+    outAtMost: number;
+    inAtLeast: number;
+  } & Scoped
+  | ({ type: "remove_import"; childId: string } & Scoped);

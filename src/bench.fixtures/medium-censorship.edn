@@ -1,6 +1,15 @@
-#casualtheorics.argdown2.solver/grounded
-[
-  #casualtheorics.argdown2.argdown/statement
+#casualtheorics.argdown2/document
+{:id :medium-censorship
+ :root
+ #casualtheorics.argdown2.solver/grounded
+ {:id :root
+  :interface
+  {:aggregate
+   #casualtheorics.argdown2.aggregate/identity
+   {:inputs [{:ref :censorship}]}}
+  :elements
+  [
+#casualtheorics.argdown2.argdown/statement
   {:id :censorship
    :text "Censorship is not wrong in principle."}
 
@@ -64,24 +73,19 @@
    :tags #{:con}
    :metadata {:source "C2"}}
 
-  #casualtheorics.argdown2.argdown/support
-  {:from :racial-hatred :to :censorship}
+  #casualtheorics.argdown2.argdown/attack
+  {:id :attack-2 :from :inclusive-debate :to :racial-hatred}
 
   #casualtheorics.argdown2.argdown/attack
-  {:from :inclusive-debate :to :racial-hatred}
-
-  #casualtheorics.argdown2.argdown/support
-  {:from :excessive-sex-violence :to :censorship}
+  {:id :attack-4 :from :causal-link-questionable :to :excessive-sex-violence}
 
   #casualtheorics.argdown2.argdown/attack
-  {:from :causal-link-questionable :to :excessive-sex-violence}
+  {:id :attack-5 :from :no-harm-trumps-freedom :to :absolute-freedom}
 
   #casualtheorics.argdown2.argdown/attack
-  {:from :no-harm-trumps-freedom :to :absolute-freedom}
-
-  #casualtheorics.argdown2.argdown/attack
-  {:from :freedom-of-speech :to :censorship}
+  {:id :attack-6 :from :freedom-of-speech :to :censorship}
 
   #casualtheorics.argdown2.argdown/contradiction
-  {:from :censorship-wrong :to :censorship}
-]
+  {:id :contradiction-7 :from :censorship-wrong :to :censorship}
+
+  ]}}

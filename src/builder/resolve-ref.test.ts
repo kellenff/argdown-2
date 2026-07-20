@@ -8,37 +8,35 @@ import type { CandidateDocument } from "../model.js";
 function docWithStatements(): CandidateDocument {
   return {
     ...emptyDocument(),
-    elements: [
-      {
+    root: {
+      ...emptyDocument().root,
+      elements: [{
         kind: "statement",
         id: "a",
         text: "Alpha claim",
         tags: [],
         extra: [],
-      },
-      {
+      }, {
         kind: "statement",
         id: "b",
         text: "Beta claim",
         tags: [],
         extra: [],
-      },
-      {
+      }, {
         kind: "statement",
         id: "c",
         text: "Alpha claim",
         tags: [],
         extra: [],
-      },
-      {
+      }, {
         kind: "argument",
         id: "arg1",
         description: "Arg one",
         tags: [],
         inferences: [],
         extra: [],
-      },
-    ],
+      }],
+    },
   };
 }
 

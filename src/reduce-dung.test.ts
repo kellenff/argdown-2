@@ -3,11 +3,11 @@ import { describe, it } from "@std/testing/bdd";
 
 import type {
   EntityId,
-  GroundedDocument,
   InferenceId,
+  SolverComponent,
   TheoryElement,
 } from "./model.js";
-import { GROUNDED_SOLVER_TAG } from "./model.js";
+import { AGGREGATE_IDENTITY_TAG, GROUNDED_SOLVER_TAG } from "./model.js";
 import { reduceToDung } from "./reduce-dung.js";
 
 const id = (value: string) => value as EntityId;
@@ -19,8 +19,21 @@ const statement = (value: string): TheoryElement => ({
   tags: [],
 });
 
-function document(...elements: readonly TheoryElement[]): GroundedDocument {
-  return { solver: GROUNDED_SOLVER_TAG, elements };
+function document(...elements: readonly TheoryElement[]): SolverComponent {
+  return {
+    kind: "solver",
+    solver: GROUNDED_SOLVER_TAG,
+    id: id("root"),
+    interface: {
+      aggregate: {
+        tag: AGGREGATE_IDENTITY_TAG,
+        inputs: [{ ref: "unused" }],
+      },
+    },
+    imports: new Map(),
+    elements,
+    extra: [],
+  };
 }
 
 describe("reduceToDung", () => {
@@ -52,8 +65,20 @@ describe("reduceToDung", () => {
         statement("a"),
         statement("b"),
         statement("c"),
-        { extra: [], from: id("a"), kind: "attack", to: id("b") },
-        { extra: [], from: id("b"), kind: "contradiction", to: id("c") },
+        {
+          extra: [],
+          id: id("attack-a-b"),
+          from: id("a"),
+          kind: "attack",
+          to: id("b"),
+        },
+        {
+          extra: [],
+          id: id("contradiction-b-c"),
+          from: id("b"),
+          kind: "contradiction",
+          to: id("c"),
+        },
       ),
     );
     expect(result.framework.attackersByTarget.get(id("b"))).toEqual(
@@ -69,8 +94,20 @@ describe("reduceToDung", () => {
       document(
         statement("a"),
         statement("b"),
-        { extra: [], from: id("a"), kind: "support", to: id("b") },
-        { extra: [], from: id("a"), kind: "undercut", to: inferenceId("i") },
+        {
+          extra: [],
+          id: id("support-a-b"),
+          from: id("a"),
+          kind: "support",
+          to: id("b"),
+        },
+        {
+          extra: [],
+          id: id("undercut-a-i"),
+          from: id("a"),
+          kind: "undercut",
+          to: id("i"),
+        },
       ),
     );
     expect(result.warnings.map((warning) => warning.code)).toEqual([
@@ -83,6 +120,7 @@ describe("reduceToDung", () => {
   it("is independent of theory element order", () => {
     const attack: TheoryElement = {
       extra: [],
+      id: id("attack-a-b"),
       from: id("a"),
       kind: "attack",
       to: id("b"),

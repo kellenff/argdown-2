@@ -107,6 +107,8 @@ export async function saveDocumentRef(
 export async function createDocumentRef(
   ref: DocumentRef,
   solver: SolverTag = GROUNDED_SOLVER_TAG,
+  documentId = "document",
+  rootId = "root",
 ): Promise<SaveDocResult> {
-  return saveDocumentRef(ref, emptyDocument(solver));
+  return saveDocumentRef(ref, emptyDocument(solver, documentId, rootId));
 }

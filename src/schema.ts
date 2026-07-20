@@ -2,19 +2,27 @@ import type { EDN } from "edn-parser-js";
 import { z } from "zod";
 
 import {
+  AGGREGATE_IDENTITY_TAG,
+  type AggregateInput,
   type CandidateArgument,
   type CandidateDocument,
   type CandidateElement,
   type CandidateInference,
   type CandidateRelation,
+  type CandidateSolverComponent,
   type CandidateStatement,
   type Diagnostic,
+  DOCUMENT_TAG,
+  EXTENSION_PROPORTION_OBSERVER_TAG,
   type ExtraEntry,
   isSolverTag,
+  PROJECTION_THRESHOLD_TAG,
   type RelationKind,
-  type SolverTag,
+  type SolverInterface,
+  type ThresholdProjection,
 } from "./model.js";
 
+const DOCUMENT_NAMESPACE = "casualtheorics.argdown2";
 const ROOT_NAMESPACE = "casualtheorics.argdown2.solver";
 const THEORY_NAMESPACE = "casualtheorics.argdown2.argdown";
 
@@ -83,7 +91,14 @@ const inferenceKeys = new Set([
   "rules",
   "metadata",
 ]);
-const relationKeys = new Set(["from", "to"]);
+const relationKeys = new Set(["id", "from", "to"]);
+const documentKeys = new Set(["id", "root"]);
+const solverKeys = new Set(["id", "interface", "imports", "elements"]);
+const interfaceKeys = new Set(["aggregate", "observer"]);
+const observerKeys = new Set(["mode"]);
+const aggregateKeys = new Set(["inputs"]);
+const inputKeys = new Set(["ref"]);
+const projectionKeys = new Set(["out-at-most", "in-at-least", "otherwise"]);
 
 const defaultTags: readonly string[] = [];
 const defaultRules: readonly string[] = [];
@@ -244,6 +259,24 @@ function requiredKeyword(
   const value = keywordName(fields.known.get(name));
   if (value === undefined) {
     pushInvalid(errors, path, name, `Expected keyword :${name}`);
+  }
+  return value;
+}
+
+function requiredNumber(
+  fields: Fields,
+  name: string,
+  path: Path,
+  errors: Diagnostic[],
+): number | undefined {
+  if (!fields.known.has(name)) {
+    pushMissing(errors, path, name);
+    return undefined;
+  }
+  const value = fields.known.get(name);
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    pushInvalid(errors, path, name, `Expected finite number :${name}`);
+    return undefined;
   }
   return value;
 }
@@ -486,20 +519,260 @@ function decodeRelation(
   path: Path,
   errors: Diagnostic[],
 ): CandidateRelation | undefined {
+  const start = errors.length;
   const fields = expectMap(value, relationKeys, path, errors);
   if (fields === undefined) return undefined;
+  const id = requiredKeyword(fields, "id", path, errors);
   const from = requiredKeyword(fields, "from", path, errors);
   const to = requiredKeyword(fields, "to", path, errors);
-  if (from === undefined || to === undefined) return undefined;
-  return { kind, from, to, extra: fields.extra };
+  if (
+    errors.length > start ||
+    id === undefined ||
+    from === undefined ||
+    to === undefined
+  ) {
+    return undefined;
+  }
+  return { kind, id, from, to, extra: fields.extra };
+}
+
+function decodeAggregateInput(
+  value: unknown,
+  path: Path,
+  errors: Diagnostic[],
+): AggregateInput | undefined {
+  const fields = expectMap(value, inputKeys, path, errors);
+  if (fields === undefined) return undefined;
+  const ref = requiredKeyword(fields, "ref", path, errors);
+  return ref === undefined ? undefined : { ref };
+}
+
+function decodeInterface(
+  value: unknown,
+  path: Path,
+  errors: Diagnostic[],
+): SolverInterface | undefined {
+  const fields = expectMap(value, interfaceKeys, path, errors);
+  if (fields === undefined) return undefined;
+  if (!fields.known.has("aggregate")) {
+    pushMissing(errors, path, "aggregate");
+    return undefined;
+  }
+  const aggregate = taggedSchema.safeParse(fields.known.get("aggregate"));
+  if (
+    !aggregate.success ||
+    fullName(aggregate.data.tag) !== AGGREGATE_IDENTITY_TAG
+  ) {
+    pushInvalid(
+      errors,
+      path,
+      "aggregate",
+      `Expected #${AGGREGATE_IDENTITY_TAG}`,
+    );
+    return undefined;
+  }
+  const aggregateFields = expectMap(
+    aggregate.data.value,
+    aggregateKeys,
+    [...path, ":aggregate"],
+    errors,
+  );
+  if (aggregateFields === undefined) return undefined;
+  const rawInputs = aggregateFields.known.get("inputs");
+  if (!Array.isArray(rawInputs)) {
+    if (!aggregateFields.known.has("inputs")) {
+      pushMissing(errors, [...path, ":aggregate"], "inputs");
+    } else {
+      pushInvalid(
+        errors,
+        [...path, ":aggregate"],
+        "inputs",
+        "Expected vector :inputs",
+      );
+    }
+    return undefined;
+  }
+  if (rawInputs.length !== 1) {
+    pushInvalid(
+      errors,
+      [...path, ":aggregate"],
+      "inputs",
+      "Identity aggregate requires exactly one input",
+    );
+    return undefined;
+  }
+  const input = decodeAggregateInput(
+    rawInputs[0],
+    [...path, ":aggregate", ":inputs", 0],
+    errors,
+  );
+  if (input === undefined) return undefined;
+
+  let observer: SolverInterface["observer"];
+  if (fields.known.has("observer")) {
+    const tagged = taggedSchema.safeParse(fields.known.get("observer"));
+    const observerFields = tagged.success
+      ? fieldsOf(tagged.data.value, observerKeys)
+      : undefined;
+    if (
+      !tagged.success ||
+      fullName(tagged.data.tag) !== EXTENSION_PROPORTION_OBSERVER_TAG ||
+      observerFields === undefined ||
+      keywordName(observerFields.known.get("mode")) !== "proportion"
+    ) {
+      pushInvalid(
+        errors,
+        path,
+        "observer",
+        `Expected #${EXTENSION_PROPORTION_OBSERVER_TAG} {:mode :proportion}`,
+      );
+      return undefined;
+    }
+    observer = { tag: EXTENSION_PROPORTION_OBSERVER_TAG };
+  }
+  return {
+    aggregate: {
+      tag: AGGREGATE_IDENTITY_TAG,
+      inputs: [input],
+    },
+    ...(observer === undefined ? {} : { observer }),
+  };
+}
+
+function decodeThresholdProjection(
+  value: unknown,
+  path: Path,
+  errors: Diagnostic[],
+): ThresholdProjection | undefined {
+  const tagged = taggedSchema.safeParse(value);
+  if (
+    !tagged.success ||
+    fullName(tagged.data.tag) !== PROJECTION_THRESHOLD_TAG
+  ) {
+    errors.push({
+      code: "schema/invalid-field",
+      message: `Expected #${PROJECTION_THRESHOLD_TAG}`,
+      path,
+    });
+    return undefined;
+  }
+  const fields = expectMap(tagged.data.value, projectionKeys, path, errors);
+  if (fields === undefined) return undefined;
+  const outAtMost = requiredNumber(fields, "out-at-most", path, errors);
+  const inAtLeast = requiredNumber(fields, "in-at-least", path, errors);
+  if (!fields.known.has("otherwise")) {
+    pushMissing(errors, path, "otherwise");
+  } else if (fields.known.get("otherwise") !== null) {
+    pushInvalid(errors, path, "otherwise", "Expected nil :otherwise");
+  }
+  if (outAtMost === undefined || inAtLeast === undefined) return undefined;
+  return {
+    tag: PROJECTION_THRESHOLD_TAG,
+    outAtMost,
+    inAtLeast,
+    otherwise: null,
+  };
+}
+
+function decodeImports(
+  value: unknown,
+  path: Path,
+  errors: Diagnostic[],
+): readonly (readonly [string, ThresholdProjection])[] | undefined {
+  const parsed = mapSchema.safeParse(value);
+  if (!parsed.success) {
+    errors.push({
+      code: "schema/invalid-field",
+      message: "Expected map :imports",
+      path,
+    });
+    return undefined;
+  }
+  const imports: Array<readonly [string, ThresholdProjection]> = [];
+  parsed.data.map.forEach(([key, entry], index) => {
+    const id = keywordName(key);
+    if (id === undefined) {
+      errors.push({
+        code: "schema/invalid-field",
+        message: "Expected keyword import key",
+        path: [...path, index, "key"],
+      });
+      return;
+    }
+    const projection = decodeThresholdProjection(
+      entry,
+      [...path, id],
+      errors,
+    );
+    if (projection !== undefined) imports.push([id, projection]);
+  });
+  return imports;
+}
+
+function decodeSolverComponent(
+  taggedValue: z.infer<typeof taggedSchema>,
+  path: Path,
+  errors: Diagnostic[],
+): CandidateSolverComponent | undefined {
+  const solverName = fullName(taggedValue.tag);
+  if (taggedValue.tag.ns !== ROOT_NAMESPACE || !isSolverTag(solverName)) {
+    pushUnsupportedTag(errors, path, solverName);
+    return undefined;
+  }
+  const start = errors.length;
+  const fields = expectMap(taggedValue.value, solverKeys, path, errors);
+  if (fields === undefined) return undefined;
+  const id = requiredKeyword(fields, "id", path, errors);
+  let interfaceValue: SolverInterface | undefined;
+  if (fields.known.has("interface")) {
+    interfaceValue = decodeInterface(
+      fields.known.get("interface"),
+      [...path, ":interface"],
+      errors,
+    );
+  }
+  let imports: readonly (readonly [string, ThresholdProjection])[] = [];
+  if (fields.known.has("imports")) {
+    imports = decodeImports(
+      fields.known.get("imports"),
+      [...path, ":imports"],
+      errors,
+    ) ?? [];
+  }
+  const rawElements = fields.known.get("elements");
+  const elements: CandidateElement[] = [];
+  if (!Array.isArray(rawElements)) {
+    if (!fields.known.has("elements")) pushMissing(errors, path, "elements");
+    else {
+      pushInvalid(errors, path, "elements", "Expected vector :elements");
+    }
+  } else {
+    rawElements.forEach((entry, index) => {
+      const decoded = decodeElement(
+        entry,
+        [...path, ":elements", index],
+        errors,
+      );
+      if (decoded !== undefined) elements.push(decoded);
+    });
+  }
+  if (errors.length > start || id === undefined) return undefined;
+  return {
+    kind: "solver",
+    solver: solverName,
+    id,
+    imports,
+    elements,
+    extra: fields.extra,
+    ...(interfaceValue === undefined ? {} : { interface: interfaceValue }),
+  };
 }
 
 function decodeElement(
   value: unknown,
-  index: number,
+  path: Path,
   errors: Diagnostic[],
 ): CandidateElement | undefined {
-  const path: Path = [index];
   const tagged = taggedSchema.safeParse(value);
   if (!tagged.success) {
     errors.push({
@@ -510,6 +783,11 @@ function decodeElement(
     return undefined;
   }
   const name = fullName(tagged.data.tag);
+
+  if (tagged.data.tag.ns === ROOT_NAMESPACE && isSolverTag(name)) {
+    return decodeSolverComponent(tagged.data, path, errors);
+  }
+
   if (tagged.data.tag.ns !== THEORY_NAMESPACE) {
     pushUnsupportedTag(errors, path, name);
     return undefined;
@@ -556,39 +834,44 @@ export function decodeWire(value: unknown): DecodeResult {
     return {
       ok: false,
       errors: [{
-        code: "schema/missing-root-tag",
-        message: "Expected tagged solver root",
+        code: "schema/missing-document-tag",
+        message: `Expected #${DOCUMENT_TAG}`,
       }],
     };
   }
   const rootName = fullName(root.data.tag);
-  if (root.data.tag.ns !== ROOT_NAMESPACE || !isSolverTag(rootName)) {
+  if (
+    root.data.tag.ns !== DOCUMENT_NAMESPACE ||
+    root.data.tag.symbol !== "document"
+  ) {
     return {
       ok: false,
       errors: [{
-        code: "edn/unsupported-tag",
-        message: `Unsupported tag #${rootName}`,
-      }],
-    };
-  }
-  if (!Array.isArray(root.data.value)) {
-    return {
-      ok: false,
-      errors: [{
-        code: "schema/root-not-vector",
-        message: "Solver root value must be vector",
+        code: "schema/missing-document-tag",
+        message: `Expected #${DOCUMENT_TAG}; received #${rootName}`,
       }],
     };
   }
   const errors: Diagnostic[] = [];
-  const elements: CandidateElement[] = [];
-  root.data.value.forEach((entry, index) => {
-    const decoded = decodeElement(entry, index, errors);
-    if (decoded !== undefined) elements.push(decoded);
-  });
-  if (errors.length > 0) return { ok: false, errors };
+  const fields = expectMap(root.data.value, documentKeys, [], errors);
+  if (fields === undefined) return { ok: false, errors };
+  const id = requiredKeyword(fields, "id", [], errors);
+  let component: CandidateSolverComponent | undefined;
+  if (!fields.known.has("root")) {
+    pushMissing(errors, [], "root");
+  } else {
+    const tagged = taggedSchema.safeParse(fields.known.get("root"));
+    if (!tagged.success) {
+      pushInvalid(errors, [], "root", "Expected tagged solver component");
+    } else {
+      component = decodeSolverComponent(tagged.data, [":root"], errors);
+    }
+  }
+  if (id === undefined || component === undefined || errors.length > 0) {
+    return { ok: false, errors };
+  }
   return {
     ok: true,
-    document: { solver: rootName as SolverTag, elements },
+    document: { id, root: component, extra: fields.extra },
   };
 }
