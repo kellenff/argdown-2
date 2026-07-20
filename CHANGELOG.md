@@ -15,6 +15,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Mermaid `flowchart TD` renderer: library export
+  `renderMermaid(document, opts?)` plus a new MCP tool `render_mermaid`. Renders
+  statements, arguments, and relations of a validated `Document`. Child solver
+  components become Mermaid subgraphs (one level deep). Optional `labels` map
+  (or MCP `includeLabels` flag) adds `classDef in|out|undec` styles. Endpoints
+  out of root scope are silently dropped. Argument inference
+  premises-to-conclusion edges are not drawn in this version.
+
+## [0.2.0-alpha5] - 2026-07-20
+
+### Added
+
 - First-class solver components with IDs, local endpoint scopes, identified
   relations, identity interfaces, typed confidence boundaries, and bottom-up
   grounded composition.
@@ -28,13 +40,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Claude Code in-repo marketplace (`.claude-plugin/marketplace.json`) and nested
   plugin (`plugins/argdown-2`) with MCP, three skills, and a soft rule to never
   hand-edit EDN.
-- Mermaid `flowchart TD` renderer: library export
-  `renderMermaid(document, opts?)` plus a new MCP tool `render_mermaid`. Renders
-  statements, arguments, and relations of a validated `Document`. Child solver
-  components become Mermaid subgraphs (one level deep). Optional `labels` map
-  (or MCP `includeLabels` flag) adds `classDef in|out|undec` styles. Endpoints
-  out of root scope are silently dropped. Argument inference
-  premises-to-conclusion edges are not drawn in this version.
 
 ### Changed
 
@@ -215,4 +220,5 @@ backward-compatibility promises yet — the language surface is frozen (see
 [0.2.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha1
 [0.2.0-alpha2]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha2
 [0.2.0-alpha4]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha4
+[0.2.0-alpha5]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha5
 [0.2.0-alpha3]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha3
