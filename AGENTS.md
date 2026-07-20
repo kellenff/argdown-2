@@ -35,6 +35,14 @@ plus skills). Keep the plugin launcher copy in sync with canonical
 `scripts/argdown-2-mcp` and `scripts/argdown-2-mcp.version` (enforced by
 `src/claude-plugin.test.ts`). There is no Cursor plugin packaging in this repo.
 
+### Pi coding agent package
+
+Root `package.json` is a thin Pi package manifest (`pi install git:…`).
+Skills are shared with Claude Code at `plugins/argdown-2/skills/`. The
+extension under `pi/extensions/` bridges MCP via `@modelcontextprotocol/sdk`
+and the canonical `scripts/argdown-2-mcp` launcher. Shape and bridge tests
+live in `src/pi-package.test.ts`.
+
 ### MCP server smoke test
 
 The MCP server communicates over stdio (JSON-RPC). To exercise it end to end,

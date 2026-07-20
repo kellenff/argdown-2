@@ -150,6 +150,20 @@ The plugin launches the server with `bash ${CLAUDE_PLUGIN_ROOT}/scripts/argdown-
 
 Release binaries are compiled directly from [`src/mcp/cli.ts`](src/mcp/cli.ts) with `deno task compile:mcp` / [`scripts/compile-mcp.sh`](scripts/compile-mcp.sh); there is no separate MCP bundler.
 
+### Pi coding agent
+
+Install from git (unix only — the launcher is bash):
+
+```bash
+pi install git:github.com/kellenff/argdown-2
+```
+
+Or from a local clone: `pi install /absolute/path/to/argdown-2`.
+
+This loads the shared skills under `plugins/argdown-2/skills` and a Pi extension that bridges the stdio MCP server (same `scripts/argdown-2-mcp` binary launcher). No `pi-mcp-adapter` / `.mcp.json` is required for argdown-2 tools.
+
+**Never hand-edit EDN** — use the builder MCP tools only.
+
 **Claude Desktop** (`claude_desktop_config.json`) or other MCP clients via root [`mcp.json`](mcp.json):
 
 ```json
