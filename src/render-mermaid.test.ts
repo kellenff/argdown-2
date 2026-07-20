@@ -140,6 +140,8 @@ describe("renderMermaid", () => {
     expect(out).toContain("subgraph ");
     expect(out).toContain("end");
     expect(out).toMatch(/subgraph sub_child/);
+    expect(out).not.toContain("undefined");
+    expect(out).toMatch(/[a-z_]+ -\.->\|"attack"\| sub_child/);
   });
 
   it("renders an argument as a single labelled node", () => {
