@@ -103,14 +103,16 @@ export function renderMermaid(
     return slug;
   }
 
-  function declareStatement(s: Statement): void {
-    const slug = declare(s.id);
+  function declareStatement(s: Statement, isChild = false): string {
+    const slug = isChild ? allocateSlug(s.id, usedSlugs) : declare(s.id);
     nodes.push(`    ${slug}["${escapeLabel(statementLabel(s))}"]`);
+    return slug;
   }
 
-  function declareArgument(a: Argument): void {
-    const slug = declare(a.id);
+  function declareArgument(a: Argument, isChild = false): string {
+    const slug = isChild ? allocateSlug(a.id, usedSlugs) : declare(a.id);
     nodes.push(`    ${slug}["${escapeLabel(argumentLabel(a))}"]`);
+    return slug;
   }
 
   function declareSolver(child: SolverComponent): void {
@@ -119,11 +121,9 @@ export function renderMermaid(
     const localSlugs: string[] = [];
     for (const el of child.elements) {
       if (el.kind === "statement") {
-        declareStatement(el);
-        localSlugs.push(idToSlug.get(el.id)!);
+        localSlugs.push(declareStatement(el, true));
       } else if (el.kind === "argument") {
-        declareArgument(el);
-        localSlugs.push(idToSlug.get(el.id)!);
+        localSlugs.push(declareArgument(el, true));
       }
     }
     const slug = allocateSlug(`sub_${child.id}`, usedSlugs);
