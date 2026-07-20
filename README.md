@@ -47,7 +47,8 @@ if (!loaded.ok) {
 }
 ```
 
-Three functions, one return shape: `{ ok: true, ... } | { ok: false, errors }`.
+Four public functions: `load` and `validate` return discriminated results,
+`solve` returns a component result, and `renderMermaid` returns Mermaid source.
 The library never throws and never produces a partial document.
 
 Three install paths:
@@ -78,7 +79,7 @@ flowchart LR
   solve --> aggregate["aggregate<br/>parent view"]
   solve --> boundary["boundary<br/>projection"]
 
-  mcp["MCP builder<br/>14 tools"] --> load
+  mcp["MCP builder<br/>15 tools"] --> load
   mcp --> solve
 
   classDef pure fill:#eef,stroke:#446
@@ -100,10 +101,10 @@ Because EDN maps directly to JS data, syntax and cross-reference validation
 collapse into a single pipeline. The custom parser, AST, and visitor split from
 `0.1.0` is no longer present in `0.2.0`.
 
-The MCP server is a co-equal layer above this pipeline. It registers 14 tools
-that call `load`, `validate`, `solve`, and the builder functions directly. There
-is no separate code path; an agent-constructed graph goes through the same
-validation and solver as a programmatic one.
+The MCP server is a co-equal layer above this pipeline. It registers 15 tools
+that call `load`, `validate`, `solve`, `renderMermaid`, and the builder functions
+directly. There is no separate code path; an agent-constructed graph goes
+through the same validation and solver as a programmatic one.
 
 ## Solver
 
@@ -176,7 +177,7 @@ and
 
 ## MCP server
 
-Fourteen tools, stdio transport, single binary `argdown-2-mcp`. Every mutating
+Fifteen tools, stdio transport, single binary `argdown-2-mcp`. Every mutating
 tool takes exactly one of `path` (filesystem `.edn`, atomic write via temp +
 rename) or `source` (full document text, returns updated text). Optional
 `parentId` scopes mutations to a nested solver component (default: document
