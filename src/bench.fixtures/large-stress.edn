@@ -509,25 +509,5 @@
   #casualtheorics.argdown2.argdown/attack {:id :attack-198 :from :s47 :to :s10}
   #casualtheorics.argdown2.argdown/attack {:id :attack-199 :from :s48 :to :s11}
   #casualtheorics.argdown2.argdown/attack {:id :attack-200 :from :s49 :to :s12}
-  #casualtheorics.argdown2.argdown/support {:id :support-201 :from :a0 :to :s0}
-  #casualtheorics.argdown2.argdown/support {:id :support-202 :from :a1 :to :s2}
-  #casualtheorics.argdown2.argdown/support {:id :support-203 :from :a2 :to :s4}
-  #casualtheorics.argdown2.argdown/support {:id :support-204 :from :a3 :to :s6}
-  #casualtheorics.argdown2.argdown/support {:id :support-205 :from :a4 :to :s8}
-  #casualtheorics.argdown2.argdown/support {:id :support-206 :from :a5 :to :s10}
-  #casualtheorics.argdown2.argdown/support {:id :support-207 :from :a6 :to :s12}
-  #casualtheorics.argdown2.argdown/support {:id :support-208 :from :a7 :to :s14}
-  #casualtheorics.argdown2.argdown/support {:id :support-209 :from :a8 :to :s16}
-  #casualtheorics.argdown2.argdown/support {:id :support-210 :from :a9 :to :s18}
-  #casualtheorics.argdown2.argdown/support {:id :support-211 :from :a10 :to :s20}
-  #casualtheorics.argdown2.argdown/support {:id :support-212 :from :a11 :to :s22}
-  #casualtheorics.argdown2.argdown/support {:id :support-213 :from :a12 :to :s24}
-  #casualtheorics.argdown2.argdown/support {:id :support-214 :from :a13 :to :s26}
-  #casualtheorics.argdown2.argdown/support {:id :support-215 :from :a14 :to :s28}
-  #casualtheorics.argdown2.argdown/support {:id :support-216 :from :a15 :to :s30}
-  #casualtheorics.argdown2.argdown/support {:id :support-217 :from :a16 :to :s32}
-  #casualtheorics.argdown2.argdown/support {:id :support-218 :from :a17 :to :s34}
-  #casualtheorics.argdown2.argdown/support {:id :support-219 :from :a18 :to :s36}
-  #casualtheorics.argdown2.argdown/support {:id :support-220 :from :a19 :to :s38}
 
   ]}}

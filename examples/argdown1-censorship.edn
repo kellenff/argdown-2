@@ -73,14 +73,8 @@
    :tags #{:con}
    :metadata {:source "C2"}}
 
-  #casualtheorics.argdown2.argdown/support
-  {:id :support-1 :from :racial-hatred :to :censorship}
-
   #casualtheorics.argdown2.argdown/attack
   {:id :attack-2 :from :inclusive-debate :to :racial-hatred}
-
-  #casualtheorics.argdown2.argdown/support
-  {:id :support-3 :from :excessive-sex-violence :to :censorship}
 
   #casualtheorics.argdown2.argdown/attack
   {:id :attack-4 :from :causal-link-questionable :to :excessive-sex-violence}

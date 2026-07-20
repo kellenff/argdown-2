@@ -1,7 +1,7 @@
 #casualtheorics.argdown2/document
 {:id :small-relations
  :root
- #casualtheorics.argdown2.solver/grounded
+ #casualtheorics.argdown2.solver/bipolar
  {:id :root
   :interface
   {:aggregate

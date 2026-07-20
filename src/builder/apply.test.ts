@@ -4,6 +4,7 @@ import { describe, it } from "@std/testing/bdd";
 import { apply, emptyDocument } from "./apply.js";
 import {
   EXTENSION_PROPORTION_OBSERVER_TAG,
+  BIPOLAR_SOLVER_TAG,
   GROUNDED_SOLVER_TAG,
   PREFERRED_SOLVER_TAG,
 } from "../model.js";
@@ -209,7 +210,8 @@ describe("apply relations and remove", () => {
   });
 
   it("adds undercut to inference id", () => {
-    let doc = emptyDocument();
+    let doc = emptyDocument(BIPOLAR_SOLVER_TAG);
+    // undercut is unsupported by every current solver — refused at builder
     doc = apply(doc, { type: "add_statement", id: "p", text: "P" }).document;
     doc = apply(doc, { type: "add_statement", id: "c", text: "C" }).document;
     doc = apply(doc, {
@@ -229,19 +231,46 @@ describe("apply relations and remove", () => {
       id: "attacker",
       text: "Attacker",
     }).document;
-    const result = apply(doc, {
+    const refused = apply(doc, {
       type: "add_relation",
       id: "undercut-inf1",
       kind: "undercut",
       from: "attacker",
       to: "inf1",
     });
-    expect(result.refused).toBeUndefined();
-    expect(result.warnings).toEqual([]);
-    expect(result.document.root.elements.at(-1)).toMatchObject({
-      kind: "undercut",
-      from: "attacker",
-      to: "inf1",
+    expect(refused.refused?.code).toBe("builder/unsupported-relation-kind");
+  });
+
+  it("refuses support under grounded and accepts it under bipolar", () => {
+    const grounded = apply(
+      apply(emptyDocument(), { type: "add_statement", id: "a", text: "A" })
+        .document,
+      {
+        type: "add_relation",
+        id: "s",
+        kind: "support",
+        from: "a",
+        to: "a",
+      },
+    );
+    expect(grounded.refused?.code).toBe("builder/unsupported-relation-kind");
+
+    let bipolar = emptyDocument(BIPOLAR_SOLVER_TAG);
+    bipolar = apply(bipolar, { type: "add_statement", id: "a", text: "A" })
+      .document;
+    bipolar = apply(bipolar, { type: "add_statement", id: "b", text: "B" })
+      .document;
+    const accepted = apply(bipolar, {
+      type: "add_relation",
+      id: "s",
+      kind: "support",
+      from: "a",
+      to: "b",
+    });
+    expect(accepted.refused).toBeUndefined();
+    expect(accepted.document.root.elements.at(-1)).toMatchObject({
+      kind: "support",
+      id: "s",
     });
   });
 

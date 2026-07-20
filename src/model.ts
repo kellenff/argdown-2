@@ -95,6 +95,21 @@ export type CandidateArgument = {
 
 export type RelationKind = "support" | "attack" | "contradiction" | "undercut";
 
+export function supportedRelationKinds(
+  solver: SolverTag,
+): ReadonlySet<RelationKind> {
+  switch (solver) {
+    case BIPOLAR_SOLVER_TAG:
+    case EVIDENTIAL_SOLVER_TAG:
+      return new Set(["attack", "contradiction", "support"]);
+    case GROUNDED_SOLVER_TAG:
+    case PREFERRED_SOLVER_TAG:
+    case STABLE_SOLVER_TAG:
+    case COMPLETE_SOLVER_TAG:
+      return new Set(["attack", "contradiction"]);
+  }
+}
+
 export type CandidateRelation = {
   kind: RelationKind;
   id: string;

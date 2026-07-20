@@ -21,6 +21,7 @@ import {
   COMPLETE_SOLVER_TAG,
   PREFERRED_SOLVER_TAG,
   STABLE_SOLVER_TAG,
+  supportedRelationKinds,
 } from "./model.js";
 
 type EndpointKind =
@@ -160,6 +161,7 @@ function validateRelationReferences(
   path: Path,
   errors: Diagnostic[],
 ): void {
+  const supportedKinds = supportedRelationKinds(component.solver);
   component.elements.forEach((element, index) => {
     if (
       element.kind === "statement" ||
@@ -169,6 +171,15 @@ function validateRelationReferences(
       return;
     }
     const relationPath = [...path, ":elements", index];
+    if (!supportedKinds.has(element.kind)) {
+      errors.push({
+        code: "semantic/unsupported-relation-kind",
+        message:
+          `${component.solver} does not consume ${element.kind} relations`,
+        path: relationPath,
+      });
+      return;
+    }
     const fromKind = endpoints.get(element.from);
     const toKind = endpoints.get(element.to);
     if (fromKind === undefined) {

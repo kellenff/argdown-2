@@ -75,6 +75,58 @@ describe("component semantic validation", () => {
     ).toBe(true);
   });
 
+  it("rejects relation kinds the solver does not consume", () => {
+    const grounded = load(document(`
+      ${stmt("a")} ${stmt("b")}
+      #casualtheorics.argdown2.argdown/support
+      {:id :support-edge :from :a :to :b}
+    `));
+    expect(grounded.ok).toBe(false);
+    if (grounded.ok) return;
+    expect(
+      grounded.errors.some((error) =>
+        error.code === "semantic/unsupported-relation-kind"
+      ),
+    ).toBe(true);
+
+    const bipolar = load(`
+      #casualtheorics.argdown2/document
+      {:id :bipolar-undercut
+       :root #casualtheorics.argdown2.solver/bipolar
+       {:id :root ${identity("a")}
+        :elements [
+          ${stmt("a")}
+          #casualtheorics.argdown2.argdown/argument
+          {:id :arg :inferences [
+            #casualtheorics.argdown2.argdown/inference
+            {:id :inf :premises [:a] :conclusion :a}
+          ]}
+          #casualtheorics.argdown2.argdown/undercut
+          {:id :u :from :a :to :inf}
+        ]}}
+    `);
+    expect(bipolar.ok).toBe(false);
+    if (bipolar.ok) return;
+    expect(
+      bipolar.errors.some((error) =>
+        error.code === "semantic/unsupported-relation-kind"
+      ),
+    ).toBe(true);
+
+    const bipolarSupport = load(`
+      #casualtheorics.argdown2/document
+      {:id :bipolar-support
+       :root #casualtheorics.argdown2.solver/bipolar
+       {:id :root ${identity("a")}
+        :elements [
+          ${stmt("a")} ${stmt("b")}
+          #casualtheorics.argdown2.argdown/support
+          {:id :s :from :a :to :b}
+        ]}}
+    `);
+    expect(bipolarSupport.ok).toBe(true);
+  });
+
   it("requires multi-extension components to declare an observer", () => {
     const result = load(`
       #casualtheorics.argdown2/document

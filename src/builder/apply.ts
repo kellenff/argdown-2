@@ -14,6 +14,7 @@ import {
   PREFERRED_SOLVER_TAG,
   type SolverTag,
   STABLE_SOLVER_TAG,
+  supportedRelationKinds,
 } from "../model.js";
 import { resolveInferenceRef, resolveRef } from "./resolve-ref.js";
 import type { ApplyResult, BuilderWarning, DocumentEdit } from "./types.js";
@@ -316,6 +317,13 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
       if (invalid !== undefined) return invalid;
       if (collectIds(doc).has(id)) {
         return refused(doc, "builder/duplicate-id", `Duplicate id "${id}"`);
+      }
+      if (!supportedRelationKinds(doc.root.solver).has(edit.kind)) {
+        return refused(
+          doc,
+          "builder/unsupported-relation-kind",
+          `${doc.root.solver} does not consume ${edit.kind} relations`,
+        );
       }
       const warnings: BuilderWarning[] = [];
       const relation: CandidateRelation = {

@@ -53,17 +53,6 @@ describe("Argdown 1.x censorship parity", () => {
     expect(result.native.values.get(id("freedom-of-speech"))).toBe("in");
     expect(result.native.values.get(id("censorship"))).toBe("out");
     expect(result.native.values.get(id("censorship-wrong"))).toBe("in");
-  });
-
-  it("warns once for each represented support relation", () => {
-    const loaded = load(source);
-    if (!loaded.ok) throw new Error("fixture did not load");
-    const solved = solve(loaded.document);
-    expect("warnings" in solved).toBe(true);
-    expect(solved.warnings.map((warning) => warning.code))
-      .toEqual([
-        "reduce/support-omitted",
-        "reduce/support-omitted",
-      ]);
+    expect(result.warnings).toEqual([]);
   });
 });
