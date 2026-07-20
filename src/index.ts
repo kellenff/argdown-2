@@ -1,3 +1,5 @@
+export { renderMermaid } from "./render-mermaid.js";
+export type { RenderMermaidOptions } from "./render-mermaid.js";
 import { evaluateComponent } from "./component-eval.js";
 import { readEdn } from "./edn.js";
 import type {
