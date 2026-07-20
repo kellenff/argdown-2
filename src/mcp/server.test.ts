@@ -20,6 +20,7 @@ const TOOL_NAMES = [
   "remove_element",
   "remove_import",
   "remove_relation",
+  "render_mermaid",
   "set_import",
   "solve",
   "update_statement",

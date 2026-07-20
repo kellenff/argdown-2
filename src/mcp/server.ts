@@ -227,6 +227,22 @@ export function buildServer(): McpServer {
     tools.runSolve,
   );
 
+  server.registerTool(
+    "render_mermaid",
+    {
+      title: "Render Mermaid",
+      description:
+        "Strict-load and emit a Mermaid `flowchart TD` string for the document. Set `includeLabels: true` to also run `solve` and emit `classDef in|out|undec` styles.",
+      inputSchema: {
+        ...docRefSchema,
+        includeLabels: z.boolean().optional().describe(
+          "When true, run solve and bake grounded labels into the diagram as classDef styles.",
+        ),
+      },
+    },
+    tools.runRenderMermaid,
+  );
+
   return server;
 }
 
