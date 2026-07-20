@@ -136,8 +136,8 @@ describe({
       // If a host MCP binary has already been compiled under
       // `dist/mcp-bin/`, point the launcher at it so the test does not
       // depend on a tagged GitHub release for the pinned version. CI's
-      // `Compile host MCP binary` step runs before this test; the same
-      // works locally once `deno task compile:mcp` has been run.
+      // `Compile host MCP binary` step runs before `Test` for exactly
+      // this reason; the same works locally after `deno task compile:mcp`.
       const local = findLocalMcpBinary();
       const extraEnv = local !== null
         ? ({ ARGDOWN2_MCP_BIN: local } as Record<string, string>)
