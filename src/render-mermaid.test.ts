@@ -51,6 +51,37 @@ const NESTED = `
    {:id :attack-a-c :from :a :to :child}]}}
 `;
 
+const SCOPED_DUPLICATES = `
+#casualtheorics.argdown2/document
+{:id :scoped-duplicates
+ :root
+ #casualtheorics.argdown2.solver/grounded
+ {:id :root
+  :interface
+  {:aggregate
+   #casualtheorics.argdown2.aggregate/identity
+   {:inputs [{:ref :left}]}}
+  :elements
+  [#casualtheorics.argdown2.solver/grounded
+   {:id :left
+    :interface
+    {:aggregate
+     #casualtheorics.argdown2.aggregate/identity
+     {:inputs [{:ref :claim}]}}
+    :elements
+    [#casualtheorics.argdown2.argdown/statement
+     {:id :claim :text "Left claim"}]}
+   #casualtheorics.argdown2.solver/grounded
+   {:id :right
+    :interface
+    {:aggregate
+     #casualtheorics.argdown2.aggregate/identity
+     {:inputs [{:ref :claim}]}}
+    :elements
+    [#casualtheorics.argdown2.argdown/statement
+     {:id :claim :text "Right claim"}]}]}}
+`;
+
 const ARGUMENT = `
 #casualtheorics.argdown2/document
 {:id :arg-doc
@@ -142,6 +173,16 @@ describe("renderMermaid", () => {
     expect(out).toMatch(/subgraph sub_child/);
     expect(out).not.toContain("undefined");
     expect(out).toMatch(/[a-z_]+ -\.->\|"attack"\| sub_child/);
+  });
+
+  it("keeps repeated ids distinct across child solver scopes", () => {
+    const doc = loadDoc(SCOPED_DUPLICATES);
+    const out = renderMermaid(doc);
+    const leftSlug = out.match(/^ {4}([a-z0-9_]+)\["Left claim"\]$/m)?.[1];
+    const rightSlug = out.match(/^ {4}([a-z0-9_]+)\["Right claim"\]$/m)?.[1];
+    expect(leftSlug).toBeDefined();
+    expect(rightSlug).toBeDefined();
+    expect(leftSlug).not.toBe(rightSlug);
   });
 
   it("renders an argument as a single labelled node", () => {
