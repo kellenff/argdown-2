@@ -47,8 +47,12 @@ function escapeLabel(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function allocateSlug(id: string, used: Set<string>): string {
-  const base = slugify(id);
+function allocateSlug(
+  id: string,
+  used: Set<string>,
+  prefix = "node",
+): string {
+  const base = `${prefix}_${slugify(id)}`;
   if (!used.has(base)) {
     used.add(base);
     return base;
@@ -126,7 +130,7 @@ export function renderMermaid(
         localSlugs.push(declareArgument(el, true));
       }
     }
-    const slug = allocateSlug(`sub_${child.id}`, usedSlugs);
+    const slug = allocateSlug(child.id, usedSlugs, "sub");
     idToSlug.set(child.id, slug);
     subgraphs.push(`    subgraph ${slug}["${child.id} - ${child.solver}"]`);
     for (const s of localSlugs) {

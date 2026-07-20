@@ -239,9 +239,9 @@ describe("renderMermaid", () => {
   it("handles id slug collisions by appending _2, _3", () => {
     const doc = loadDoc(COLLISION);
     const out = renderMermaid(doc);
-    expect(out).toContain('weird_id["First"]');
-    expect(out).toContain('weird_id_2["Second"]');
-    expect(out).toContain('weird_id_3["Third"]');
+    expect(out).toContain('node_weird_id["First"]');
+    expect(out).toContain('node_weird_id_2["Second"]');
+    expect(out).toContain('node_weird_id_3["Third"]');
   });
 
   it("falls back to the empty-doc placeholder when no elements", () => {
