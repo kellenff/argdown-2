@@ -11,7 +11,9 @@ import {
   EXTENSION_PROPORTION_OBSERVER_TAG,
   GROUNDED_SOLVER_TAG,
   isEdnKeywordName,
+  isSolverTag,
   PREFERRED_SOLVER_TAG,
+  PROJECTION_THRESHOLD_TAG,
   type SolverTag,
   STABLE_SOLVER_TAG,
   supportedRelationKinds,
@@ -52,9 +54,9 @@ function softRefId(raw: string): string {
   return slug.length > 0 ? slug : "unresolved";
 }
 
-function collectIds(doc: CandidateDocument): Set<string> {
+function collectIds(component: CandidateSolverComponent): Set<string> {
   const ids = new Set<string>();
-  for (const el of doc.root.elements) {
+  for (const el of component.elements) {
     ids.add(el.id);
     if (el.kind === "argument") {
       for (const inf of el.inferences) ids.add(inf.id);
@@ -71,11 +73,76 @@ function refused(
   return { document: doc, warnings: [], refused: { code, message }, diff: [] };
 }
 
-function withElements(
+function findComponent(
+  component: CandidateSolverComponent,
+  id: string,
+): CandidateSolverComponent | undefined {
+  if (component.id === id) return component;
+  for (const element of component.elements) {
+    if (element.kind === "solver") {
+      const found = findComponent(element, id);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+function replaceComponent(
+  component: CandidateSolverComponent,
+  targetId: string,
+  next: CandidateSolverComponent,
+): CandidateSolverComponent {
+  if (component.id === targetId) return next;
+  return {
+    ...component,
+    elements: component.elements.map((element) =>
+      element.kind === "solver"
+        ? replaceComponent(element, targetId, next)
+        : element
+    ),
+  };
+}
+
+type ComponentUpdate =
+  | {
+    ok: true;
+    document: CandidateDocument;
+    component: CandidateSolverComponent;
+  }
+  | { ok: false; result: ApplyResult };
+
+function withComponent(
   doc: CandidateDocument,
-  elements: readonly CandidateElement[],
-): CandidateDocument {
-  return { ...doc, root: { ...doc.root, elements } };
+  parentId: string,
+  update: (
+    component: CandidateSolverComponent,
+  ) =>
+    | { ok: true; component: CandidateSolverComponent }
+    | { ok: false; code: string; message: string },
+): ComponentUpdate {
+  const component = findComponent(doc.root, parentId);
+  if (component === undefined) {
+    return {
+      ok: false,
+      result: refused(
+        doc,
+        "builder/missing-id",
+        `No solver component with id "${parentId}"`,
+      ),
+    };
+  }
+  const result = update(component);
+  if (!result.ok) {
+    return { ok: false, result: refused(doc, result.code, result.message) };
+  }
+  return {
+    ok: true,
+    document: {
+      ...doc,
+      root: replaceComponent(doc.root, parentId, result.component),
+    },
+    component: result.component,
+  };
 }
 
 function interfaceFor(
@@ -154,10 +221,11 @@ function invalidIdList(
 
 function resolveRefOrRaw(
   doc: CandidateDocument,
+  component: CandidateSolverComponent,
   raw: string,
   warnings: BuilderWarning[],
 ): string {
-  const resolution = resolveRef(doc, raw);
+  const resolution = resolveRef(doc, raw, component);
   if (resolution.ok) return resolution.id;
   const storedId = softRefId(raw);
   warnings.push({
@@ -169,10 +237,11 @@ function resolveRefOrRaw(
 
 function resolveInferenceRefOrRaw(
   doc: CandidateDocument,
+  component: CandidateSolverComponent,
   raw: string,
   warnings: BuilderWarning[],
 ): string {
-  const resolution = resolveInferenceRef(doc, raw);
+  const resolution = resolveInferenceRef(doc, raw, component);
   if (resolution.ok) return resolution.id;
   const storedId = softRefId(raw);
   warnings.push({
@@ -182,29 +251,48 @@ function resolveInferenceRefOrRaw(
   return storedId;
 }
 
+function parentIdOf(
+  doc: CandidateDocument,
+  edit: { parentId?: string },
+): string {
+  return edit.parentId === undefined ? doc.root.id : stripColon(edit.parentId);
+}
+
 export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
-  const elements = doc.root.elements;
+  const parentId = parentIdOf(doc, edit);
+
   switch (edit.type) {
     case "add_statement": {
       const id = stripColon(edit.id);
-      const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags);
+      const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags) ??
+        invalidId(doc, parentId);
       if (invalid !== undefined) return invalid;
-      if (collectIds(doc).has(id)) {
-        return refused(doc, "builder/duplicate-id", `Duplicate id "${id}"`);
-      }
-      const statement: CandidateStatement = {
-        kind: "statement",
-        id,
-        tags: edit.tags ? [...edit.tags] : [],
-        extra: [],
-        ...(edit.text !== undefined ? { text: edit.text } : {}),
-      };
-      const root = withInitialInterface(
-        { ...doc.root, elements: [...elements, statement] },
-        id,
-      );
+      const scoped = withComponent(doc, parentId, (component) => {
+        if (collectIds(component).has(id)) {
+          return {
+            ok: false,
+            code: "builder/duplicate-id",
+            message: `Duplicate id "${id}"`,
+          };
+        }
+        const statement: CandidateStatement = {
+          kind: "statement",
+          id,
+          tags: edit.tags ? [...edit.tags] : [],
+          extra: [],
+          ...(edit.text !== undefined ? { text: edit.text } : {}),
+        };
+        return {
+          ok: true,
+          component: withInitialInterface(
+            { ...component, elements: [...component.elements, statement] },
+            id,
+          ),
+        };
+      });
+      if (!scoped.ok) return scoped.result;
       return {
-        document: { ...doc, root },
+        document: scoped.document,
         warnings: [],
         diff: [{ op: "add", kind: "statement", id }],
       };
@@ -212,28 +300,33 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
 
     case "update_statement": {
       const id = stripColon(edit.id);
-      const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags);
+      const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags) ??
+        invalidId(doc, parentId);
       if (invalid !== undefined) return invalid;
-      const index = elements.findIndex((element) =>
-        element.kind === "statement" && element.id === id
-      );
-      const existing = elements[index];
-      if (existing === undefined || existing.kind !== "statement") {
-        return refused(
-          doc,
-          "builder/missing-id",
-          `No statement with id "${id}"`,
+      const scoped = withComponent(doc, parentId, (component) => {
+        const index = component.elements.findIndex((element) =>
+          element.kind === "statement" && element.id === id
         );
-      }
-      const updated: CandidateStatement = {
-        ...existing,
-        ...(edit.text !== undefined ? { text: edit.text } : {}),
-        ...(edit.tags !== undefined ? { tags: [...edit.tags] } : {}),
-      };
-      const next = [...elements];
-      next[index] = updated;
+        const existing = component.elements[index];
+        if (existing === undefined || existing.kind !== "statement") {
+          return {
+            ok: false,
+            code: "builder/missing-id",
+            message: `No statement with id "${id}"`,
+          };
+        }
+        const updated: CandidateStatement = {
+          ...existing,
+          ...(edit.text !== undefined ? { text: edit.text } : {}),
+          ...(edit.tags !== undefined ? { tags: [...edit.tags] } : {}),
+        };
+        const next = [...component.elements];
+        next[index] = updated;
+        return { ok: true, component: { ...component, elements: next } };
+      });
+      if (!scoped.ok) return scoped.result;
       return {
-        document: withElements(doc, next),
+        document: scoped.document,
         warnings: [],
         diff: [{ op: "update", kind: "statement", id }],
       };
@@ -241,27 +334,38 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
 
     case "add_argument": {
       const id = stripColon(edit.id);
-      const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags);
+      const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags) ??
+        invalidId(doc, parentId);
       if (invalid !== undefined) return invalid;
-      if (collectIds(doc).has(id)) {
-        return refused(doc, "builder/duplicate-id", `Duplicate id "${id}"`);
-      }
-      const argument: CandidateArgument = {
-        kind: "argument",
-        id,
-        tags: edit.tags ? [...edit.tags] : [],
-        inferences: [],
-        extra: [],
-        ...(edit.description !== undefined
-          ? { description: edit.description }
-          : {}),
-      };
-      const root = withInitialInterface(
-        { ...doc.root, elements: [...elements, argument] },
-        id,
-      );
+      const scoped = withComponent(doc, parentId, (component) => {
+        if (collectIds(component).has(id)) {
+          return {
+            ok: false,
+            code: "builder/duplicate-id",
+            message: `Duplicate id "${id}"`,
+          };
+        }
+        const argument: CandidateArgument = {
+          kind: "argument",
+          id,
+          tags: edit.tags ? [...edit.tags] : [],
+          inferences: [],
+          extra: [],
+          ...(edit.description !== undefined
+            ? { description: edit.description }
+            : {}),
+        };
+        return {
+          ok: true,
+          component: withInitialInterface(
+            { ...component, elements: [...component.elements, argument] },
+            id,
+          ),
+        };
+      });
+      if (!scoped.ok) return scoped.result;
       return {
-        document: { ...doc, root },
+        document: scoped.document,
         warnings: [],
         diff: [{ op: "add", kind: "argument", id }],
       };
@@ -271,41 +375,54 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
       const argumentId = stripColon(edit.argumentId);
       const id = stripColon(edit.id);
       const invalid = invalidId(doc, argumentId) ?? invalidId(doc, id) ??
-        invalidIdList(doc, edit.rules);
+        invalidIdList(doc, edit.rules) ?? invalidId(doc, parentId);
       if (invalid !== undefined) return invalid;
-      if (collectIds(doc).has(id)) {
-        return refused(doc, "builder/duplicate-id", `Duplicate id "${id}"`);
-      }
-      const index = elements.findIndex((element) =>
-        element.kind === "argument" && element.id === argumentId
-      );
-      const argument = elements[index];
-      if (argument === undefined || argument.kind !== "argument") {
-        return refused(
-          doc,
-          "builder/missing-id",
-          `No argument with id "${argumentId}"`,
-        );
-      }
       const warnings: BuilderWarning[] = [];
-      const inference: CandidateInference = {
-        kind: "inference",
-        id,
-        premises: edit.premises.map((ref) =>
-          resolveRefOrRaw(doc, ref, warnings)
-        ),
-        conclusion: resolveRefOrRaw(doc, edit.conclusion, warnings),
-        rules: edit.rules ? [...edit.rules] : [],
-        extra: [],
-      };
-      const updated: CandidateArgument = {
-        ...argument,
-        inferences: [...argument.inferences, inference],
-      };
-      const next = [...elements];
-      next[index] = updated;
+      const scoped = withComponent(doc, parentId, (component) => {
+        if (collectIds(component).has(id)) {
+          return {
+            ok: false,
+            code: "builder/duplicate-id",
+            message: `Duplicate id "${id}"`,
+          };
+        }
+        const index = component.elements.findIndex((element) =>
+          element.kind === "argument" && element.id === argumentId
+        );
+        const argument = component.elements[index];
+        if (argument === undefined || argument.kind !== "argument") {
+          return {
+            ok: false,
+            code: "builder/missing-id",
+            message: `No argument with id "${argumentId}"`,
+          };
+        }
+        const inference: CandidateInference = {
+          kind: "inference",
+          id,
+          premises: edit.premises.map((ref) =>
+            resolveRefOrRaw(doc, component, ref, warnings)
+          ),
+          conclusion: resolveRefOrRaw(
+            doc,
+            component,
+            edit.conclusion,
+            warnings,
+          ),
+          rules: edit.rules ? [...edit.rules] : [],
+          extra: [],
+        };
+        const updated: CandidateArgument = {
+          ...argument,
+          inferences: [...argument.inferences, inference],
+        };
+        const next = [...component.elements];
+        next[index] = updated;
+        return { ok: true, component: { ...component, elements: next } };
+      });
+      if (!scoped.ok) return scoped.result;
       return {
-        document: withElements(doc, next),
+        document: scoped.document,
         warnings,
         diff: [{ op: "add", kind: "inference", id }],
       };
@@ -313,105 +430,273 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
 
     case "add_relation": {
       const id = stripColon(edit.id);
-      const invalid = invalidId(doc, id);
+      const invalid = invalidId(doc, id) ?? invalidId(doc, parentId);
       if (invalid !== undefined) return invalid;
-      if (collectIds(doc).has(id)) {
-        return refused(doc, "builder/duplicate-id", `Duplicate id "${id}"`);
-      }
-      if (!supportedRelationKinds(doc.root.solver).has(edit.kind)) {
-        return refused(
-          doc,
-          "builder/unsupported-relation-kind",
-          `${doc.root.solver} does not consume ${edit.kind} relations`,
-        );
-      }
       const warnings: BuilderWarning[] = [];
-      const relation: CandidateRelation = {
-        kind: edit.kind,
-        id,
-        from: resolveRefOrRaw(doc, edit.from, warnings),
-        to: edit.kind === "undercut"
-          ? resolveInferenceRefOrRaw(doc, edit.to, warnings)
-          : resolveRefOrRaw(doc, edit.to, warnings),
-        extra: [],
-      };
+      const scoped = withComponent(doc, parentId, (component) => {
+        if (collectIds(component).has(id)) {
+          return {
+            ok: false,
+            code: "builder/duplicate-id",
+            message: `Duplicate id "${id}"`,
+          };
+        }
+        if (!supportedRelationKinds(component.solver).has(edit.kind)) {
+          return {
+            ok: false,
+            code: "builder/unsupported-relation-kind",
+            message:
+              `${component.solver} does not consume ${edit.kind} relations`,
+          };
+        }
+        const relation: CandidateRelation = {
+          kind: edit.kind,
+          id,
+          from: resolveRefOrRaw(doc, component, edit.from, warnings),
+          to: edit.kind === "undercut"
+            ? resolveInferenceRefOrRaw(doc, component, edit.to, warnings)
+            : resolveRefOrRaw(doc, component, edit.to, warnings),
+          extra: [],
+        };
+        return {
+          ok: true,
+          component: {
+            ...component,
+            elements: [...component.elements, relation],
+          },
+        };
+      });
+      if (!scoped.ok) return scoped.result;
       return {
-        document: withElements(doc, [...elements, relation]),
+        document: scoped.document,
         warnings,
         diff: [{ op: "add-relation", kind: edit.kind, id }],
       };
     }
 
+    case "add_solver": {
+      const id = stripColon(edit.id);
+      const invalid = invalidId(doc, id) ?? invalidId(doc, parentId);
+      if (invalid !== undefined) return invalid;
+      if (!isSolverTag(edit.solver)) {
+        return refused(
+          doc,
+          "builder/unsupported-solver",
+          `Unsupported solver tag "${edit.solver}"`,
+        );
+      }
+      const scoped = withComponent(doc, parentId, (component) => {
+        if (collectIds(component).has(id)) {
+          return {
+            ok: false,
+            code: "builder/duplicate-id",
+            message: `Duplicate id "${id}"`,
+          };
+        }
+        const child: CandidateSolverComponent = {
+          kind: "solver",
+          solver: edit.solver,
+          id,
+          imports: [],
+          elements: [],
+          extra: [],
+        };
+        return {
+          ok: true,
+          component: withInitialInterface(
+            { ...component, elements: [...component.elements, child] },
+            id,
+          ),
+        };
+      });
+      if (!scoped.ok) return scoped.result;
+      return {
+        document: scoped.document,
+        warnings: [],
+        diff: [{ op: "add", kind: "solver", id }],
+      };
+    }
+
+    case "set_import": {
+      const childId = stripColon(edit.childId);
+      const invalid = invalidId(doc, childId) ?? invalidId(doc, parentId);
+      if (invalid !== undefined) return invalid;
+      const scoped = withComponent(doc, parentId, (component) => {
+        const child = component.elements.find((element) =>
+          element.kind === "solver" && element.id === childId
+        );
+        if (child === undefined) {
+          return {
+            ok: false,
+            code: "builder/missing-id",
+            message: `No child solver with id "${childId}"`,
+          };
+        }
+        if (
+          edit.outAtMost < 0 ||
+          edit.inAtLeast > 1 ||
+          edit.outAtMost >= edit.inAtLeast
+        ) {
+          return {
+            ok: false,
+            code: "builder/invalid-projection-bounds",
+            message: "Threshold requires 0 <= outAtMost < inAtLeast <= 1",
+          };
+        }
+        const projection = {
+          tag: PROJECTION_THRESHOLD_TAG,
+          outAtMost: edit.outAtMost,
+          inAtLeast: edit.inAtLeast,
+          otherwise: null,
+        } as const;
+        const imports = component.imports.filter(([id]) => id !== childId);
+        return {
+          ok: true,
+          component: {
+            ...component,
+            imports: [...imports, [childId, projection] as const],
+          },
+        };
+      });
+      if (!scoped.ok) return scoped.result;
+      return {
+        document: scoped.document,
+        warnings: [],
+        diff: [{ op: "set-import", parentId, childId }],
+      };
+    }
+
+    case "remove_import": {
+      const childId = stripColon(edit.childId);
+      const invalid = invalidId(doc, childId) ?? invalidId(doc, parentId);
+      if (invalid !== undefined) return invalid;
+      const scoped = withComponent(doc, parentId, (component) => {
+        if (!component.imports.some(([id]) => id === childId)) {
+          return {
+            ok: false,
+            code: "builder/missing-id",
+            message: `No import for child "${childId}"`,
+          };
+        }
+        return {
+          ok: true,
+          component: {
+            ...component,
+            imports: component.imports.filter(([id]) => id !== childId),
+          },
+        };
+      });
+      if (!scoped.ok) return scoped.result;
+      return {
+        document: scoped.document,
+        warnings: [],
+        diff: [{ op: "remove-import", parentId, childId }],
+      };
+    }
+
     case "remove_element": {
       const id = stripColon(edit.id);
-      const invalid = invalidId(doc, id);
+      const invalid = invalidId(doc, id) ?? invalidId(doc, parentId);
       if (invalid !== undefined) return invalid;
-      const index = elements.findIndex((element) => element.id === id);
-      if (index !== -1) {
-        const removed = elements[index]!;
-        const root = repairInterface({
-          ...doc.root,
-          elements: elements.filter((_, elementIndex) =>
+      let removedKind: CandidateElement["kind"] | "inference" | undefined;
+      const scoped = withComponent(doc, parentId, (component) => {
+        const index = component.elements.findIndex((element) =>
+          element.id === id
+        );
+        if (index !== -1) {
+          const removed = component.elements[index]!;
+          removedKind = removed.kind;
+          const elements = component.elements.filter((_, elementIndex) =>
             elementIndex !== index
-          ),
-        });
-        return {
-          document: { ...doc, root },
-          warnings: [],
-          diff: [{ op: "remove", kind: removed.kind, id }],
-        };
-      }
-      for (
-        let elementIndex = 0;
-        elementIndex < elements.length;
-        elementIndex++
-      ) {
-        const element = elements[elementIndex];
-        if (element === undefined || element.kind !== "argument") continue;
-        if (!element.inferences.some((inference) => inference.id === id)) {
-          continue;
+          );
+          const imports = removed.kind === "solver"
+            ? component.imports.filter(([importId]) => importId !== id)
+            : component.imports;
+          return {
+            ok: true,
+            component: repairInterface({ ...component, elements, imports }),
+          };
         }
-        const next = [...elements];
-        next[elementIndex] = {
-          ...element,
-          inferences: element.inferences.filter((inference) =>
-            inference.id !== id
-          ),
-        };
+        for (
+          let elementIndex = 0;
+          elementIndex < component.elements.length;
+          elementIndex++
+        ) {
+          const element = component.elements[elementIndex];
+          if (element === undefined || element.kind !== "argument") continue;
+          if (!element.inferences.some((inference) => inference.id === id)) {
+            continue;
+          }
+          removedKind = "inference";
+          const next = [...component.elements];
+          next[elementIndex] = {
+            ...element,
+            inferences: element.inferences.filter((inference) =>
+              inference.id !== id
+            ),
+          };
+          return { ok: true, component: { ...component, elements: next } };
+        }
         return {
-          document: withElements(doc, next),
-          warnings: [],
-          diff: [{ op: "remove", kind: "inference", id }],
+          ok: false,
+          code: "builder/missing-id",
+          message: `No element with id "${id}"`,
         };
+      });
+      if (!scoped.ok) return scoped.result;
+      if (removedKind === undefined) {
+        return refused(doc, "builder/missing-id", `No element with id "${id}"`);
       }
-      return refused(doc, "builder/missing-id", `No element with id "${id}"`);
+      return {
+        document: scoped.document,
+        warnings: [],
+        diff: [{ op: "remove", kind: removedKind, id }],
+      };
     }
 
     case "remove_relation": {
       const id = stripColon(edit.id);
-      const invalid = invalidId(doc, id);
+      const invalid = invalidId(doc, id) ?? invalidId(doc, parentId);
       if (invalid !== undefined) return invalid;
-      const index = elements.findIndex((element) =>
-        element.id === id &&
-        element.kind !== "statement" &&
-        element.kind !== "argument" &&
-        element.kind !== "solver"
-      );
-      if (index === -1) {
+      let relationKind: CandidateRelation["kind"] | undefined;
+      const scoped = withComponent(doc, parentId, (component) => {
+        const index = component.elements.findIndex((element) =>
+          element.id === id &&
+          element.kind !== "statement" &&
+          element.kind !== "argument" &&
+          element.kind !== "solver"
+        );
+        if (index === -1) {
+          return {
+            ok: false,
+            code: "builder/missing-id",
+            message: `No relation with id "${id}"`,
+          };
+        }
+        const relation = component.elements[index] as CandidateRelation;
+        relationKind = relation.kind;
+        return {
+          ok: true,
+          component: {
+            ...component,
+            elements: component.elements.filter((_, elementIndex) =>
+              elementIndex !== index
+            ),
+          },
+        };
+      });
+      if (!scoped.ok) return scoped.result;
+      if (relationKind === undefined) {
         return refused(
           doc,
           "builder/missing-id",
           `No relation with id "${id}"`,
         );
       }
-      const relation = elements[index] as CandidateRelation;
       return {
-        document: withElements(
-          doc,
-          elements.filter((_, elementIndex) => elementIndex !== index),
-        ),
+        document: scoped.document,
         warnings: [],
-        diff: [{ op: "remove-relation", kind: relation.kind, id }],
+        diff: [{ op: "remove-relation", kind: relationKind, id }],
       };
     }
   }

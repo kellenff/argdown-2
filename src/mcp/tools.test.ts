@@ -9,11 +9,14 @@ import {
   runAddArgument,
   runAddInference,
   runAddRelation,
+  runAddSolver,
   runAddStatement,
   runCreateDocument,
+  runSetImport,
   runSolve,
   runValidate,
 } from "./tools.js";
+import { GROUNDED_SOLVER_TAG, PREFERRED_SOLVER_TAG } from "../model.js";
 
 function parseBody(res: { content: { type: string; text: string }[] }) {
   return JSON.parse(res.content[0]!.text) as Record<string, unknown>;
@@ -178,5 +181,68 @@ describe("mcp tool handlers", () => {
     const stmtBody = parseBody(addStatement);
     expect(stmtBody.ok).toBe(true);
     expect(typeof stmtBody.source).toBe("string");
+  });
+
+  it("builds a nested grounded child via add_solver and set_import", async () => {
+    const created = await runCreateDocument({ source: "" });
+    let body = parseBody(created);
+    expect(body.ok).toBe(true);
+    let source = body.source as string;
+
+    await runAddStatement({ source, id: "target", text: "Target" }).then(
+      (res) => {
+        body = parseBody(res);
+        source = body.source as string;
+      },
+    );
+
+    const child = await runAddSolver({
+      source,
+      id: "child",
+      solver: PREFERRED_SOLVER_TAG,
+    });
+    body = parseBody(child);
+    expect(body.ok).toBe(true);
+    source = body.source as string;
+
+    const claim = await runAddStatement({
+      source,
+      id: "claim",
+      text: "Claim",
+      parentId: "child",
+    });
+    body = parseBody(claim);
+    expect(body.ok).toBe(true);
+    source = body.source as string;
+
+    const imported = await runSetImport({
+      source,
+      childId: "child",
+      outAtMost: 0.2,
+      inAtLeast: 0.8,
+    });
+    body = parseBody(imported);
+    expect(body.ok).toBe(true);
+    source = body.source as string;
+
+    const attack = await runAddRelation({
+      source,
+      id: "child-attacks-target",
+      kind: "attack",
+      from: "child",
+      to: "target",
+    });
+    body = parseBody(attack);
+    expect(body.ok).toBe(true);
+    source = body.source as string;
+
+    const validated = await runValidate({ source });
+    expect(parseBody(validated).ok).toBe(true);
+
+    const solved = await runSolve({ source });
+    body = parseBody(solved);
+    expect(body.ok).toBe(true);
+    expect(body.solver).toBe(GROUNDED_SOLVER_TAG);
+    expect((body.children as Record<string, unknown>).child).toBeDefined();
   });
 });

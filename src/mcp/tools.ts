@@ -260,6 +260,7 @@ export async function runAddStatement(
     id: string;
     text?: string | undefined;
     tags?: readonly string[] | undefined;
+    parentId?: string | undefined;
   },
 ): Promise<McpResult> {
   const refResult = normalizeStatementDocRef(args);
@@ -273,6 +274,7 @@ export async function runAddStatement(
       ? { text: refResult.statementText }
       : {}),
     ...(args.tags !== undefined ? { tags: args.tags } : {}),
+    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
   };
   return applyMutation(refResult.ref, edit);
 }
@@ -282,6 +284,7 @@ export async function runUpdateStatement(
     id: string;
     text?: string | undefined;
     tags?: readonly string[] | undefined;
+    parentId?: string | undefined;
   },
 ): Promise<McpResult> {
   const refResult = normalizeStatementDocRef(args);
@@ -295,6 +298,7 @@ export async function runUpdateStatement(
       ? { text: refResult.statementText }
       : {}),
     ...(args.tags !== undefined ? { tags: args.tags } : {}),
+    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
   };
   return applyMutation(refResult.ref, edit);
 }
@@ -304,6 +308,7 @@ export async function runAddArgument(
     id: string;
     description?: string | undefined;
     tags?: readonly string[] | undefined;
+    parentId?: string | undefined;
   },
 ): Promise<McpResult> {
   const refResult = normalizeDocRef(args);
@@ -317,6 +322,7 @@ export async function runAddArgument(
       ? { description: args.description }
       : {}),
     ...(args.tags !== undefined ? { tags: args.tags } : {}),
+    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
   };
   return applyMutation(refResult.ref, edit);
 }
@@ -328,6 +334,7 @@ export async function runAddInference(
     premises: readonly string[];
     conclusion: string;
     rules?: readonly string[] | undefined;
+    parentId?: string | undefined;
   },
 ): Promise<McpResult> {
   const refResult = normalizeDocRef(args);
@@ -341,6 +348,7 @@ export async function runAddInference(
     premises: args.premises,
     conclusion: args.conclusion,
     ...(args.rules !== undefined ? { rules: args.rules } : {}),
+    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
   };
   return applyMutation(refResult.ref, edit);
 }
@@ -351,6 +359,7 @@ export async function runAddRelation(
     kind: RelationKind;
     from: string;
     to: string;
+    parentId?: string | undefined;
   },
 ): Promise<McpResult> {
   const refResult = normalizeDocRef(args);
@@ -363,28 +372,108 @@ export async function runAddRelation(
     kind: args.kind,
     from: args.from,
     to: args.to,
+    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+  };
+  return applyMutation(refResult.ref, edit);
+}
+
+export async function runAddSolver(
+  args: DocRefInput & {
+    id: string;
+    solver: string;
+    parentId?: string | undefined;
+  },
+): Promise<McpResult> {
+  const refResult = normalizeDocRef(args);
+  if (!refResult.ok) {
+    return jsonResult({ ok: false, errors: refResult.errors }, true);
+  }
+  if (!isSolverTag(args.solver)) {
+    return jsonResult({
+      ok: false,
+      refused: {
+        code: "builder/unsupported-solver",
+        message: `Unsupported solver tag "${args.solver}"`,
+      },
+      warnings: [],
+      diff: [],
+    });
+  }
+  const edit: DocumentEdit = {
+    type: "add_solver",
+    id: args.id,
+    solver: args.solver,
+    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+  };
+  return applyMutation(refResult.ref, edit);
+}
+
+export async function runSetImport(
+  args: DocRefInput & {
+    childId: string;
+    outAtMost: number;
+    inAtLeast: number;
+    parentId?: string | undefined;
+  },
+): Promise<McpResult> {
+  const refResult = normalizeDocRef(args);
+  if (!refResult.ok) {
+    return jsonResult({ ok: false, errors: refResult.errors }, true);
+  }
+  const edit: DocumentEdit = {
+    type: "set_import",
+    childId: args.childId,
+    outAtMost: args.outAtMost,
+    inAtLeast: args.inAtLeast,
+    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+  };
+  return applyMutation(refResult.ref, edit);
+}
+
+export async function runRemoveImport(
+  args: DocRefInput & {
+    childId: string;
+    parentId?: string | undefined;
+  },
+): Promise<McpResult> {
+  const refResult = normalizeDocRef(args);
+  if (!refResult.ok) {
+    return jsonResult({ ok: false, errors: refResult.errors }, true);
+  }
+  const edit: DocumentEdit = {
+    type: "remove_import",
+    childId: args.childId,
+    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
   };
   return applyMutation(refResult.ref, edit);
 }
 
 export async function runRemoveElement(
-  args: DocRefInput & { id: string },
+  args: DocRefInput & { id: string; parentId?: string | undefined },
 ): Promise<McpResult> {
   const refResult = normalizeDocRef(args);
   if (!refResult.ok) {
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
-  return applyMutation(refResult.ref, { type: "remove_element", id: args.id });
+  return applyMutation(refResult.ref, {
+    type: "remove_element",
+    id: args.id,
+    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+  });
 }
 
 export async function runRemoveRelation(
-  args: DocRefInput & { id: string },
+  args: DocRefInput & { id: string; parentId?: string | undefined },
 ): Promise<McpResult> {
   const refResult = normalizeDocRef(args);
   if (!refResult.ok) {
     return jsonResult({ ok: false, errors: refResult.errors }, true);
   }
-  const edit: DocumentEdit = { type: "remove_relation", id: args.id };
+  const edit: DocumentEdit = {
+    type: "remove_relation",
+    id: args.id,
+    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+  };
   return applyMutation(refResult.ref, edit);
 }
 

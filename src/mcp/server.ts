@@ -10,6 +10,12 @@ const docRefSchema = {
   source: z.string().optional().describe("Full EDN document text"),
 };
 
+const parentIdSchema = {
+  parentId: z.string().optional().describe(
+    "Target solver component id (defaults to the document root)",
+  ),
+};
+
 export function buildServer(): McpServer {
   const server = new McpServer(
     { name: "argdown-2", version: "0.2.0-alpha4" },
@@ -41,6 +47,7 @@ export function buildServer(): McpServer {
       description: "Add a statement (id + prose text).",
       inputSchema: {
         ...docRefSchema,
+        ...parentIdSchema,
         id: z.string(),
         text: z.string().optional(),
         tags: z.array(z.string()).optional(),
@@ -56,6 +63,7 @@ export function buildServer(): McpServer {
       description: "Update an existing statement by id.",
       inputSchema: {
         ...docRefSchema,
+        ...parentIdSchema,
         id: z.string(),
         text: z.string().optional(),
         tags: z.array(z.string()).optional(),
@@ -71,6 +79,7 @@ export function buildServer(): McpServer {
       description: "Add an argument (id + prose description).",
       inputSchema: {
         ...docRefSchema,
+        ...parentIdSchema,
         id: z.string(),
         description: z.string().optional(),
         tags: z.array(z.string()).optional(),
@@ -87,6 +96,7 @@ export function buildServer(): McpServer {
         "Add an inference under an argument; premises/conclusion are id-or-prose refs.",
       inputSchema: {
         ...docRefSchema,
+        ...parentIdSchema,
         argumentId: z.string(),
         id: z.string(),
         premises: z.array(z.string()),
@@ -102,9 +112,10 @@ export function buildServer(): McpServer {
     {
       title: "Add relation",
       description:
-        "Add support|attack|contradiction|undercut (from/to are id-or-prose refs).",
+        "Add support|attack|contradiction|undercut (from/to are id-or-prose refs). Kind must be consumed by the target solver.",
       inputSchema: {
         ...docRefSchema,
+        ...parentIdSchema,
         id: z.string().describe("Unique local relation id"),
         kind: z.enum(["support", "attack", "contradiction", "undercut"]),
         from: z.string(),
@@ -115,11 +126,61 @@ export function buildServer(): McpServer {
   );
 
   server.registerTool(
+    "add_solver",
+    {
+      title: "Add solver",
+      description:
+        "Add an empty child solver component under parentId (default root).",
+      inputSchema: {
+        ...docRefSchema,
+        ...parentIdSchema,
+        id: z.string(),
+        solver: z.string().describe(
+          "Solver tag, e.g. casualtheorics.argdown2.solver/grounded",
+        ),
+      },
+    },
+    tools.runAddSolver,
+  );
+
+  server.registerTool(
+    "set_import",
+    {
+      title: "Set import",
+      description:
+        "Set a threshold projection for importing an immediate child solver boundary.",
+      inputSchema: {
+        ...docRefSchema,
+        ...parentIdSchema,
+        childId: z.string(),
+        outAtMost: z.number(),
+        inAtLeast: z.number(),
+      },
+    },
+    tools.runSetImport,
+  );
+
+  server.registerTool(
+    "remove_import",
+    {
+      title: "Remove import",
+      description: "Remove a parent import projection for a child solver id.",
+      inputSchema: {
+        ...docRefSchema,
+        ...parentIdSchema,
+        childId: z.string(),
+      },
+    },
+    tools.runRemoveImport,
+  );
+
+  server.registerTool(
     "remove_element",
     {
       title: "Remove element",
-      description: "Remove a statement, argument, or inference by id.",
-      inputSchema: { ...docRefSchema, id: z.string() },
+      description:
+        "Remove a statement, argument, inference, or child solver by id.",
+      inputSchema: { ...docRefSchema, ...parentIdSchema, id: z.string() },
     },
     tools.runRemoveElement,
   );
@@ -129,7 +190,7 @@ export function buildServer(): McpServer {
     {
       title: "Remove relation",
       description: "Remove a relation by its local id.",
-      inputSchema: { ...docRefSchema, id: z.string() },
+      inputSchema: { ...docRefSchema, ...parentIdSchema, id: z.string() },
     },
     tools.runRemoveRelation,
   );
@@ -139,7 +200,7 @@ export function buildServer(): McpServer {
     {
       title: "List elements",
       description:
-        "List statements, arguments, inferences, and relations in the document.",
+        "List statements, arguments, inferences, relations, and nested solvers in the document.",
       inputSchema: docRefSchema,
     },
     tools.runListElements,

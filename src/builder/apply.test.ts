@@ -3,8 +3,8 @@ import { describe, it } from "@std/testing/bdd";
 
 import { apply, emptyDocument } from "./apply.js";
 import {
-  EXTENSION_PROPORTION_OBSERVER_TAG,
   BIPOLAR_SOLVER_TAG,
+  EXTENSION_PROPORTION_OBSERVER_TAG,
   GROUNDED_SOLVER_TAG,
   PREFERRED_SOLVER_TAG,
 } from "../model.js";
@@ -310,5 +310,121 @@ describe("apply relations and remove", () => {
       id: "nope",
     });
     expect(result.refused?.code).toBe("builder/missing-id");
+  });
+});
+
+describe("apply nested solver components", () => {
+  it("adds a child solver and scoped statements under parentId", () => {
+    let doc = emptyDocument();
+    doc = apply(doc, { type: "add_statement", id: "target", text: "Target" })
+      .document;
+    const child = apply(doc, {
+      type: "add_solver",
+      id: "child",
+      solver: GROUNDED_SOLVER_TAG,
+    });
+    expect(child.refused).toBeUndefined();
+    doc = child.document;
+    const claim = apply(doc, {
+      type: "add_statement",
+      id: "claim",
+      text: "Child claim",
+      parentId: "child",
+    });
+    expect(claim.refused).toBeUndefined();
+    const nested = claim.document.root.elements.find((element) =>
+      element.kind === "solver" && element.id === "child"
+    );
+    expect(nested).toMatchObject({
+      kind: "solver",
+      id: "child",
+      interface: {
+        aggregate: { inputs: [{ ref: "claim" }] },
+      },
+      elements: [{ kind: "statement", id: "claim" }],
+    });
+  });
+
+  it("sets and removes import projections for immediate children", () => {
+    let doc = emptyDocument();
+    doc = apply(doc, {
+      type: "add_solver",
+      id: "child",
+      solver: PREFERRED_SOLVER_TAG,
+    }).document;
+    doc = apply(doc, {
+      type: "add_statement",
+      id: "claim",
+      parentId: "child",
+    }).document;
+    const set = apply(doc, {
+      type: "set_import",
+      childId: "child",
+      outAtMost: 0.2,
+      inAtLeast: 0.8,
+    });
+    expect(set.refused).toBeUndefined();
+    expect(set.document.root.imports).toEqual([
+      [
+        "child",
+        {
+          tag: "casualtheorics.argdown2.projection/threshold",
+          outAtMost: 0.2,
+          inAtLeast: 0.8,
+          otherwise: null,
+        },
+      ],
+    ]);
+    const removed = apply(set.document, {
+      type: "remove_import",
+      childId: "child",
+    });
+    expect(removed.refused).toBeUndefined();
+    expect(removed.document.root.imports).toEqual([]);
+  });
+
+  it("clears imports when a child solver is removed", () => {
+    let doc = emptyDocument();
+    doc = apply(doc, {
+      type: "add_solver",
+      id: "child",
+      solver: GROUNDED_SOLVER_TAG,
+    }).document;
+    doc = apply(doc, {
+      type: "set_import",
+      childId: "child",
+      outAtMost: 0,
+      inAtLeast: 1,
+    }).document;
+    const removed = apply(doc, { type: "remove_element", id: "child" });
+    expect(removed.refused).toBeUndefined();
+    expect(removed.document.root.imports).toEqual([]);
+    expect(removed.document.root.elements).toEqual([]);
+  });
+
+  it("allows the same local id in sibling child scopes", () => {
+    let doc = emptyDocument();
+    doc = apply(doc, {
+      type: "add_solver",
+      id: "left",
+      solver: GROUNDED_SOLVER_TAG,
+    }).document;
+    doc = apply(doc, {
+      type: "add_solver",
+      id: "right",
+      solver: GROUNDED_SOLVER_TAG,
+    }).document;
+    const left = apply(doc, {
+      type: "add_statement",
+      id: "claim",
+      parentId: "left",
+    });
+    const right = apply(left.document, {
+      type: "add_statement",
+      id: "claim",
+      parentId: "right",
+    });
+    expect(left.refused).toBeUndefined();
+    expect(right.refused).toBeUndefined();
   });
 });

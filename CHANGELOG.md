@@ -18,6 +18,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - First-class solver components with IDs, local endpoint scopes, identified
   relations, identity interfaces, typed confidence boundaries, and bottom-up
   grounded composition.
+- Builder/MCP nesting: optional `parentId` on mutations, plus `add_solver`,
+  `set_import`, and `remove_import`.
 - Evidential solver (`#casualtheorics.argdown2.solver/evidential`): grounded
   labels on a Cayrol & Lagasquie-Schiex 2005 §3.3 necessary-support reduction
   (`A --> B` becomes `A → nec:A->B → B`).
@@ -33,6 +35,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `children`, and `warnings` layers instead of `labels` / `extensions` plus a
   positional `nested` array.
 - MCP relations are added and removed by stable relation ID.
+- Relation kinds unsupported by a solver now fail validation
+  (`semantic/unsupported-relation-kind`) and are refused by the builder
+  (`builder/unsupported-relation-kind`), instead of being silently omitted at
+  reduce time.
 
 ### Removed
 

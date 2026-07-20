@@ -52,6 +52,7 @@ export {
   PROJECTION_THRESHOLD_TAG,
   SOLVER_TAGS,
   STABLE_SOLVER_TAG,
+  supportedRelationKinds,
 } from "./model.js";
 
 export function validate(value: unknown): ValidationResult {

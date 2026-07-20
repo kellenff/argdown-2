@@ -38,7 +38,7 @@ Three functions, one return shape: `{ ok: true, ... } | { ok: false, errors }`. 
 
 ## Status and rigor
 
-Seven EDN fixtures live in `src/bench.fixtures/` and are exercised by every commit: `small-minimal`, `small-relations`, `small-argument`, `medium-censorship`, `heavy-attacks`, `deep-arguments`, `large-stress`. [`examples/argdown1-censorship.edn`](examples/argdown1-censorship.edn) ports the [Argdown 1.x censorship tutorial](https://argdown.org/guide/a-first-example.html); `src/parity.test.ts` verifies that the grounded labels match the pure-attack expected set, with one `reduce/support-omitted` warning per represented support relation.
+Seven EDN fixtures live in `src/bench.fixtures/` and are exercised by every commit: `small-minimal`, `small-relations`, `small-argument`, `medium-censorship`, `heavy-attacks`, `deep-arguments`, `large-stress`. [`examples/argdown1-censorship.edn`](examples/argdown1-censorship.edn) ports the [Argdown 1.x censorship tutorial](https://argdown.org/guide/a-first-example.html); `src/parity.test.ts` verifies that the grounded labels match the pure-attack expected set.
 
 ## Architecture
 
@@ -50,7 +50,7 @@ The library runs as a three-stage data pipeline:
 
 Because EDN maps directly to JS data, syntax and cross-reference validation collapse into a single pipeline. The custom parser + AST + visitor split from `0.1.0` is no longer present in `0.2.0`.
 
-The MCP server is a co-equal layer above this pipeline. It registers 11 tools that call `load`, `validate`, `solve`, and the builder functions directly. There is no separate code path; an agent-constructed graph goes through the same validation and solver as a programmatic one.
+The MCP server is a co-equal layer above this pipeline. It registers 14 tools that call `load`, `validate`, `solve`, and the builder functions directly. There is no separate code path; an agent-constructed graph goes through the same validation and solver as a programmatic one.
 
 ## Solver
 
@@ -58,16 +58,16 @@ The MCP server is a co-equal layer above this pipeline. It registers 11 tools th
 
 | Root tag | Result | Support handling |
 | --- | --- | --- |
-| `#…/solver/grounded` | labels | omitted (`reduce/support-omitted`) |
+| `#…/solver/grounded` | labels | rejected at validation |
 | `#…/solver/bipolar` | labels | deductive reduction (`B → sup:A->B → A`) |
 | `#…/solver/evidential` | labels | necessary reduction (`A → nec:A->B → B`) |
-| `#…/solver/preferred` | extensions | omitted (pure-attack Dung) |
-| `#…/solver/stable` | extensions | omitted (pure-attack Dung) |
-| `#…/solver/complete` | extensions | omitted (pure-attack Dung) |
+| `#…/solver/preferred` | extensions | rejected at validation |
+| `#…/solver/stable` | extensions | rejected at validation |
+| `#…/solver/complete` | extensions | rejected at validation |
 
 Grounded labeling is Dung's grounded semantics: the smallest complete extension containing all unattacked arguments and all arguments recursively defended by them. Anything attacked by an IN argument is OUT. Arguments that survive in un-attacked odd cycles or self-attack are UNDEC.
 
-Under `grounded`, `support` and `undercut` are preserved in the document but emit omission warnings and contribute nothing to the reduction. Under `bipolar` / `evidential`, `support` is reduced via auxiliaries; `undercut` is still omitted with a warning.
+Each solver declares the relation kinds it consumes. Unsupported kinds fail validation with `semantic/unsupported-relation-kind` (and the builder refuses them early). Current consumers: grounded / preferred / stable / complete accept `attack` and `contradiction`; bipolar / evidential also accept `support`. No current solver consumes `undercut`.
 
 | Solver | a | b | c |
 | --- | --- | --- | --- |
@@ -110,7 +110,7 @@ and [formal companion](docs/snowball/specs/2026-07-19-first-class-solver-compone
 
 ## MCP server
 
-Eleven tools, stdio transport, single binary `argdown-2-mcp`. Every mutating tool takes exactly one of `path` (filesystem `.edn`, atomic write via temp + rename) or `source` (full document text, returns updated text). Builder mutations may soft-warn (`builder/unresolved-ref`); `builder/duplicate-id` and `builder/missing-id` refuse the edit and return a `refused` field with no document change.
+Fourteen tools, stdio transport, single binary `argdown-2-mcp`. Every mutating tool takes exactly one of `path` (filesystem `.edn`, atomic write via temp + rename) or `source` (full document text, returns updated text). Optional `parentId` scopes mutations to a nested solver component (default: document root). Builder mutations may soft-warn (`builder/unresolved-ref`); `builder/duplicate-id`, `builder/missing-id`, and `builder/unsupported-relation-kind` refuse the edit and return a `refused` field with no document change.
 
 | Tool | Purpose |
 | --- | --- |
@@ -119,10 +119,13 @@ Eleven tools, stdio transport, single binary `argdown-2-mcp`. Every mutating too
 | `update_statement` | Update an existing statement by id |
 | `add_argument` | Add an argument (id + optional description) |
 | `add_inference` | Add an inference under an argument; premises and conclusion accept id or prose |
-| `add_relation` | Add an identified `support`, `attack`, `contradiction`, or `undercut` |
-| `remove_element` | Remove a statement, argument, or inference by id |
+| `add_relation` | Add an identified relation kind consumed by the target solver |
+| `add_solver` | Add an empty child solver under `parentId` |
+| `set_import` | Set a threshold projection for an immediate child boundary |
+| `remove_import` | Remove a parent import projection |
+| `remove_element` | Remove a statement, argument, inference, or child solver by id |
 | `remove_relation` | Remove a relation by ID |
-| `list_elements` | List statements, arguments, inferences, and relations |
+| `list_elements` | List statements, arguments, inferences, relations, and nested solvers |
 | `validate` | Strict-load and return semantic diagnostics |
 | `solve` | Strict-load and compute component-native, aggregate, and boundary results |
 
@@ -170,7 +173,7 @@ identified `:root` solver map. Solver maps contain `:id`, `:interface`, optional
 
 | Tag | Purpose |
 | --- | --- |
-| `#casualtheorics.argdown2.solver/grounded` | Grounded labels; support omitted |
+| `#casualtheorics.argdown2.solver/grounded` | Grounded labels; support rejected |
 | `#casualtheorics.argdown2.solver/bipolar` | Grounded labels; deductive support reduction |
 | `#casualtheorics.argdown2.solver/evidential` | Grounded labels; necessary support reduction |
 | `#casualtheorics.argdown2.solver/preferred` | Preferred extensions (pure-attack) |
@@ -179,10 +182,10 @@ identified `:root` solver map. Solver maps contain `:id`, `:interface`, optional
 | `#casualtheorics.argdown2.argdown/statement` | Declare a statement node |
 | `#casualtheorics.argdown2.argdown/argument` | Declare an argument and optional inferences |
 | `#casualtheorics.argdown2.argdown/inference` | Link statement premises to a statement conclusion |
-| `#casualtheorics.argdown2.argdown/support` | Support; omitted under grounded / multi-extension, reduced under bipolar / evidential |
+| `#casualtheorics.argdown2.argdown/support` | Support; valid under bipolar / evidential only |
 | `#casualtheorics.argdown2.argdown/attack` | Add one directed Dung attack |
 | `#casualtheorics.argdown2.argdown/contradiction` | Add attacks in both directions |
-| `#casualtheorics.argdown2.argdown/undercut` | Target an inference; omitted from all current reductions with a warning |
+| `#casualtheorics.argdown2.argdown/undercut` | Target an inference or relation; rejected by all current solvers |
 
 IDs and references are EDN keywords. IDs are unique within one solver component
 across statements, arguments, inferences, relations, and immediate child
