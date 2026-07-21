@@ -10,8 +10,11 @@ Deno.test("readInput reads from file path", async () => {
 Deno.test("readInput reads from stdin when path is '-'", async () => {
   const expected = "hello from stdin\n";
   const cmd = new Deno.Command(Deno.execPath(), {
-    args: ["eval",
-      `import { readInput } from "${new URL("./input.ts", import.meta.url).pathname}";\nawait Deno.stdout.write(new TextEncoder().encode(await readInput("-")))`,
+    args: [
+      "eval",
+      `import { readInput } from "${
+        new URL("./input.ts", import.meta.url).pathname
+      }";\nawait Deno.stdout.write(new TextEncoder().encode(await readInput("-")))`,
     ],
     stdin: "piped",
     stdout: "piped",

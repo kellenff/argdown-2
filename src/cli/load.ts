@@ -7,11 +7,9 @@ export interface Diagnostic {
   message: string;
 }
 
-export interface LoadReport {
-  ok: boolean;
-  document: Document | undefined;
-  diagnostics: readonly Diagnostic[];
-}
+export type LoadReport =
+  | { ok: true; document: Document; diagnostics: readonly Diagnostic[] }
+  | { ok: false; document: undefined; diagnostics: readonly Diagnostic[] };
 
 export function loadAndReport(
   source: string,

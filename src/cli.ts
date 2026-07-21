@@ -3,7 +3,7 @@ import { HELP, VERSION } from "./cli/help.js";
 import { writeStderr, writeStdout } from "./cli/output.js";
 
 interface Args {
-  path: string | null;
+  path: string;
   format: "table" | "dot" | "mermaid" | "json";
   dryRun: boolean;
   quiet: boolean;
@@ -62,9 +62,15 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
 
-  // Placeholder — Task 5 wires solve/validate here.
-  writeStderr("argdown-2: not yet implemented\n");
-  return 1;
+  const { runValidate } = await import("./cli/validate.js");
+  const { runSolve } = await import("./cli/solve.js");
+  const { readInput } = await import("./cli/input.js");
+
+  const source = await readInput(parsed.path);
+  if (parsed.dryRun) {
+    return runValidate(source, { quiet: parsed.quiet });
+  }
+  return runSolve(source, { quiet: parsed.quiet, format: parsed.format });
 }
 
 if (import.meta.main) {
