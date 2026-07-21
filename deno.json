@@ -32,6 +32,9 @@
     "compile:mcp": "bash ./scripts/compile-mcp.sh",
     "check:mcp-deno": "bash ./scripts/check-mcp-deno.sh",
     "probe:mcp": "deno run -A ./scripts/probe-mcp-stdio.ts",
+    "cli": "deno run -A src/cli.ts",
+    "check:cli-deno": "deno check --frozen src/cli.ts",
+    "probe:cli": "deno run -A ./scripts/probe-cli-stdio.ts",
     "check:npm-allowlist": "bash ./scripts/check-npm-allowlist.sh"
   },
   "imports": {
