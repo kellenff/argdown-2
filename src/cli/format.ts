@@ -19,7 +19,7 @@ export function formatResult(
     case "table":
       return { text: formatTable(result, textLookup) };
     case "json":
-      return { text: formatJson(result) };
+      return { text: formatJson(result, textLookup) };
     case "dot":
       return { text: formatDot(result) };
     case "mermaid":
