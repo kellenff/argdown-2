@@ -1,4 +1,9 @@
-import type { ComponentSolveResult, Label, SolverTag } from "../model.js";
+import type {
+  ComponentSolveResult,
+  EntityId,
+  Label,
+  SolverTag,
+} from "../model.js";
 
 type LabelGroup = "IN" | "OUT" | "UNDETERMINED";
 
@@ -36,16 +41,21 @@ function formatGroup(
   level: 2 | 3,
   name: LabelGroup,
   ids: readonly string[],
+  textLookup?: ReadonlyMap<EntityId, string>,
 ): string {
   const hashes = "#".repeat(level);
   const lines: string[] = ["", `${hashes} ${name}`, ""];
-  for (const id of ids) lines.push(`- [#${id}]`);
+  for (const id of ids) {
+    const text = textLookup?.get(id as EntityId);
+    lines.push(text ? `- [#${id}] ${text}` : `- [#${id}]`);
+  }
   return lines.join("\n");
 }
 
 function formatComponent(
   solver: SolverTag | null,
   result: ComponentSolveResult,
+  textLookup?: ReadonlyMap<EntityId, string>,
 ): string {
   const grouped = extractLabels(result);
   // Single-semantics component (no nested solver children): emit groups
@@ -56,25 +66,32 @@ function formatComponent(
   if (solver !== null) {
     lines.push(`## solver/${shortSolverName(solver)}`);
   }
-  if (grouped.IN.length > 0) lines.push(formatGroup(level, "IN", grouped.IN));
+  if (grouped.IN.length > 0) {
+    lines.push(formatGroup(level, "IN", grouped.IN, textLookup));
+  }
   if (grouped.OUT.length > 0) {
-    lines.push(formatGroup(level, "OUT", grouped.OUT));
+    lines.push(formatGroup(level, "OUT", grouped.OUT, textLookup));
   }
   if (grouped.UNDETERMINED.length > 0) {
-    lines.push(formatGroup(level, "UNDETERMINED", grouped.UNDETERMINED));
+    lines.push(
+      formatGroup(level, "UNDETERMINED", grouped.UNDETERMINED, textLookup),
+    );
   }
   return lines.join("\n") + "\n";
 }
 
-export function formatTable(result: ComponentSolveResult): string {
+export function formatTable(
+  result: ComponentSolveResult,
+  textLookup?: ReadonlyMap<EntityId, string>,
+): string {
   const sections: string[] = [];
   // Single-semantics docs: skip the solver heading so groups appear at
   // the top level. Mixed-semantics docs: emit `## solver/<name>` for
   // the root and each child solver component.
   const rootSolver = result.children.size === 0 ? null : result.solver;
-  sections.push(formatComponent(rootSolver, result));
+  sections.push(formatComponent(rootSolver, result, textLookup));
   for (const [, child] of result.children) {
-    sections.push("\n" + formatComponent(child.solver, child));
+    sections.push("\n" + formatComponent(child.solver, child, textLookup));
   }
   return sections.join("");
 }

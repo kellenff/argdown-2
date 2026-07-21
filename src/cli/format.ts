@@ -1,4 +1,4 @@
-import type { ComponentSolveResult } from "../model.js";
+import type { ComponentSolveResult, EntityId } from "../model.js";
 import { formatTable } from "./format-table.js";
 import { formatJson } from "./format-json.js";
 import { formatDot } from "./format-dot.js";
@@ -13,10 +13,11 @@ export interface FormatResult {
 export function formatResult(
   result: ComponentSolveResult,
   format: FormatName,
+  textLookup?: ReadonlyMap<EntityId, string>,
 ): FormatResult {
   switch (format) {
     case "table":
-      return { text: formatTable(result) };
+      return { text: formatTable(result, textLookup) };
     case "json":
       return { text: formatJson(result) };
     case "dot":

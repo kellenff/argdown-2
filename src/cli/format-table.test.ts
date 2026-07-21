@@ -1,6 +1,11 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { formatTable } from "./format-table.js";
-import type { ComponentSolveResult, Label, SolverTag } from "../model.js";
+import type {
+  ComponentSolveResult,
+  EntityId,
+  Label,
+  SolverTag,
+} from "../model.js";
 
 function makeResult(
   labels: Record<string, Label>,
@@ -50,4 +55,28 @@ Deno.test("formatTable emits per-solver heading for mixed semantics", () => {
   const out = formatTable(parent);
   assertStringIncludes(out, "## solver/grounded");
   assertStringIncludes(out, "## solver/bipolar");
+});
+
+Deno.test("formatTable includes statement text when lookup is provided", () => {
+  const textLookup = new Map<EntityId, string>([
+    ["a" as EntityId, "Statement A text"],
+    ["b" as EntityId, "Statement B text"],
+  ]);
+  const out = formatTable(makeResult({ a: "in", b: "out" }), textLookup);
+  assertStringIncludes(out, "- [#a] Statement A text");
+  assertStringIncludes(out, "- [#b] Statement B text");
+});
+
+Deno.test("formatTable falls back to bare id when text is missing", () => {
+  const textLookup = new Map<EntityId, string>([
+    ["a" as EntityId, "Statement A text"],
+  ]);
+  const out = formatTable(makeResult({ a: "in", b: "out" }), textLookup);
+  assertStringIncludes(out, "- [#a] Statement A text");
+  assertStringIncludes(out, "- [#b]");
+});
+
+Deno.test("formatTable works without textLookup (backward compatible)", () => {
+  const out = formatTable(makeResult({ a: "in" }));
+  assertStringIncludes(out, "- [#a]");
 });
