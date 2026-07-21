@@ -37,6 +37,7 @@ Deno.test("loadAndReport with quiet=true suppresses stderr", () => {
     return data.length;
   };
   const result = loadAndReport("not valid edn (", { quiet: true });
+  // deno-lint-ignore no-explicit-any
   (Deno.stderr as any).writeSync = original;
   assertEquals(result.ok, false);
   assertEquals(captured, "");

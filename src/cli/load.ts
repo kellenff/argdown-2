@@ -5,7 +5,6 @@ import { writeDiagnostic, writeStderr } from "./output.js";
 export interface Diagnostic {
   code: string;
   message: string;
-  location?: { line: number; column: number };
 }
 
 export interface LoadReport {
@@ -19,12 +18,10 @@ export function loadAndReport(
   options: { quiet: boolean },
 ): LoadReport {
   const result = load(source);
-  const diagnostics: Diagnostic[] = result.ok
-    ? []
-    : result.errors.map((e) => ({
-      code: e.code,
-      message: e.message,
-    }));
+  const diagnostics: Diagnostic[] = result.ok ? [] : result.errors.map((e) => ({
+    code: e.code.startsWith("edn/") ? e.code : `edn/${e.code}`,
+    message: e.message,
+  }));
 
   for (const d of diagnostics) {
     if (!options.quiet) writeStderr(writeDiagnostic(d));
