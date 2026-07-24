@@ -25,6 +25,7 @@ const SKILLS = [
   "validate-debug",
   "interpret-solve",
   "prose-to-argdown-2",
+  "interactive-argument",
 ] as const;
 
 const TOOL_NAMES = [
