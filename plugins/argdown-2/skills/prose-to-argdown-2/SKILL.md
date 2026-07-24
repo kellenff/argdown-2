@@ -31,6 +31,8 @@ Distill freeform prose into an **argdown-2** EDN argument graph.
   of the input.
 - Compose with sibling skills: structural tool use follows **build-graph**;
   repair follows **validate-debug**; label explanation follows **interpret-solve**.
+  For interactive sharpening, citations, or research-backed expansion after
+  extraction, hand off to **interactive-argument**.
 
 ## When to use
 

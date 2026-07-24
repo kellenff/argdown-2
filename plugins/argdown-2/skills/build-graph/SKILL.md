@@ -7,7 +7,9 @@ description: Build an argdown-2 grounded argument graph via MCP tools (create_do
 
 Use the **argdown-2** MCP builder tools only. **Never hand-edit EDN** files (no Write/Edit of `*.edn`). Document state lives in the MCP session.
 
-For freeform prose → graph extraction, use **prose-to-argdown-2** first; this skill covers the mutation mechanics once claims are identified.
+For freeform prose → graph extraction, use **prose-to-argdown-2** first. For
+collaborative sharpening / research-backed expansion, use **interactive-argument**.
+This skill covers the mutation mechanics once claims are identified.
 
 ## Flow
 
