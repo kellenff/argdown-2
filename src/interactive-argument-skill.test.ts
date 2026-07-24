@@ -63,7 +63,9 @@ describe("interactive-argument skill", () => {
     const body = readFileSync(skillPath, "utf8").toLowerCase();
     expect(body).toMatch(/explicit/);
     expect(body).toMatch(/confirm/);
-    expect(body).toMatch(/do not hand-write edn|never hand-edit|do not write\/edit/);
+    expect(body).toMatch(
+      /do not hand-write edn|never hand-edit|do not write\/edit/,
+    );
   });
 
   it("is registered alongside sibling skills in Claude and Pi tests", () => {
