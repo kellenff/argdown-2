@@ -1,0 +1,18 @@
+{
+  "fixture": "position-disagreement",
+  "expects_document": true,
+  "expects_arguments": true,
+  "preferred_solver": "bipolar",
+  "min_statements": 4,
+  "max_statements": 12,
+  "min_relations": 2,
+  "min_arguments": 1,
+  "allowed_relation_kinds": ["support", "attack", "contradiction"],
+  "forbidden_relation_kinds": ["undercut"],
+  "provenance_required": true,
+  "every_quote_must_be_substring": true,
+  "grounded_arguments_only": true,
+  "mcp_only": true,
+  "expect_speaker_tags_or_ids": ["smith", "jones"],
+  "notes": "Two attributed voices. Preserve disagreement via attack/contradiction; do not resolve which side wins. Optional pro/con or speaker tags."
+}

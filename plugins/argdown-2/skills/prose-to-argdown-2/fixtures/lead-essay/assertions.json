@@ -1,0 +1,17 @@
+{
+  "fixture": "lead-essay",
+  "expects_document": true,
+  "expects_arguments": true,
+  "preferred_solver": "bipolar",
+  "min_statements": 6,
+  "max_statements": 20,
+  "min_relations": 4,
+  "min_arguments": 1,
+  "allowed_relation_kinds": ["support", "attack", "contradiction"],
+  "forbidden_relation_kinds": ["undercut"],
+  "provenance_required": true,
+  "every_quote_must_be_substring": true,
+  "grounded_arguments_only": true,
+  "mcp_only": true,
+  "notes": "Climate op-ed. Expect bipolar because of support into the comprehensive-approach conclusion; rebuttals as attack. One main inference anchored on 'Therefore…'."
+}

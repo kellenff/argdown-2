@@ -1,0 +1,28 @@
+{
+  "fixture": "legal-brief-terry",
+  "source": "Synthetic brief structure wrapping verbatim Terry v. Ohio language",
+  "expects_document": true,
+  "expects_arguments": true,
+  "preferred_solver": "bipolar",
+  "min_statements": 10,
+  "max_statements": 45,
+  "min_relations": 5,
+  "min_arguments": 1,
+  "allowed_relation_kinds": ["support", "attack", "contradiction"],
+  "forbidden_relation_kinds": ["undercut"],
+  "provenance_required": true,
+  "every_quote_must_be_substring": true,
+  "grounded_arguments_only": true,
+  "mcp_only": true,
+  "expect_section_awareness": ["STATEMENT OF FACTS", "ARGUMENT", "WHEREFORE"],
+  "must_capture_authorities": [
+    "Terry v. Ohio, 392 U.S. 1 (1968)",
+    "Katz v. United States, 389 U.S. 347, 88 S.Ct. 507, 19 L.Ed.2d 576 (1967)",
+    "Warden v. Hayden, 387 U.S. 294, 87 S.Ct. 1642, 18 L.Ed.2d 782 (1967) (hot pursuit)"
+  ],
+  "must_capture_relief_span": "WHEREFORE, Respondent respectfully requests that the judgment be affirmed.",
+  "point_headings_as_conclusions": true,
+  "forbid_invented_doctrine": true,
+  "separate_facts_from_holdings": true,
+  "notes": "Brief-shaped excerpt. Point headings are candidate conclusions; WHEREFORE is relief not a fact; See/Cf. authorities must support the propositions they follow."
+}

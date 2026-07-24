@@ -15,6 +15,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `prose-to-argdown-2` skill: three-pass prose → MCP builder extraction with
+  provenance ledger, solver selection, fixtures, and shape tests (shared Claude
+  Code + Pi skill tree).
 - First-class solver components with IDs, local endpoint scopes, identified
   relations, identity interfaces, typed confidence boundaries, and bottom-up
   grounded composition.
@@ -26,8 +29,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Pi coding-agent package: root `package.json` + `pi/extensions` MCP bridge
   over the existing launcher; shares Claude Code skills (unix only).
 - Claude Code in-repo marketplace (`.claude-plugin/marketplace.json`) and nested
-  plugin (`plugins/argdown-2`) with MCP, three skills, and a soft rule to never
-  hand-edit EDN.
+  plugin (`plugins/argdown-2`) with MCP, four skills (including
+  `prose-to-argdown-2`), and a soft rule to never hand-edit EDN.
 
 ### Changed
 

@@ -1,0 +1,17 @@
+{
+  "fixture": "multi-paragraph",
+  "expects_document": true,
+  "expects_arguments": true,
+  "preferred_solver": "bipolar",
+  "min_statements": 8,
+  "max_statements": 30,
+  "min_relations": 4,
+  "min_arguments": 1,
+  "allowed_relation_kinds": ["support", "attack", "contradiction"],
+  "forbidden_relation_kinds": ["undercut"],
+  "provenance_required": true,
+  "every_quote_must_be_substring": true,
+  "grounded_arguments_only": true,
+  "mcp_only": true,
+  "notes": "Multi-section essay under the 10k-word chunking threshold. Tests multi-paragraph provenance ranges, not chunking itself."
+}
