@@ -1,0 +1,33 @@
+{
+  "fixture": "legal-opinion-terry",
+  "source": "Terry v. Ohio, 392 U.S. 1 (1968) via Cornell LII",
+  "expects_document": true,
+  "expects_arguments": true,
+  "preferred_solver": "bipolar",
+  "min_statements": 8,
+  "max_statements": 40,
+  "min_relations": 4,
+  "min_arguments": 1,
+  "allowed_relation_kinds": ["support", "attack", "contradiction"],
+  "forbidden_relation_kinds": ["undercut"],
+  "provenance_required": true,
+  "every_quote_must_be_substring": true,
+  "grounded_arguments_only": true,
+  "mcp_only": true,
+  "must_capture_authorities": [
+    "Katz v. United States, 389 U.S. 347, 88 S.Ct. 507, 19 L.Ed.2d 576 (1967)",
+    "Warden v. Hayden, 387 U.S. 294, 87 S.Ct. 1642, 18 L.Ed.2d 782 (1967) (hot pursuit)",
+    "Beck v. State of Ohio, 379 U.S. 89, 91, 85 S.Ct. 223, 226, 13 L.Ed.2d 142 (1964)",
+    "Brinegar v. United States, 338 U.S. 160, 174—176, 69 S.Ct. 1302, 1311, 93 L.Ed. 1879 (1949)",
+    "Stacey v. Emery, 97 U.S. 642, 645, 24 L.Ed. 1035 (1878)"
+  ],
+  "must_capture_fact_spans": [
+    "Officer McFadden testified that while he was patrolling in plain clothes in downtown Cleveland"
+  ],
+  "must_capture_holding_spans": [
+    "We merely hold today that where a police officer observes unusual conduct"
+  ],
+  "forbid_invented_doctrine": true,
+  "separate_facts_from_holdings": true,
+  "notes": "Real SCOTUS opinion excerpt. Cross-check: facts (McFadden observation), holdings (stop-and-frisk rule), and verbatim authorities with See/Cf. signals must all appear. Prefer bipolar for authority support edges."
+}

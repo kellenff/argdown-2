@@ -75,6 +75,7 @@ host LLM to supply prose fields; this skill is that host procedure.
 | Long prose | > 10k words → chunk ≥ 500 words on paragraph boundaries; one document, chunk markers in provenance only |
 | No claims | Recipes / logs / lists → plain refusal, no empty document |
 | Packaging | Same skill tree as existing three skills; update `SKILLS` arrays in tests |
+| Legal filings | First-class: separate fact / holding / authority / relief; verbatim cites; signal→relation map; no invented doctrine |
 
 ---
 
@@ -159,10 +160,11 @@ Composition with sibling skills:
   passes + provenance + solver selection; registered in Claude/Pi `SKILLS`.
 - Fixtures under the skill directory: `input.txt` + `assertions.json`
   (expected min/max statement counts, allowed relation kinds, must-have /
-  must-not-have ids or inference language flags). No golden EDN files —
-  agents rebuild via MCP.
-- Manual smoke: run skill on `lead-essay` and `research-abstract` fixtures
-  against `deno task mcp`.
+  must-not-have ids or inference language flags). Legal fixtures
+  (`legal-opinion-terry`, `legal-brief-terry`) assert verbatim authorities and
+  fact/holding separation. No golden EDN files — agents rebuild via MCP.
+- Manual smoke: run skill on `lead-essay`, `research-abstract`, and legal
+  Terry fixtures against `deno task mcp`.
 
 ---
 

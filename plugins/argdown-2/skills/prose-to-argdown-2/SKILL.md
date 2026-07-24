@@ -3,11 +3,14 @@ name: prose-to-argdown-2
 description: >
   Use when the user provides freeform argumentative or research/technical prose
   (essay, op-ed, review, polemic, position paper, paper section, technical
-  report, book excerpt) and asks to extract claims, map the argument, turn this
-  into argdown / argdown-2 / EDN, structure this, or asks what the text is
-  arguing. Distills the prose into an argdown-2 document via MCP builder tools
-  only (never hand-edit EDN), with a strict provenance ledger and grounded
-  inferences. Do not use for recipes, code, logs, lists, or prose without claims.
+  report, book excerpt) or a legal filing (complaint, motion, brief, opinion
+  excerpt) and asks to extract claims, map the argument, capture citations,
+  turn this into argdown / argdown-2 / EDN, structure this, or asks what the
+  text is arguing. Distills the prose into an argdown-2 document via MCP builder
+  tools only (never hand-edit EDN), with a strict provenance ledger and grounded
+  inferences. For filings, preserve facts, holdings, and citation strings
+  accurately—do not invent doctrine. Do not use for recipes, code, logs, lists,
+  or prose without claims.
 ---
 
 # prose-to-argdown-2
@@ -33,9 +36,10 @@ Distill freeform prose into an **argdown-2** EDN argument graph.
 
 Use when the user pastes or points at prose and asks to:
 
-- extract the claims / map the argument
+- extract the claims / map the argument / capture citations
 - turn this into argdown, argdown-2, or EDN
 - structure this / what is this arguing
+- map a complaint, motion, brief, or opinion excerpt
 
 **Do not use** for recipes, code, logs, shopping lists, calendars, JSON blobs,
 purely descriptive narrative, passages under ~50 words, or when the user only
@@ -126,16 +130,27 @@ For each claim:
    collide with role names if you later nest solvers.
 3. `text` preserves the prose’s terminology; light grammar smoothing only — no
    semantic paraphrase.
-4. Optional `tags`: `pro` / `con` when the prose attributes a side; speaker tags
-   like `smith` / `jones` when useful. Do **not** stuff provenance into tags.
-5. Record provenance: `source-line` (number, `"42-45"`, or `[42, 67]`) and
-   `source-quote` (verbatim substring).
+4. Optional `tags`: `pro` / `con` when the prose attributes a side; speaker /
+   party tags (`smith`, `plaintiff`, `defendant`, `petitioner`, `respondent`,
+   `court`) when useful; role tags for filings (`fact`, `holding`,
+   `legal-conclusion`, `relief`, `authority`). Do **not** stuff provenance into
+   tags.
+5. Record provenance: `source-line` (number, `"42-45"`, or `[42, 67]`; prefer
+   numbered ¶ / filing paragraph ids when present) and `source-quote`
+   (verbatim substring).
 
 Call `add_statement` per claim. After the batch, `validate`. On failure, follow
 **validate-debug** (MCP repairs only) and retry once.
 
-**Not statements:** questions, imperatives without a claim, section headings,
-citations alone, hedging without content (“some say…” without saying what).
+**Not statements:** questions, imperatives without a claim, bare section labels
+(`ARGUMENT`, `STATEMENT OF FACTS`), hedging without content (“some say…”
+without saying what), solitary reporter cites with no proposition, and record
+pointers alone (`App. 12`, `JA 4`)—those are provenance, not claims.
+
+**Citations are not discarded.** A proposition supported by authorities must
+still be emitted as a statement; capture each material authority as its own
+`authority` statement (verbatim cite string as `text`) and link with `support`
+(or `attack` for `But see` / `Contra`). See **Legal filings**.
 
 ## Pass 2: Relations
 
@@ -247,6 +262,69 @@ Per pass batch:
 If MCP is unavailable: stop. Do not hand-write EDN as a fallback. Tell the user
 the argdown-2 MCP server must be connected.
 
+## Legal filings
+
+Treat complaints, motions, briefs, and opinion excerpts as first-class inputs.
+Accuracy of **facts**, **arguments**, and **citations** outranks graph elegance.
+
+### Document layers (do not collapse)
+
+| Layer | Typical cues | Tag / handling |
+|---|---|---|
+| Fact allegation | Statement of Facts, numbered ¶s, “testified that”, dates/places | `fact` — atomic event claims only |
+| Legal conclusion / point heading | Roman point headings, “X was unreasonable”, element assertions | `legal-conclusion` — keep separate from facts |
+| Holding | “we hold”, “we conclude”, affirmed/reversed | `holding` — quote tightly; do not broaden |
+| Authority | Case/statute/regulation cite strings | `authority` — **verbatim** Bluebook-ish string as statement `text` |
+| Requested relief | WHEREFORE, prayer, “respectfully requests” | `relief` — not a factual premise |
+
+Never rewrite a fact as a holding, or a holding as a fact. Never “complete”
+unstated doctrinal elements from world knowledge (e.g. do not add duty/breach
+nodes the filing never alleges).
+
+### Citation capture (load-bearing for filings)
+
+1. Keep the **proposition** the cite supports as its own statement.
+2. Emit each material authority as `add_statement` with `tags: ["authority"]`
+   and `text` equal to the **full cite string** as written (case name, reporter,
+   pin, year, parenthetical). Do not normalize away pins or signals.
+3. Map citation **signals** to relations:
+
+| Signal | Relation |
+|---|---|
+| `See`, `See also`, `Accord`, `e.g.`, bare supportive cite after a claim | `support` (authority → proposition) |
+| `Cf.` | `support` only if the prose treats it as analogous support; otherwise omit rather than invent |
+| `But see`, `Contra`, `But cf.` | `attack` (authority → proposition) |
+| `supra` / `id.` | Resolve to the antecedent authority already emitted; do not invent a new case |
+
+4. Parentheticals that state a holding tip (`(hot pursuit)`) stay inside the
+   authority `text`; do not invent a separate holding the parenthetical does
+   not actually assert beyond that tip.
+5. Prefer bipolar (or evidential if requested) whenever authorities `support`
+   propositions—filings almost always need `support`.
+6. Table of Authorities / table of contents entries are not claims.
+
+### Filings-specific Pass 3
+
+- Point headings are candidate **conclusions**; body paragraphs supply premises
+  only when inference language or adjacent structure warrants it.
+- Element lists stated in the filing (“dual inquiry—whether … and whether …”)
+  may become multi-premise inferences **only** if the text presents them as the
+  court’s/party’s inferential structure.
+- WHEREFORE / prayer → `relief` statement; relate with `support` from the
+  holding/conclusion **only** when the prose ties relief to that conclusion.
+
+### Filings self-check (add to checklist)
+
+- Every material `See` / `see e.g.` / `Cf.` / `But see` cluster either produced
+  an authority node + relation or was consciously omitted with a reason.
+- Cite strings in the ledger/`text` match the filing character-for-character
+  (including pinpoints).
+- No doctrinal premises appear that lack a verbatim span.
+- Fact tags are not applied to holdings; holdings are not applied to narrative
+  facts.
+
+Fixtures: `fixtures/legal-opinion-terry`, `fixtures/legal-brief-terry`.
+
 ## Edge cases
 
 | Situation | Behavior |
@@ -260,6 +338,8 @@ the argdown-2 MCP server must be connected.
 | Parse / validate keeps failing | After retry budgets, surface MCP diagnostics and deliver best-effort with a warning; list dropped nodes. |
 | Provenance mismatch | Rewrite quote or remove the node/edge. |
 | User asks only for a Mermaid / `.argdown` dump | Explain EDN+MCP is canonical; offer `list_elements` + provenance instead of hand-authored legacy syntax. |
+| Legal filing with dense cites | Follow **Legal filings**; never drop authorities as “citations alone.” |
+| Record-only cite (`App. 12`) | Attach as provenance to the fact it evidences; do not invent the underlying evidence text. |
 
 ## Delivery format
 
@@ -289,6 +369,8 @@ Before finishing:
 5. **No inventions:** every statement and relation is in the prose.
 6. **Solver fit:** no `support` under grounded; no `undercut` anywhere.
 7. **Ids:** stable, semantic, unique; relations have explicit local ids.
+8. **Filings (when applicable):** authority cite strings verbatim; facts ≠
+   holdings ≠ relief; no invented doctrinal elements; citation signals mapped.
 
 ## Worked micro-example
 

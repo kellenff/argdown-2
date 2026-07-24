@@ -24,6 +24,8 @@ const FIXTURES = [
   "no-claims",
   "multi-paragraph",
   "ambiguous-prose",
+  "legal-opinion-terry",
+  "legal-brief-terry",
 ] as const;
 
 describe("prose-to-argdown-2 skill", () => {
@@ -55,6 +57,11 @@ describe("prose-to-argdown-2 skill", () => {
     expect(body).toMatch(/interpret-solve/);
     expect(body).toMatch(/strongly implies/);
     expect(body).toMatch(/Self-verification/);
+    expect(body).toMatch(/Legal filings/);
+    expect(body).toMatch(/authority/);
+    expect(body).toMatch(/WHEREFORE|relief/);
+    expect(body).toMatch(/But see|Contra/);
+    expect(body).toMatch(/verbatim/);
   });
 
   it("forbids undercut emission and hand-written EDN fallback", () => {
@@ -162,5 +169,48 @@ describe("prose-to-argdown-2 fixture assertion contracts", () => {
     expect(a.max_arguments).toBe(0);
     expect(a.max_relations).toBe(0);
     expect(a.preferred_solver).toBe("grounded");
+  });
+
+  it("legal-opinion-terry requires verbatim authorities and fact/holding split", () => {
+    const a = readJson(
+      "plugins/argdown-2/skills/prose-to-argdown-2/fixtures/legal-opinion-terry/assertions.json",
+    ) as {
+      preferred_solver: string;
+      must_capture_authorities: string[];
+      separate_facts_from_holdings: boolean;
+      forbid_invented_doctrine: boolean;
+    };
+    const input = readText(
+      "plugins/argdown-2/skills/prose-to-argdown-2/fixtures/legal-opinion-terry/input.txt",
+    );
+    expect(a.preferred_solver).toBe("bipolar");
+    expect(a.separate_facts_from_holdings).toBe(true);
+    expect(a.forbid_invented_doctrine).toBe(true);
+    expect(a.must_capture_authorities.length).toBeGreaterThanOrEqual(4);
+    for (const cite of a.must_capture_authorities) {
+      expect(input).toContain(cite);
+    }
+    expect(input).toContain("We merely hold today");
+    expect(input).toContain("Officer McFadden testified");
+  });
+
+  it("legal-brief-terry requires relief, sections, and Terry cite", () => {
+    const a = readJson(
+      "plugins/argdown-2/skills/prose-to-argdown-2/fixtures/legal-brief-terry/assertions.json",
+    ) as {
+      must_capture_relief_span: string;
+      expect_section_awareness: string[];
+      must_capture_authorities: string[];
+    };
+    const input = readText(
+      "plugins/argdown-2/skills/prose-to-argdown-2/fixtures/legal-brief-terry/input.txt",
+    );
+    expect(input).toContain(a.must_capture_relief_span);
+    for (const section of a.expect_section_awareness) {
+      expect(input).toContain(section);
+    }
+    for (const cite of a.must_capture_authorities) {
+      expect(input).toContain(cite);
+    }
   });
 });
