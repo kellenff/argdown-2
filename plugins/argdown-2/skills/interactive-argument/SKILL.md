@@ -126,10 +126,12 @@ Do not dump hand-written EDN; use `list_elements` / threaded `source` if asked.
 ## Red flags — STOP
 
 - Multiple clarifying questions in one message
-- Research / web search started before brief confirmation
+- Research / web search started before brief confirmation (including when the
+  user names a specific paper or says confirmation is implied)
 - Writing or offering to Write/Edit `*.edn`
 - Fabricated bibliographic details
 - Skipping orientation on an existing path/session graph
+- Treating one-shot `prose-to-argdown-2` extraction as a substitute for the loop
 
 ## Self-verification checklist
 
