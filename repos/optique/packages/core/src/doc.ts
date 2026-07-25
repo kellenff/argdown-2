@@ -1,0 +1,1152 @@
+import { getDisplayWidth } from "./displaywidth.ts";
+import {
+  cloneMessage,
+  formatMessage,
+  type Message,
+  type MessageFormatOptions,
+  type MessageTerm,
+  text,
+} from "./message.ts";
+import {
+  cloneUsageTerm,
+  formatUsage,
+  formatUsageTerm,
+  isDocHidden,
+  isUsageHidden,
+  type Usage,
+  type UsageTerm,
+} from "./usage.ts";
+import { validateLabel, validateProgramName } from "./validate.ts";
+
+/**
+ * A documentation entry which describes a specific usage of a command or
+ * option.  It includes a subject (the usage), a description, and an optional
+ * default value.
+ */
+export interface DocEntry {
+  /**
+   * The subject of the entry, which is typically a command or option
+   * usage.
+   */
+  readonly term: UsageTerm;
+
+  /**
+   * A description of the entry, which provides additional context or
+   * information about the usage.
+   */
+  readonly description?: Message;
+
+  /**
+   * An optional default value for the entry, which can be used to
+   * indicate what the default behavior is if the command or option is not
+   * specified.
+   */
+  readonly default?: Message;
+
+  /**
+   * An optional list of valid choices for the entry, formatted as a
+   * comma-separated {@link Message}.  When present and the `showChoices`
+   * formatting option is enabled, this is appended to the entry description.
+   *
+   * @since 0.10.0
+   */
+  readonly choices?: Message;
+}
+
+/**
+ * A section in a document that groups related entries together.
+ */
+export interface DocSection {
+  readonly title?: string;
+  readonly entries: readonly DocEntry[];
+}
+
+/**
+ * A document page that contains multiple sections, each with its own brief
+ * and a list of entries. This structure is used to organize documentation
+ * for commands, options, and other related information.
+ */
+export interface DocPage {
+  readonly brief?: Message;
+  readonly usage?: Usage;
+  readonly description?: Message;
+  readonly sections: readonly DocSection[];
+  /**
+   * Usage examples for the program.
+   * @since 0.10.0
+   */
+  readonly examples?: Message;
+  /**
+   * Author information.
+   * @since 0.10.0
+   */
+  readonly author?: Message;
+  /**
+   * Information about where to report bugs.
+   * @since 0.10.0
+   */
+  readonly bugs?: Message;
+  readonly footer?: Message;
+}
+
+/**
+ * A documentation fragment that can be either an entry or a section.
+ * Fragments are building blocks used to construct documentation pages.
+ */
+export type DocFragment =
+  | { readonly type: "entry" } & DocEntry
+  | { readonly type: "section" } & DocSection;
+
+/**
+ * A collection of documentation fragments with an optional description.
+ * This structure is used to gather fragments before organizing them into
+ * a final document page.
+ */
+export interface DocFragments {
+  /**
+   * An optional brief that provides a short summary for the collection
+   * of fragments.
+   * @since 0.7.12
+   */
+  readonly brief?: Message;
+
+  /**
+   * An optional description that applies to the entire collection of fragments.
+   */
+  readonly description?: Message;
+
+  /**
+   * An array of documentation fragments that can be entries or sections.
+   */
+  readonly fragments: readonly DocFragment[];
+
+  /**
+   * An optional footer that appears at the bottom of the documentation.
+   * @since 0.6.0
+   */
+  readonly footer?: Message;
+}
+
+/**
+ * Returns whether a doc entry's term is hidden from documentation.
+ * Only term types with a `hidden` field (argument, option, command,
+ * passthrough) are checked; other types always return `false`.
+ *
+ * @param entry The doc entry to check.
+ * @returns `true` if the entry should be hidden from documentation.
+ * @since 1.0.0
+ */
+export function isDocEntryHidden(entry: DocEntry): boolean {
+  const term = entry.term;
+  if (
+    term.type === "argument" ||
+    term.type === "option" ||
+    term.type === "command" ||
+    term.type === "passthrough"
+  ) {
+    return isDocHidden(term.hidden);
+  }
+  return false;
+}
+
+function getDocEntryKey(entry: DocEntry): string {
+  const term = entry.term;
+  switch (term.type) {
+    case "command":
+      return `command:${term.name}`;
+    case "option":
+      return `option:${[...term.names].sort().join(",")}:${term.metavar ?? ""}`;
+    case "argument":
+      return `argument:${term.metavar}`;
+    default:
+      return JSON.stringify(term);
+  }
+}
+
+/**
+ * Removes duplicate {@link DocEntry} values that share the same surface
+ * syntax (same term type and identifying names).  Doc-hidden entries are
+ * filtered out first so they cannot influence the ordering of visible
+ * entries.  Among the remaining visible entries, the first occurrence is
+ * kept and later duplicates are discarded.
+ *
+ * Positional argument entries are never deduplicated because they are
+ * distinguished by position, not by metavar, and {@link DocEntry} does
+ * not carry position information.
+ *
+ * @param entries The entries to deduplicate.
+ * @returns A new array with hidden entries removed and duplicates
+ *   collapsed, preserving insertion order of visible entries.
+ * @since 1.0.0
+ */
+export function deduplicateDocEntries(
+  entries: readonly DocEntry[],
+): DocEntry[] {
+  const seen = new Set<string>();
+  const result: DocEntry[] = [];
+  for (const entry of entries) {
+    if (isDocEntryHidden(entry)) continue;
+    if (entry.term.type === "argument") {
+      result.push(entry);
+      continue;
+    }
+    const key = getDocEntryKey(entry);
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(entry);
+    }
+  }
+  return result;
+}
+
+/**
+ * Removes duplicate entries from a list of {@link DocFragment} values.
+ * Entry-type fragments are deduplicated by their surface syntax key.
+ * Section-type fragments have their entries deduplicated internally.
+ *
+ * @param fragments The fragments to deduplicate.
+ * @returns A new array with duplicate entries removed.
+ * @since 1.0.0
+ */
+export function deduplicateDocFragments(
+  fragments: readonly DocFragment[],
+): DocFragment[] {
+  // Doc-hidden entries are skipped so they cannot influence the ordering
+  // of visible entries.  Among remaining visible entries, the first
+  // occurrence is kept and later duplicates are discarded.
+  //
+  // Untitled entries/sections share a global dedup scope.
+  // Titled sections are grouped by title and deduplicated within each group,
+  // but entries in differently-titled sections remain independent.
+  // Titled sections are emitted at the position of their first fragment
+  // that contains visible entries, so hidden-only fragments do not
+  // influence ordering.
+  const untitledSeen = new Set<string>();
+  const titledSectionMap = new Map<string, DocEntry[]>();
+  const titledSectionPositioned = new Set<string>();
+  // Each element is either a concrete DocFragment or a title placeholder
+  // for a titled section whose entries are still being collected.
+  const slots: (DocFragment | string)[] = [];
+  for (const fragment of fragments) {
+    if (fragment.type === "entry") {
+      if (isDocEntryHidden(fragment)) continue;
+      if (fragment.term.type === "argument") {
+        slots.push(fragment);
+      } else {
+        const key = getDocEntryKey(fragment);
+        if (!untitledSeen.has(key)) {
+          untitledSeen.add(key);
+          slots.push(fragment);
+        }
+      }
+    } else if (fragment.title == null) {
+      const dedupedEntries: DocEntry[] = [];
+      for (const entry of fragment.entries) {
+        if (isDocEntryHidden(entry)) continue;
+        if (entry.term.type === "argument") {
+          dedupedEntries.push(entry);
+          continue;
+        }
+        const key = getDocEntryKey(entry);
+        if (!untitledSeen.has(key)) {
+          untitledSeen.add(key);
+          dedupedEntries.push(entry);
+        }
+      }
+      if (dedupedEntries.length > 0) {
+        slots.push({
+          ...fragment,
+          type: "section",
+          entries: dedupedEntries,
+        });
+      }
+    } else {
+      if (!titledSectionMap.has(fragment.title)) {
+        titledSectionMap.set(fragment.title, []);
+      }
+      // Defer placeholder until we see a fragment with visible entries,
+      // so the section's position reflects its first visible content.
+      if (
+        !titledSectionPositioned.has(fragment.title) &&
+        fragment.entries.some((e) => !isDocEntryHidden(e))
+      ) {
+        titledSectionPositioned.add(fragment.title);
+        slots.push(fragment.title);
+      }
+      titledSectionMap.get(fragment.title)!.push(...fragment.entries);
+    }
+  }
+  const result: DocFragment[] = [];
+  for (const slot of slots) {
+    if (typeof slot === "string") {
+      const entries = deduplicateDocEntries(titledSectionMap.get(slot)!);
+      if (entries.length > 0) {
+        result.push({ type: "section", title: slot, entries });
+      }
+    } else {
+      result.push(slot);
+    }
+  }
+  return result;
+}
+
+/**
+ * Creates a deep clone of a {@link DocEntry}.  The `term` is cloned via
+ * {@link cloneUsageTerm}, and `description`, `default`, and `choices`
+ * messages are cloned via {@link cloneMessage}.
+ *
+ * @param entry The documentation entry to clone.
+ * @returns A structurally equal but referentially distinct copy.
+ * @since 1.0.0
+ */
+export function cloneDocEntry(entry: DocEntry): DocEntry {
+  return {
+    term: cloneUsageTerm(entry.term),
+    ...(entry.description != null && {
+      description: cloneMessage(entry.description),
+    }),
+    ...(entry.default != null && {
+      default: cloneMessage(entry.default),
+    }),
+    ...(entry.choices != null && {
+      choices: cloneMessage(entry.choices),
+    }),
+  };
+}
+
+/**
+ * Configuration for customizing default value display formatting.
+ *
+ * @since 0.4.0
+ */
+export interface ShowDefaultOptions {
+  /**
+   * Text to display before the default value.
+   *
+   * @default `" ["`
+   */
+  readonly prefix?: string;
+
+  /**
+   * Text to display after the default value.
+   *
+   * @default `"]"`
+   */
+  readonly suffix?: string;
+}
+
+/**
+ * Configuration for customizing choices display formatting.
+ *
+ * @since 0.10.0
+ */
+export interface ShowChoicesOptions {
+  /**
+   * Text to display before the choices list.
+   *
+   * @default `" ("`
+   */
+  readonly prefix?: string;
+
+  /**
+   * Text to display after the choices list.
+   *
+   * @default `")"`
+   */
+  readonly suffix?: string;
+
+  /**
+   * Label text to display before the individual choice values.
+   *
+   * @default `"choices: "`
+   */
+  readonly label?: string;
+
+  /**
+   * Maximum number of choice values to display before truncating with
+   * `...`.  Must be at least `1`.  Set to `Infinity` to show all choices.
+   *
+   * @default `8`
+   * @throws {RangeError} If the value is less than `1`.
+   */
+  readonly maxItems?: number;
+}
+
+/**
+ * Options for formatting a documentation page.
+ */
+export interface DocPageFormatOptions {
+  /**
+   * Whether to include ANSI color codes in the output.
+   * @default `false`
+   */
+  colors?: boolean;
+
+  /**
+   * Number of spaces to indent terms in documentation entries.
+   * @default `2`
+   */
+  termIndent?: number;
+
+  /**
+   * Width allocated for terms before descriptions start.
+   * @default `26`
+   */
+  termWidth?: number;
+
+  /**
+   * Maximum width of the entire formatted output.
+   */
+  maxWidth?: number;
+
+  /**
+   * Whether to include the usage synopsis in the output.
+   *
+   * @default `true`
+   * @since 1.2.0
+   */
+  showUsage?: boolean;
+
+  /**
+   * Whether and how to display default values for options and arguments.
+   *
+   * - `boolean`: When `true`, displays defaults using format `[value]`
+   * - `ShowDefaultOptions`: Custom formatting with configurable prefix and suffix
+   *
+   * Default values are automatically dimmed when `colors` is enabled.
+   *
+   * @default `false`
+   * @since 0.4.0
+   *
+   * @example
+   * ```typescript
+   * // Basic usage - shows "[3000]"
+   * { showDefault: true }
+   *
+   * // Custom format - shows "(default: 3000)"
+   * { showDefault: { prefix: " (default: ", suffix: ")" } }
+   *
+   * // Custom format - shows " - defaults to 3000"
+   * { showDefault: { prefix: " - defaults to ", suffix: "" } }
+   * ```
+   */
+  showDefault?: boolean | ShowDefaultOptions;
+
+  /**
+   * Whether and how to display valid choices for options and arguments
+   * backed by enumerated value parsers (e.g., `choice()`).
+   *
+   * - `boolean`: When `true`, displays choices using format
+   *   `(choices: a, b, c)`
+   * - `ShowChoicesOptions`: Custom formatting with configurable prefix,
+   *   suffix, label, and maximum number of items
+   *
+   * Choice values are automatically dimmed when `colors` is enabled.
+   *
+   * @default `false`
+   * @since 0.10.0
+   *
+   * @example
+   * ```typescript
+   * // Basic usage - shows "(choices: json, yaml, xml)"
+   * { showChoices: true }
+   *
+   * // Custom format - shows "{json | yaml | xml}"
+   * { showChoices: { prefix: " {", suffix: "}", label: "" } }
+   *
+   * // Limit displayed choices
+   * { showChoices: { maxItems: 3 } }
+   * ```
+   */
+  showChoices?: boolean | ShowChoicesOptions;
+
+  /**
+   * A custom comparator function to control the order of sections in the
+   * help output.  When provided, it is used instead of the default smart
+   * sort (command-only sections first, then mixed, then option/argument-only
+   * sections).  Sections that compare equal (return `0`) preserve their
+   * original relative order (stable sort).
+   *
+   * @param a The first section to compare.
+   * @param b The second section to compare.
+   * @returns A negative number if `a` should appear before `b`, a positive
+   *   number if `a` should appear after `b`, or `0` if they are equal.
+   * @since 1.0.0
+   *
+   * @example
+   * ```typescript
+   * // Sort sections alphabetically by title
+   * {
+   *   sectionOrder: (a, b) => (a.title ?? "").localeCompare(b.title ?? "")
+   * }
+   * ```
+   */
+  sectionOrder?: (a: DocSection, b: DocSection) => number;
+}
+
+/**
+ * Classifies a {@link DocSection} by its content type for use in the
+ * default smart sort.
+ *
+ * @returns `0` for command-only sections, `1` for mixed sections, `2` for
+ *   option/argument/passthrough-only sections.
+ */
+function classifySection(section: DocSection): 0 | 1 | 2 {
+  const hasCommand = section.entries.some((e) => e.term.type === "command");
+  const hasNonCommand = section.entries.some((e) => e.term.type !== "command");
+  if (hasCommand && !hasNonCommand) return 0;
+  if (hasCommand && hasNonCommand) return 1;
+  return 2;
+}
+
+/**
+ * Scores a section for the default smart sort.  Untitled sections receive
+ * a bonus of `-1` so that the main (untitled) section appears before titled
+ * sections of a similar classification.
+ */
+function scoreSection(section: DocSection): number {
+  return classifySection(section) + (section.title == null ? -1 : 0);
+}
+
+/**
+ * The default section comparator: command-only sections come first, then
+ * mixed sections, then option/argument-only sections.  Untitled sections
+ * receive a score bonus of -1 via {@link scoreSection} so that untitled
+ * command-only sections naturally sort before titled command-only sections.
+ * Sections with the same score preserve their original relative order
+ * (stable sort).
+ */
+function defaultSectionOrder(a: DocSection, b: DocSection): number {
+  return scoreSection(a) - scoreSection(b);
+}
+
+/**
+ * Formats a documentation page into a human-readable string.
+ *
+ * This function takes a structured {@link DocPage} and converts it into
+ * a formatted string suitable for display in terminals or documentation.
+ * The formatting includes proper indentation, alignment, and optional
+ * color support.
+ *
+ * @param programName The name of the program, used in usage lines
+ * @param page The documentation page to format
+ * @param options Formatting options to customize the output
+ * @returns A formatted string representation of the documentation page
+ * @throws {TypeError} If `programName` is not a string, is empty,
+ * whitespace-only, or contains control characters, if any non-empty
+ * section's title is not a string, is empty, whitespace-only, or contains
+ * control characters, or if `maxWidth` is not a finite integer.
+ * @throws {RangeError} If any entry needs a description column and `maxWidth`
+ * is too small to fit the minimum layout (less than `termIndent + 4`), or if
+ * `showChoices.maxItems` is less than `1`.
+ *
+ * @example
+ * ```typescript
+ * const page: DocPage = {
+ *   brief: "A CLI tool",
+ *   usage: [{ type: "literal", value: "myapp" }],
+ *   sections: [{
+ *     title: "Options",
+ *     entries: [{
+ *       term: { type: "option", short: "-v", long: "--verbose" },
+ *       description: "Enable verbose output"
+ *     }]
+ *   }]
+ * };
+ *
+ * const formatted = formatDocPage("myapp", page, { colors: true });
+ * console.log(formatted);
+ * ```
+ */
+export function formatDocPage(
+  programName: string,
+  page: DocPage,
+  options: DocPageFormatOptions = {},
+): string {
+  validateProgramName(programName);
+  const termIndent = options.termIndent ?? 2;
+  const termWidth = options.termWidth ?? 26;
+  const showUsage = options.showUsage ?? true;
+  if (
+    options.maxWidth != null &&
+    (!Number.isFinite(options.maxWidth) || !Number.isInteger(options.maxWidth))
+  ) {
+    throw new TypeError(
+      `maxWidth must be a finite integer, got ${options.maxWidth}.`,
+    );
+  }
+  // Pre-filter sections: remove entries whose terms are hidden in doc context
+  // or structurally degenerate (e.g., option with no names, empty command).
+  // This must happen before maxWidth validation so width checks reflect the
+  // actual rendered output, and before rendering so empty sections (all
+  // entries filtered) do not emit dangling section headers.
+  const filteredSections: readonly DocSection[] = page.sections.map((s) => ({
+    ...s,
+    entries: s.entries.filter((e) => {
+      const rendered = formatUsageTerm(e.term, { context: "doc" });
+      return rendered.trim() !== "";
+    }),
+  }));
+  page = { ...page, sections: filteredSections };
+
+  // Validate showChoices.maxItems before any per-entry rendering.
+  if (
+    typeof options.showChoices === "object" &&
+    options.showChoices.maxItems != null
+  ) {
+    const maxItems = options.showChoices.maxItems;
+    if (maxItems < 1) {
+      throw new RangeError(
+        `showChoices.maxItems must be at least 1, but got ${maxItems}.`,
+      );
+    }
+  }
+
+  // Validate maxWidth against the minimum feasible layout.  The minimum
+  // depends on which page features are active:
+  //  - Entries with a description column need enough space for term +
+  //    gap + description, plus any showDefault/showChoices prefixes.
+  //  - Bare-term entries need termIndent + 1 (just 1 term char).
+  //  - "Usage: " (7 chars) + max(programName, capped widest visible term).
+  //  - Examples:/Author:/Bugs: labels are 9/7/5 chars on their own lines.
+  const hasContent = (msg: unknown): msg is readonly unknown[] =>
+    Array.isArray(msg) && msg.length > 0;
+  if (options.maxWidth != null) {
+    const hasEntries = page.sections.some((s) => s.entries.length > 0);
+    // The formatter skips empty default/choices arrays, so the
+    // validation must match: use hasContent() (which checks length > 0)
+    // rather than just `!= null`.
+    const needsDescColumn = hasEntries &&
+      page.sections.some((s) =>
+        s.entries.some((e) =>
+          hasContent(e.description) ||
+          (options.showDefault && hasContent(e.default)) ||
+          (options.showChoices && hasContent(e.choices))
+        )
+      );
+    // Compute minimum description column width for showDefault/showChoices.
+    // When the rendered content is non-empty, only the prefix (or
+    // prefix + label for choices) must fit on one line; the suffix
+    // trails the content's last line.  When the content is empty
+    // (e.g., default: []), prefix + suffix land on the same line, so
+    // the suffix must be included in the minimum.
+    let minDescWidth = 1;
+    if (needsDescColumn) {
+      if (
+        options.showDefault &&
+        page.sections.some((s) => s.entries.some((e) => hasContent(e.default)))
+      ) {
+        const prefix = typeof options.showDefault === "object"
+          ? options.showDefault.prefix ?? " ["
+          : " [";
+        minDescWidth = Math.max(minDescWidth, getDisplayWidth(prefix));
+      }
+      if (
+        options.showChoices &&
+        page.sections.some((s) => s.entries.some((e) => hasContent(e.choices)))
+      ) {
+        const prefix = typeof options.showChoices === "object"
+          ? options.showChoices.prefix ?? " ("
+          : " (";
+        const label = typeof options.showChoices === "object"
+          ? options.showChoices.label ?? "choices: "
+          : "choices: ";
+        minDescWidth = Math.max(
+          minDescWidth,
+          getDisplayWidth(prefix) + getDisplayWidth(label),
+        );
+      }
+    }
+    // Entry minimum: the layout needs enough space for the term column,
+    // the 2-char gap, and at least minDescWidth for the description.
+    // Two layout modes yield different minimums:
+    //  - Split layout (small maxWidth): descColumnWidth = ceil(a/2),
+    //    requires a >= max(2, 2*minDescWidth - 1).
+    //  - Fixed-term layout: descColumnWidth = maxWidth - termIndent -
+    //    termWidth - 2, requires maxWidth >= termIndent + termWidth + 2 +
+    //    minDescWidth.
+    // The cheaper layout determines the true minimum.  A second check
+    // below catches values in the gap between the two valid ranges.
+    const splitEntryMin = termIndent + 2 + Math.max(2, 2 * minDescWidth - 1);
+    const fixedEntryMin = termIndent + 2 + termWidth + minDescWidth;
+    const entryMin = needsDescColumn
+      ? Math.min(splitEntryMin, fixedEntryMin)
+      : hasEntries
+      ? termIndent + 1
+      : 1;
+    // The first line needs "Usage: " (7) + programName.  Continuation
+    // lines are indented by 7 chars and need enough room for the widest
+    // atomic term segment.  To avoid over-restricting for intentionally
+    // long terms, the term width is capped at programNameWidth + 7;
+    // the 7 matches the continuation indent, so terms fitting within
+    // the first line's total width are guaranteed not to overflow.
+    const programNameWidth = getDisplayWidth(programName);
+    const usageMin = page.usage != null && showUsage
+      ? 7 + Math.max(
+        programNameWidth,
+        Math.min(
+          maxVisibleAtomicWidth(page.usage),
+          programNameWidth + 7,
+        ),
+      )
+      : 1;
+    // Examples/Author/Bugs have fixed-width label lines that cannot be
+    // wrapped.  The content is indented by 2 chars (needing maxWidth >= 3),
+    // but the label width is always the binding constraint.
+    let sectionMin = 1;
+    if (hasContent(page.examples)) sectionMin = Math.max(sectionMin, 9);
+    if (hasContent(page.author)) sectionMin = Math.max(sectionMin, 7);
+    if (hasContent(page.bugs)) sectionMin = Math.max(sectionMin, 5);
+    const minWidth = Math.max(entryMin, usageMin, sectionMin);
+    if (options.maxWidth < minWidth) {
+      throw new RangeError(
+        `maxWidth must be at least ${minWidth}, got ${options.maxWidth}.`,
+      );
+    }
+    // Second check: even if maxWidth passes the formula-based minimum,
+    // the actual layout may use the full termWidth, giving a description
+    // column of only maxWidth - termIndent - termWidth - 2 chars.  When
+    // this is smaller than minDescWidth, the fixed prefixes overflow.
+    if (needsDescColumn && minDescWidth > 1) {
+      const avail = options.maxWidth - termIndent - 2;
+      const effTW = avail >= termWidth + 1
+        ? termWidth
+        : Math.max(1, Math.floor(avail / 2));
+      const descW = avail - effTW;
+      if (descW < minDescWidth) {
+        const needed = termIndent + termWidth + 2 + minDescWidth;
+        throw new RangeError(
+          `maxWidth must be at least ${needed}, got ${options.maxWidth}.`,
+        );
+      }
+    }
+  }
+  // When maxWidth constrains the layout, shrink the term column so that
+  // the description column gets a reasonable share of the available width.
+  // Layout: <termIndent><term><2-space gap><description>
+  // When the normal termWidth fits (leaving >= 1 char for description),
+  // keep it unchanged.  Otherwise, split the available space evenly
+  // between term and description columns.
+  let effectiveTermWidth: number;
+  if (options.maxWidth == null) {
+    effectiveTermWidth = termWidth;
+  } else {
+    const availableForColumns = options.maxWidth - termIndent - 2;
+    effectiveTermWidth = availableForColumns >= termWidth + 1
+      ? termWidth
+      : Math.max(1, Math.floor(availableForColumns / 2));
+  }
+  let output = "";
+  if (hasContent(page.brief)) {
+    output += formatMessage(page.brief, {
+      colors: options.colors,
+      maxWidth: options.maxWidth,
+      quotes: !options.colors,
+    });
+    output += "\n";
+  }
+  if (page.usage != null && showUsage) {
+    const usageLabel = options.colors ? "\x1b[1;2mUsage:\x1b[0m " : "Usage: ";
+    output += usageLabel;
+    output += indentLines(
+      formatUsage(programName, page.usage, {
+        colors: options.colors,
+        maxWidth: options.maxWidth == null ? undefined : options.maxWidth - 7,
+        expandCommands: true,
+      }),
+      7,
+    );
+    output += "\n";
+  }
+  if (hasContent(page.description)) {
+    output += "\n";
+    output += formatMessage(page.description, {
+      colors: options.colors,
+      maxWidth: options.maxWidth,
+      quotes: !options.colors,
+    });
+    output += "\n";
+  }
+  const comparator = options.sectionOrder ?? defaultSectionOrder;
+  // Stable sort with two-level tie-breaking:
+  // 1. comparator result (primary)
+  // 2. original index (secondary, preserves relative order)
+  //
+  // Note: previously a secondary "untitled before titled" rule was applied
+  // here, but it caused ungrouped meta items (e.g. --help, --version) to
+  // appear before the user's titled command sections in the output.  The
+  // correct ordering is now enforced in buildDocPage, which places titled
+  // sections first and the untitled catch-all section last in the sections
+  // array.
+  const sections = page.sections
+    .map((s, i) => ({ section: s, index: i }))
+    .toSorted((a, b) => {
+      const cmp = comparator(a.section, b.section);
+      if (cmp !== 0) return cmp;
+      return a.index - b.index;
+    })
+    .map(({ section }) => section);
+  for (const section of sections) {
+    // Skip sections with no entries
+    if (section.entries.length < 1) continue;
+    output += "\n";
+    if (section.title != null) {
+      validateLabel(section.title);
+      const sectionLabel = options.colors
+        ? `\x1b[1;2m${section.title}:\x1b[0m\n`
+        : `${section.title}:\n`;
+      output += sectionLabel;
+    }
+    for (const entry of section.entries) {
+      const term = formatUsageTerm(entry.term, {
+        colors: options.colors,
+        optionsSeparator: ", ",
+        context: "doc",
+        maxWidth: options.maxWidth == null
+          ? undefined
+          : options.maxWidth - termIndent,
+      });
+
+      const descColumnWidth = options.maxWidth == null
+        ? undefined
+        : options.maxWidth - termIndent - effectiveTermWidth - 2;
+
+      // When the rendered term is physically wider than termWidth, the
+      // description column starts further right on the first output line,
+      // shrinking the first-line budget.  extraTermOffset captures that
+      // surplus so we can pass it as startWidth to formatMessage, making
+      // word-wrapping account for the narrower first-line space.
+      const termVisibleWidth = lastLineVisibleLength(term);
+      const extraTermOffset = descColumnWidth != null
+        ? Math.max(0, termVisibleWidth - effectiveTermWidth)
+        : 0;
+
+      // Once any content has caused a line break inside the description
+      // string, the extra physical offset no longer applies—subsequent
+      // content lands on a fresh continuation line indented by
+      // termIndent + effectiveTermWidth + 2, not by
+      // termIndent + termVisibleWidth + 2.
+      const currentExtraOffset = () =>
+        description.includes("\n") ? 0 : extraTermOffset;
+
+      // See the comment above the defaultFormatOptions variable for why
+      // startWidth is passed via a typed variable rather than an inline
+      // object literal.
+      const descFormatOptions: MessageFormatOptions & {
+        readonly startWidth?: number;
+      } = {
+        colors: options.colors,
+        quotes: !options.colors,
+        maxWidth: descColumnWidth,
+        startWidth: extraTermOffset > 0 ? extraTermOffset : undefined,
+      };
+      let description = entry.description == null
+        ? ""
+        : formatMessage(entry.description, descFormatOptions);
+
+      // Append default value if showDefault is enabled and default exists
+      if (options.showDefault && hasContent(entry.default)) {
+        const prefix = typeof options.showDefault === "object"
+          ? options.showDefault.prefix ?? " ["
+          : " [";
+        const suffix = typeof options.showDefault === "object"
+          ? options.showDefault.suffix ?? "]"
+          : "]";
+
+        // Determine startWidth so that word-wrapping in the default value
+        // continues correctly from the current line position.
+        // effectiveLastW adds the extra physical offset for the first line
+        // when the term extends past termWidth.
+        const prefixWidth = getDisplayWidth(prefix);
+        const suffixWidth = getDisplayWidth(suffix);
+        let defaultStartWidth: number | undefined;
+        if (descColumnWidth != null) {
+          const lastW = lastLineVisibleLength(description);
+          const effectiveLastW = lastW + currentExtraOffset();
+          if (effectiveLastW + prefixWidth >= descColumnWidth) {
+            description += "\n";
+            defaultStartWidth = prefixWidth;
+          } else {
+            defaultStartWidth = effectiveLastW + prefixWidth;
+          }
+        }
+
+        // `startWidth` is accepted by the formatMessage() implementation but
+        // is absent from the public MessageFormatOptions type.  The inline
+        // intersection type makes TypeScript accept the field here while
+        // keeping it out of the public API.  Because the intersection type is
+        // a subtype of MessageFormatOptions, the call below remains
+        // type-safe.
+        //
+        // maxWidth is reduced by suffixWidth so that the closing suffix
+        // (e.g. "]") can always be appended without exceeding descColumnWidth.
+        const defaultFormatOptions: MessageFormatOptions & {
+          readonly startWidth?: number;
+        } = {
+          colors: options.colors ? { resetSuffix: "\x1b[2m" } : false,
+          quotes: !options.colors,
+          maxWidth: descColumnWidth == null
+            ? undefined
+            : descColumnWidth - suffixWidth,
+          startWidth: defaultStartWidth,
+        };
+        const defaultContent = formatMessage(
+          entry.default,
+          defaultFormatOptions,
+        );
+        const defaultText = `${prefix}${defaultContent}${suffix}`;
+        const formattedDefault = options.colors
+          ? `\x1b[2m${defaultText}\x1b[0m`
+          : defaultText;
+        description += formattedDefault;
+      }
+
+      // Append choices if showChoices is enabled and choices exist
+      if (options.showChoices && hasContent(entry.choices)) {
+        const prefix = typeof options.showChoices === "object"
+          ? options.showChoices.prefix ?? " ("
+          : " (";
+        const suffix = typeof options.showChoices === "object"
+          ? options.showChoices.suffix ?? ")"
+          : ")";
+        const label = typeof options.showChoices === "object"
+          ? options.showChoices.label ?? "choices: "
+          : "choices: ";
+        const maxItems = typeof options.showChoices === "object"
+          ? options.showChoices.maxItems ?? 8
+          : 8;
+        // Truncate at the Message level by counting value terms
+        const terms = Array.isArray(entry.choices) ? entry.choices : [];
+        let truncatedTerms: readonly MessageTerm[] = terms;
+        let truncated = false;
+        if (maxItems < Infinity) {
+          let valueCount = 0;
+          let cutIndex = terms.length;
+          for (let i = 0; i < terms.length; i++) {
+            if (terms[i].type === "value") {
+              valueCount++;
+              if (valueCount > maxItems) {
+                // Cut before the separator that precedes this value
+                cutIndex = i > 0 && terms[i - 1].type === "text" ? i - 1 : i;
+                truncated = true;
+                break;
+              }
+            }
+          }
+          if (truncated) {
+            truncatedTerms = [
+              ...terms.slice(0, cutIndex),
+              text(", ..."),
+            ];
+          }
+        }
+        // Determine startWidth so that word-wrapping in the choices list
+        // continues correctly from the current line position.
+        // effectiveLastW adds the extra physical offset for the first line
+        // when the term extends past termWidth.
+        const choicesPrefixWidth = getDisplayWidth(prefix);
+        const choicesSuffixWidth = getDisplayWidth(suffix);
+        const choicesLabelWidth = getDisplayWidth(label);
+        let choicesStartWidth: number | undefined;
+        if (descColumnWidth != null) {
+          const lastW = lastLineVisibleLength(description);
+          const effectiveLastW = lastW + currentExtraOffset();
+          const prefixLabelLen = choicesPrefixWidth + choicesLabelWidth;
+          if (effectiveLastW + prefixLabelLen >= descColumnWidth) {
+            description += "\n";
+            choicesStartWidth = prefixLabelLen;
+          } else {
+            choicesStartWidth = effectiveLastW + prefixLabelLen;
+          }
+        }
+
+        // See the comment above the defaultFormatOptions variable for why
+        // startWidth is passed via a typed variable rather than an inline
+        // object literal.
+        //
+        // maxWidth is reduced by choicesSuffixWidth so that the closing
+        // suffix (e.g. ")") can always be appended without exceeding
+        // descColumnWidth.
+        const choicesFormatOptions: MessageFormatOptions & {
+          readonly startWidth?: number;
+        } = {
+          colors: options.colors ? { resetSuffix: "\x1b[2m" } : false,
+          quotes: false,
+          maxWidth: descColumnWidth == null
+            ? undefined
+            : descColumnWidth - choicesSuffixWidth,
+          startWidth: choicesStartWidth,
+        };
+        const choicesDisplay = formatMessage(
+          truncatedTerms,
+          choicesFormatOptions,
+        );
+        const choicesText = `${prefix}${label}${choicesDisplay}${suffix}`;
+        const formattedChoices = options.colors
+          ? `\x1b[2m${choicesText}\x1b[0m`
+          : choicesText;
+        description += formattedChoices;
+      }
+
+      output += `${" ".repeat(termIndent)}${
+        ansiAwareRightPad(term, effectiveTermWidth)
+      }${
+        description === "" ? "" : `  ${
+          indentLines(
+            description,
+            termIndent + effectiveTermWidth + 2,
+          )
+        }`
+      }\n`;
+    }
+  }
+  if (hasContent(page.examples)) {
+    output += "\n";
+    const examplesLabel = options.colors
+      ? "\x1b[1;2mExamples:\x1b[0m\n"
+      : "Examples:\n";
+    output += examplesLabel;
+    const examplesContent = formatMessage(page.examples, {
+      colors: options.colors,
+      maxWidth: options.maxWidth == null ? undefined : options.maxWidth - 2,
+      quotes: !options.colors,
+    });
+    output += "  " + indentLines(examplesContent, 2);
+    output += "\n";
+  }
+  if (hasContent(page.author)) {
+    output += "\n";
+    const authorLabel = options.colors
+      ? "\x1b[1;2mAuthor:\x1b[0m\n"
+      : "Author:\n";
+    output += authorLabel;
+    const authorContent = formatMessage(page.author, {
+      colors: options.colors,
+      maxWidth: options.maxWidth == null ? undefined : options.maxWidth - 2,
+      quotes: !options.colors,
+    });
+    output += "  " + indentLines(authorContent, 2);
+    output += "\n";
+  }
+  if (hasContent(page.bugs)) {
+    output += "\n";
+    const bugsLabel = options.colors ? "\x1b[1;2mBugs:\x1b[0m\n" : "Bugs:\n";
+    output += bugsLabel;
+    const bugsContent = formatMessage(page.bugs, {
+      colors: options.colors,
+      maxWidth: options.maxWidth == null ? undefined : options.maxWidth - 2,
+      quotes: !options.colors,
+    });
+    output += "  " + indentLines(bugsContent, 2);
+    output += "\n";
+  }
+  if (hasContent(page.footer)) {
+    output += "\n";
+    output += formatMessage(page.footer, {
+      colors: options.colors,
+      maxWidth: options.maxWidth,
+      quotes: !options.colors,
+    });
+  }
+  return output;
+}
+
+function indentLines(text: string, indent: number): string {
+  return text.split("\n").join("\n" + " ".repeat(indent));
+}
+
+/**
+ * Returns the width of the widest non-breakable segment among visible
+ * (non-usage-hidden) terms in a usage tree.  Hidden terms are excluded
+ * because they are filtered out before rendering, so they do not
+ * contribute to the rendered width.
+ */
+function maxVisibleAtomicWidth(usage: Usage): number {
+  let max = 0;
+  for (const term of usage) {
+    switch (term.type) {
+      case "argument":
+        if (!isUsageHidden(term.hidden)) {
+          max = Math.max(max, getDisplayWidth(term.metavar));
+        }
+        break;
+      case "option":
+        if (!isUsageHidden(term.hidden) && term.names.length > 0) {
+          for (const name of term.names) {
+            max = Math.max(max, getDisplayWidth(name));
+          }
+          if (term.metavar != null) {
+            max = Math.max(max, getDisplayWidth(term.metavar));
+          }
+        }
+        break;
+      case "command":
+        if (!isUsageHidden(term.hidden)) {
+          max = Math.max(max, getDisplayWidth(term.name));
+        }
+        break;
+      case "passthrough":
+        if (!isUsageHidden(term.hidden)) {
+          max = Math.max(max, 5); // "[...]"
+        }
+        break;
+      case "optional":
+        max = Math.max(max, maxVisibleAtomicWidth(term.terms));
+        break;
+      case "multiple": {
+        // The rendered "..." suffix is a 3-char atomic segment, but
+        // only when the inner terms survive filtering.
+        const innerMax = maxVisibleAtomicWidth(term.terms);
+        if (innerMax > 0) {
+          max = Math.max(max, 3, innerMax);
+        }
+        break;
+      }
+      case "exclusive":
+        for (const branch of term.terms) {
+          // Skip branches whose first term is a usage-hidden command,
+          // matching filterUsageForDisplay() which removes them entirely.
+          const first = branch[0];
+          if (
+            first?.type === "command" && isUsageHidden(first.hidden)
+          ) {
+            continue;
+          }
+          max = Math.max(max, maxVisibleAtomicWidth(branch));
+        }
+        break;
+      case "sequence":
+        max = Math.max(max, maxVisibleAtomicWidth(term.terms));
+        break;
+      case "literal":
+        if (term.value !== "") {
+          max = Math.max(max, getDisplayWidth(term.value));
+        }
+        break;
+      case "ellipsis":
+        max = Math.max(max, 3); // "..."
+        break;
+    }
+  }
+  return max;
+}
+
+function ansiAwareRightPad(
+  text: string,
+  length: number,
+  char: string = " ",
+): string {
+  // Padding is appended at the end, so only the last line's width
+  // matters for deciding how many spaces to add.
+  const visibleWidth = lastLineVisibleLength(text);
+  if (visibleWidth >= length) {
+    return text;
+  }
+  return text + char.repeat(length - visibleWidth);
+}
+
+function lastLineVisibleLength(text: string): number {
+  const lastNewline = text.lastIndexOf("\n");
+  const lastLine = lastNewline === -1 ? text : text.slice(lastNewline + 1);
+  return getDisplayWidth(lastLine);
+}

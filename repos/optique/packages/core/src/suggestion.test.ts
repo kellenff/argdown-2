@@ -1,0 +1,1147 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  appendValueHint,
+  appendValueSuggestions,
+  createErrorWithSuggestions,
+  createSuggestionMessage,
+  deduplicateSuggestions,
+  expandCommandAliasSuggestions,
+  findSimilar,
+  levenshteinDistance,
+} from "#src/suggestion.ts";
+import { formatMessage, message, optionName } from "#src/message.ts";
+import type { Usage } from "#src/usage.ts";
+import type { Suggestion } from "#src/parser.ts";
+import * as fc from "fast-check";
+
+const propertyParameters = { numRuns: 200 } as const;
+
+const safeStringArbitrary = fc
+  .string({ minLength: 0, maxLength: 24 })
+  .filter((value: string) => !value.includes("\x1b"));
+
+describe("levenshteinDistance()", () => {
+  it("should return 0 for identical strings", () => {
+    assert.equal(levenshteinDistance("hello", "hello"), 0);
+    assert.equal(levenshteinDistance("", ""), 0);
+    assert.equal(levenshteinDistance("abc", "abc"), 0);
+  });
+
+  it("should handle single character differences", () => {
+    // Substitution
+    assert.equal(levenshteinDistance("kitten", "sitten"), 1);
+    assert.equal(levenshteinDistance("hello", "hallo"), 1);
+
+    // Deletion
+    assert.equal(levenshteinDistance("kitten", "kiten"), 1);
+    assert.equal(levenshteinDistance("hello", "helo"), 1);
+
+    // Insertion
+    assert.equal(levenshteinDistance("kitten", "kittens"), 1);
+    assert.equal(levenshteinDistance("hello", "helloo"), 1);
+  });
+
+  it("should calculate distance for typical typos", () => {
+    assert.equal(levenshteinDistance("--verbose", "--verbos"), 1);
+    assert.equal(levenshteinDistance("--format", "--fromat"), 2);
+    assert.equal(levenshteinDistance("--help", "--hlep"), 2);
+  });
+
+  it("should handle empty strings", () => {
+    assert.equal(levenshteinDistance("", ""), 0);
+    assert.equal(levenshteinDistance("", "hello"), 5);
+    assert.equal(levenshteinDistance("hello", ""), 5);
+  });
+
+  it("should be symmetric", () => {
+    assert.equal(
+      levenshteinDistance("abc", "def"),
+      levenshteinDistance("def", "abc"),
+    );
+    assert.equal(
+      levenshteinDistance("kitten", "sitting"),
+      levenshteinDistance("sitting", "kitten"),
+    );
+  });
+
+  it("should calculate classic examples correctly", () => {
+    assert.equal(levenshteinDistance("kitten", "sitting"), 3);
+    assert.equal(levenshteinDistance("saturday", "sunday"), 3);
+  });
+
+  it("should handle strings of different lengths", () => {
+    assert.equal(levenshteinDistance("a", "abc"), 2);
+    assert.equal(levenshteinDistance("abc", "a"), 2);
+    assert.equal(levenshteinDistance("short", "muchlonger"), 8);
+  });
+
+  it("should handle strings with no common characters", () => {
+    assert.equal(levenshteinDistance("abc", "def"), 3);
+    assert.equal(levenshteinDistance("xyz", "123"), 3);
+  });
+});
+
+describe("findSimilar()", () => {
+  const candidates = [
+    "--verbose",
+    "--version",
+    "--verify",
+    "--help",
+    "--format",
+  ];
+
+  it("should find single character typos", () => {
+    const result = findSimilar("--verbos", candidates);
+    // --verbose should be first (distance 1)
+    assert.equal(result[0], "--verbose");
+    assert.ok(result.length >= 1);
+  });
+
+  it("should find the closest match", () => {
+    const result = findSimilar("--hlp", candidates);
+    assert.ok(result.includes("--help"));
+  });
+
+  it("should return multiple suggestions sorted by distance", () => {
+    const result = findSimilar("--verb", candidates, { maxDistance: 5 });
+    // All three --verb* options should be in results
+    assert.ok(result.some((s) => s === "--verbose" || s === "--verify"));
+  });
+
+  it("should respect maxSuggestions limit", () => {
+    const result = findSimilar("--v", candidates, {
+      maxDistance: 10,
+      maxDistanceRatio: 1.0,
+      maxSuggestions: 2,
+    });
+    assert.ok(result.length <= 2);
+  });
+
+  it("should return empty array for very different strings", () => {
+    const result = findSimilar("--xyz", candidates);
+    assert.deepEqual(result, []);
+  });
+
+  it("should return empty array for empty input", () => {
+    const result = findSimilar("", candidates);
+    assert.deepEqual(result, []);
+  });
+
+  it("should be case-insensitive by default", () => {
+    const result = findSimilar("--VERBOS", candidates);
+    // Should find --verbose as the closest match
+    assert.equal(result[0], "--verbose");
+    assert.ok(result.length >= 1);
+  });
+
+  it("should be case-insensitive with mixed case", () => {
+    const result = findSimilar("--VeRbOs", candidates);
+    // Should find --verbose as the closest match
+    assert.equal(result[0], "--verbose");
+    assert.ok(result.length >= 1);
+  });
+
+  it("should respect case-sensitive option", () => {
+    const result = findSimilar("--VERBOS", candidates, {
+      caseSensitive: true,
+    });
+    // Should not match because case is different
+    assert.equal(result.length, 0);
+  });
+
+  it("should work with case-sensitive exact match", () => {
+    const caseCandidates = ["--Verbose", "--VERSION", "--Help"];
+    const result = findSimilar("--Verbose", caseCandidates, {
+      caseSensitive: true,
+    });
+    assert.deepEqual(result, ["--Verbose"]);
+  });
+
+  it("should respect maxDistance threshold", () => {
+    const result = findSimilar("--xyz", candidates, {
+      maxDistance: 1,
+    });
+    assert.equal(result.length, 0);
+  });
+
+  it("should respect maxDistanceRatio", () => {
+    // Very short input, strict ratio
+    const result = findSimilar("--v", candidates, {
+      maxDistance: 10,
+      maxDistanceRatio: 0.3,
+    });
+    // Distance from "--v" to "--verbose" is 6, ratio is 6/3 = 2.0
+    // Should not match with ratio threshold 0.3
+    assert.equal(result.length, 0);
+  });
+
+  it("should allow more matches with lenient ratio", () => {
+    const result = findSimilar("--v", candidates, {
+      maxDistance: 10,
+      maxDistanceRatio: 5.0,
+      maxSuggestions: 10,
+    });
+    // With lenient settings, should find matches
+    assert.ok(result.length > 0);
+  });
+
+  it("should return exact match immediately", () => {
+    const result = findSimilar("--verbose", candidates);
+    assert.deepEqual(result, ["--verbose"]);
+  });
+
+  it("should work with short option names", () => {
+    const shortCandidates = ["-v", "-h", "-f", "-x"];
+    const result = findSimilar("-g", shortCandidates);
+    // Should find some close matches
+    assert.ok(result.length > 0);
+  });
+
+  it("should sort by distance then length difference", () => {
+    const mixedCandidates = [
+      "--verbose-mode",
+      "--verbose",
+      "--verbosity",
+      "--verb",
+    ];
+    const result = findSimilar("--verbos", mixedCandidates, {
+      maxDistance: 5,
+      maxSuggestions: 10,
+    });
+
+    // --verbose should be first (distance 1)
+    assert.equal(result[0], "--verbose");
+  });
+
+  it("should handle iterables other than arrays", () => {
+    const candidateSet = new Set(candidates);
+    const result = findSimilar("--verbos", candidateSet);
+    assert.equal(result[0], "--verbose");
+    assert.ok(result.length >= 1);
+  });
+
+  it("should handle generator functions", () => {
+    function* candidateGenerator() {
+      yield* candidates;
+    }
+
+    const result = findSimilar("--verbos", candidateGenerator());
+    assert.equal(result[0], "--verbose");
+    assert.ok(result.length >= 1);
+  });
+
+  it("should respect all options together", () => {
+    const result = findSimilar("--ver", candidates, {
+      maxDistance: 2,
+      maxDistanceRatio: 0.5,
+      maxSuggestions: 1,
+      caseSensitive: false,
+    });
+
+    // Should return at most 1 suggestion
+    assert.ok(result.length <= 1);
+    if (result.length > 0) {
+      // Should be one of the --ver* options
+      assert.ok(result[0].startsWith("--ver"));
+    }
+  });
+
+  it("should not produce duplicate suggestions for duplicate candidates", () => {
+    const result = findSimilar("--verbos", [
+      "--verbose",
+      "--verbose",
+      "--version",
+      "--verbose",
+      "--version",
+      "--help",
+    ], { maxSuggestions: 10 });
+    assert.deepEqual(result, [...new Set(result)]);
+    assert.equal(result.filter((s) => s === "--verbose").length, 1);
+    assert.equal(result.filter((s) => s === "--version").length, 1);
+  });
+
+  it("should preserve case-distinct candidates", () => {
+    const result = findSimilar("--verbos", [
+      "--Verbose",
+      "--verbose",
+    ], { maxSuggestions: 10 });
+    assert.equal(result.length, 2);
+    assert.ok(result.includes("--Verbose"));
+    assert.ok(result.includes("--verbose"));
+  });
+
+  it("should return single exact match even with duplicate candidates", () => {
+    const result = findSimilar("--verbose", [
+      "--verbose",
+      "--verbose",
+      "--verbose",
+    ]);
+    assert.deepEqual(result, ["--verbose"]);
+  });
+});
+
+describe("createSuggestionMessage()", () => {
+  it("should return empty message for no suggestions", () => {
+    const msg = createSuggestionMessage([]);
+    assert.equal(msg.length, 0);
+  });
+
+  it("should format single suggestion", () => {
+    const msg = createSuggestionMessage(["--verbose"]);
+    const formatted = formatMessage(msg, { quotes: true, colors: false });
+    assert.match(formatted, /Did you mean/);
+    assert.match(formatted, /`--verbose`/);
+    assert.match(formatted, /\?$/); // Should end with ?
+  });
+
+  it("should format multiple suggestions", () => {
+    const msg = createSuggestionMessage([
+      "--verbose",
+      "--version",
+      "--verify",
+    ]);
+    const formatted = formatMessage(msg, { quotes: true, colors: false });
+    assert.match(formatted, /Did you mean one of these\?/);
+    assert.match(formatted, /`--verbose`/);
+    assert.match(formatted, /`--version`/);
+    assert.match(formatted, /`--verify`/);
+  });
+
+  it("should format suggestions with list structure", () => {
+    const msg = createSuggestionMessage(["--verbose", "--version"]);
+    const formatted = formatMessage(msg, { quotes: true, colors: false });
+
+    // Should have all suggestions mentioned
+    assert.match(formatted, /Did you mean one of these\?/);
+    assert.match(formatted, /`--verbose`/);
+    assert.match(formatted, /`--version`/);
+  });
+
+  it("should work with command names", () => {
+    const msg = createSuggestionMessage(["build"]);
+    const formatted = formatMessage(msg, { quotes: true, colors: false });
+    assert.match(formatted, /Did you mean `build`\?/);
+  });
+
+  it("should work with two suggestions", () => {
+    const msg = createSuggestionMessage(["--verbose", "--verify"]);
+    const formatted = formatMessage(msg, { quotes: true, colors: false });
+    assert.match(formatted, /Did you mean one of these\?/);
+    assert.match(formatted, /`--verbose`/);
+    assert.match(formatted, /`--verify`/);
+  });
+
+  it("should preserve suggestion order", () => {
+    const suggestions = ["--aaa", "--bbb", "--ccc"];
+    const msg = createSuggestionMessage(suggestions);
+    const formatted = formatMessage(msg, { quotes: true, colors: false });
+
+    // Check that order is preserved
+    const aaaIndex = formatted.indexOf("--aaa");
+    const bbbIndex = formatted.indexOf("--bbb");
+    const cccIndex = formatted.indexOf("--ccc");
+
+    assert.ok(aaaIndex < bbbIndex);
+    assert.ok(bbbIndex < cccIndex);
+  });
+
+  it("should format correctly with colors enabled", () => {
+    const msg = createSuggestionMessage(["--verbose"]);
+    const formatted = formatMessage(msg, { quotes: true, colors: true });
+
+    // Should contain ANSI codes (ESC character)
+    assert.ok(formatted.includes("\x1b["));
+    // Should still contain the text
+    assert.match(formatted, /Did you mean/);
+    assert.match(formatted, /--verbose/);
+  });
+
+  it("should format correctly without quotes", () => {
+    const msg = createSuggestionMessage(["--verbose"]);
+    const formatted = formatMessage(msg, { quotes: false, colors: false });
+
+    // Should not have backticks
+    assert.doesNotMatch(formatted, /`/);
+    // Should still have the option name
+    assert.match(formatted, /--verbose/);
+  });
+});
+
+describe("expandCommandAliasSuggestions()", () => {
+  it("should ignore nested command aliases when expanding suggestions", () => {
+    const usage: Usage = [
+      {
+        type: "exclusive",
+        terms: [
+          [
+            {
+              type: "sequence",
+              terms: [
+                { type: "command", name: "parent" },
+                { type: "command", name: "nested", aliases: ["run"] },
+              ],
+            },
+          ],
+          [{ type: "command", name: "run", aliases: ["r"] }],
+        ],
+      },
+    ];
+
+    assert.deepEqual(expandCommandAliasSuggestions(usage, ["run"]), ["run"]);
+    assert.deepEqual(expandCommandAliasSuggestions(usage, ["r"]), [
+      "run",
+      "r",
+    ]);
+  });
+
+  it("should continue after required multiple terms with skippable children", () => {
+    const usage: Usage = [
+      {
+        type: "multiple",
+        min: 1,
+        terms: [{ type: "optional", terms: [] }],
+      },
+      { type: "command", name: "install", aliases: ["i"] },
+    ];
+
+    assert.deepEqual(expandCommandAliasSuggestions(usage, ["i"]), [
+      "install",
+      "i",
+    ]);
+  });
+
+  it("should continue after exclusive terms with a skippable branch", () => {
+    const usage: Usage = [
+      {
+        type: "exclusive",
+        terms: [
+          [{ type: "option", names: ["--format"] }],
+          [{ type: "optional", terms: [] }],
+        ],
+      },
+      { type: "command", name: "install", aliases: ["i"] },
+    ];
+
+    assert.deepEqual(expandCommandAliasSuggestions(usage, ["i"]), [
+      "install",
+      "i",
+    ]);
+  });
+
+  it("should continue past leading options before command aliases", () => {
+    const usage: Usage = [
+      { type: "option", names: ["--verbose"] },
+      { type: "command", name: "install", aliases: ["i"] },
+    ];
+
+    assert.deepEqual(expandCommandAliasSuggestions(usage, ["i"]), [
+      "install",
+      "i",
+    ]);
+  });
+
+  it("should collapse hidden command aliases to canonical suggestions", () => {
+    const usage: Usage = [
+      { type: "command", name: "help", hiddenAliases: ["assist"] },
+    ];
+
+    assert.deepEqual(expandCommandAliasSuggestions(usage, ["assist"]), [
+      "help",
+    ]);
+  });
+
+  it("should stop before aliases behind non-skippable literal terms", () => {
+    const usage: Usage = [
+      { type: "literal", value: "deploy" },
+      { type: "command", name: "install", aliases: ["i"] },
+    ];
+
+    assert.deepEqual(expandCommandAliasSuggestions(usage, ["i"]), ["i"]);
+  });
+});
+
+describe("integration: findSimilar + createSuggestionMessage", () => {
+  it("should produce helpful error message for typo", () => {
+    const candidates = ["--verbose", "--version", "--help"];
+    const input = "--verbos";
+
+    const suggestions = findSimilar(input, candidates, {
+      maxSuggestions: 1, // Get only the best match
+    });
+    const msg = createSuggestionMessage(suggestions);
+    const formatted = formatMessage(msg, { quotes: true, colors: false });
+
+    assert.match(formatted, /Did you mean `--verbose`\?/);
+  });
+
+  it("should produce helpful error message for multiple matches", () => {
+    const candidates = ["--verbose", "--version", "--verify"];
+    const input = "--ver";
+
+    const suggestions = findSimilar(input, candidates, {
+      maxDistance: 5,
+      maxDistanceRatio: 1.0, // Allow longer distances for short inputs
+    });
+    const msg = createSuggestionMessage(suggestions);
+    const formatted = formatMessage(msg, { quotes: true, colors: false });
+
+    assert.match(formatted, /Did you mean one of these\?/);
+  });
+
+  it("should produce empty message when no matches", () => {
+    const candidates = ["--verbose", "--version", "--help"];
+    const input = "--xyz";
+
+    const suggestions = findSimilar(input, candidates);
+    const msg = createSuggestionMessage(suggestions);
+
+    assert.equal(msg.length, 0);
+  });
+
+  it("should work end-to-end with realistic scenario", () => {
+    // Simulate a real CLI with many options
+    const candidates = [
+      "--verbose",
+      "--version",
+      "--help",
+      "--output",
+      "--input",
+      "--format",
+      "--force",
+      "--quiet",
+      "--debug",
+      "-v",
+      "-h",
+      "-o",
+      "-i",
+      "-f",
+      "-q",
+      "-d",
+    ];
+
+    // User types common typos
+    const typos = [
+      { input: "--verbos", expected: "--verbose" },
+      { input: "--ouput", expected: "--output" },
+      { input: "--formatt", expected: "--format" },
+      { input: "-vv", expected: "-v" },
+    ];
+
+    for (const { input, expected } of typos) {
+      const suggestions = findSimilar(input, candidates);
+      assert.ok(
+        suggestions.includes(expected),
+        `Expected ${expected} in suggestions for ${input}, got: ${
+          suggestions.join(", ")
+        }`,
+      );
+    }
+  });
+
+  it("should not produce duplicate suggestion lines for duplicate candidates", () => {
+    const candidates = [
+      "--verbose",
+      "--verbose",
+      "--version",
+      "--version",
+      "--verify",
+      "--verify",
+    ];
+    const suggestions = findSimilar("--ver", candidates, {
+      maxDistance: 5,
+      maxDistanceRatio: 1.0,
+      maxSuggestions: 10,
+    });
+    const msg = createSuggestionMessage(suggestions);
+    const formatted = formatMessage(msg, { quotes: true, colors: false });
+
+    const verboseCount = (formatted.match(/--verbose/g) ?? []).length;
+    const versionCount = (formatted.match(/--version/g) ?? []).length;
+    const verifyCount = (formatted.match(/--verify/g) ?? []).length;
+
+    assert.ok(verboseCount <= 1, `--verbose appeared ${verboseCount} times`);
+    assert.ok(versionCount <= 1, `--version appeared ${versionCount} times`);
+    assert.ok(verifyCount <= 1, `--verify appeared ${verifyCount} times`);
+  });
+});
+
+describe("createErrorWithSuggestions()", () => {
+  it("should add suggestions for option typos", () => {
+    const usage: Usage = [
+      { type: "option", names: ["--verbose", "-v"] },
+      { type: "option", names: ["--version"] },
+      { type: "option", names: ["--help", "-h"] },
+    ];
+
+    const baseError = message`No matched option for ${optionName("--verbos")}.`;
+    const error = createErrorWithSuggestions(
+      baseError,
+      "--verbos",
+      usage,
+      "option",
+    );
+
+    const formatted = formatMessage(error);
+    assert.ok(formatted.includes("No matched option"));
+    assert.ok(formatted.includes("--verbos"));
+    assert.ok(formatted.includes("Did you mean"));
+    assert.ok(formatted.includes("--verbose"));
+  });
+
+  it("should add suggestions for command typos", () => {
+    const usage: Usage = [
+      { type: "command", name: "commit" },
+      { type: "command", name: "config" },
+      { type: "command", name: "clone" },
+    ];
+
+    const baseError =
+      message`Expected command ${"commit"}, but got ${"comit"}.`;
+    const error = createErrorWithSuggestions(
+      baseError,
+      "comit",
+      usage,
+      "command",
+    );
+
+    const formatted = formatMessage(error);
+    assert.ok(formatted.includes("Expected command"));
+    assert.ok(formatted.includes("Did you mean"));
+    assert.ok(formatted.includes("commit"));
+  });
+
+  it("should search both options and commands when type is 'both'", () => {
+    const usage: Usage = [
+      { type: "option", names: ["--verbose", "-v"] },
+      { type: "command", name: "version" },
+    ];
+
+    const baseError = message`Unexpected: ${"versio"}.`;
+    const error = createErrorWithSuggestions(
+      baseError,
+      "versio",
+      usage,
+      "both",
+    );
+
+    const formatted = formatMessage(error);
+    assert.ok(formatted.includes("Did you mean"));
+    // Should suggest both --verbose and version
+    assert.ok(
+      formatted.includes("version") || formatted.includes("--verbose"),
+    );
+  });
+
+  it("should return base error when no suggestions found", () => {
+    const usage: Usage = [
+      { type: "option", names: ["--verbose", "-v"] },
+      { type: "option", names: ["--quiet", "-q"] },
+    ];
+
+    const baseError = message`No matched option for ${optionName("--xyz")}.`;
+    const error = createErrorWithSuggestions(
+      baseError,
+      "--xyz",
+      usage,
+      "option",
+    );
+
+    const formatted = formatMessage(error);
+    assert.ok(formatted.includes("No matched option"));
+    assert.ok(formatted.includes("--xyz"));
+    // Should NOT include "Did you mean" since no similar options
+    assert.ok(!formatted.includes("Did you mean"));
+  });
+
+  it("should handle empty usage", () => {
+    const usage: Usage = [];
+
+    const baseError = message`No matched option for ${optionName("--test")}.`;
+    const error = createErrorWithSuggestions(
+      baseError,
+      "--test",
+      usage,
+      "option",
+    );
+
+    const formatted = formatMessage(error);
+    assert.ok(formatted.includes("No matched option"));
+    assert.ok(!formatted.includes("Did you mean"));
+  });
+
+  it("should respect maxSuggestions limit (3)", () => {
+    const usage: Usage = [
+      { type: "option", names: ["--verbose"] },
+      { type: "option", names: ["--verbosity"] },
+      { type: "option", names: ["--version"] },
+      { type: "option", names: ["--verify"] },
+      { type: "option", names: ["--vertex"] },
+    ];
+
+    const baseError = message`No matched option for ${optionName("--verbos")}.`;
+    const error = createErrorWithSuggestions(
+      baseError,
+      "--verbos",
+      usage,
+      "option",
+    );
+
+    const formatted = formatMessage(error);
+    assert.ok(formatted.includes("Did you mean"));
+
+    // Count suggestions (should be at most 3)
+    const lines = formatted.split("\n");
+    const suggestionLines = lines.filter((line) =>
+      line.trim().startsWith("--")
+    );
+    assert.ok(suggestionLines.length <= 3);
+  });
+
+  it("should only search options when type is 'option'", () => {
+    const usage: Usage = [
+      { type: "option", names: ["--test"] },
+      { type: "command", name: "testing" },
+    ];
+
+    const baseError = message`No matched option for ${optionName("--testin")}.`;
+    const error = createErrorWithSuggestions(
+      baseError,
+      "--testin",
+      usage,
+      "option",
+    );
+
+    const formatted = formatMessage(error);
+    assert.ok(formatted.includes("Did you mean"));
+    assert.ok(formatted.includes("--test"));
+    // Should NOT suggest the command "testing"
+    assert.ok(!formatted.includes("testing") || formatted.includes("--test"));
+  });
+
+  it("should only search commands when type is 'command'", () => {
+    const usage: Usage = [
+      { type: "option", names: ["--install"] },
+      { type: "command", name: "init" },
+    ];
+
+    const baseError = message`Expected command ${"init"}, but got ${"inti"}.`;
+    const error = createErrorWithSuggestions(
+      baseError,
+      "inti",
+      usage,
+      "command",
+    );
+
+    const formatted = formatMessage(error);
+    assert.ok(formatted.includes("Did you mean"));
+    assert.ok(formatted.includes("init"));
+    // Should NOT suggest the option "--install"
+    assert.ok(!formatted.includes("--install"));
+  });
+
+  it("should handle multiple suggestions", () => {
+    const usage: Usage = [
+      { type: "option", names: ["--verbose"] },
+      { type: "option", names: ["--version"] },
+    ];
+
+    const baseError = message`No matched option for ${optionName("--verbos")}.`;
+    const error = createErrorWithSuggestions(
+      baseError,
+      "--verbos",
+      usage,
+      "option",
+    );
+
+    const formatted = formatMessage(error);
+    assert.ok(formatted.includes("Did you mean one of these"));
+    assert.ok(formatted.includes("--verbose"));
+    assert.ok(formatted.includes("--version"));
+  });
+
+  it("should handle nested usage structures", () => {
+    const usage: Usage = [
+      {
+        type: "optional",
+        terms: [
+          { type: "option", names: ["--verbose"] },
+          { type: "option", names: ["--version"] },
+        ],
+      },
+    ];
+
+    const baseError = message`No matched option for ${optionName("--verbos")}.`;
+    const error = createErrorWithSuggestions(
+      baseError,
+      "--verbos",
+      usage,
+      "option",
+    );
+
+    const formatted = formatMessage(error);
+    assert.ok(formatted.includes("Did you mean"));
+    assert.ok(formatted.includes("--verbose"));
+  });
+});
+
+describe("property-based tests", () => {
+  it("levenshteinDistance should satisfy symmetry and bounds", () => {
+    fc.assert(
+      fc.property(
+        safeStringArbitrary,
+        safeStringArbitrary,
+        (a: string, b: string) => {
+          const distanceAB = levenshteinDistance(a, b);
+          const distanceBA = levenshteinDistance(b, a);
+
+          assert.equal(distanceAB, distanceBA);
+          assert.ok(distanceAB >= Math.abs(a.length - b.length));
+          assert.ok(distanceAB <= Math.max(a.length, b.length));
+          assert.equal(levenshteinDistance(a, a), 0);
+          assert.equal(levenshteinDistance(b, b), 0);
+        },
+      ),
+      propertyParameters,
+    );
+  });
+
+  it("findSimilar should be monotonic under relaxed thresholds", () => {
+    fc.assert(
+      fc.property(
+        safeStringArbitrary.filter((s: string) => s.length > 0),
+        fc.uniqueArray(
+          safeStringArbitrary.filter((s: string) => s.length > 0),
+          { minLength: 1, maxLength: 20 },
+        ),
+        fc.integer({ min: 0, max: 4 }),
+        fc.integer({ min: 0, max: 4 }),
+        fc.integer({ min: 0, max: 10 }),
+        fc.integer({ min: 0, max: 10 }),
+        (
+          input: string,
+          candidates: readonly string[],
+          strictDistance: number,
+          distanceSlack: number,
+          strictRatioTenths: number,
+          ratioSlackTenths: number,
+        ) => {
+          const relaxedDistance = strictDistance + distanceSlack;
+          const strictRatio = strictRatioTenths / 10;
+          const relaxedRatio = strictRatio + ratioSlackTenths / 10;
+
+          const strict = findSimilar(input, candidates, {
+            maxDistance: strictDistance,
+            maxDistanceRatio: strictRatio,
+            maxSuggestions: candidates.length,
+            caseSensitive: false,
+          });
+          const relaxed = findSimilar(input, candidates, {
+            maxDistance: relaxedDistance,
+            maxDistanceRatio: relaxedRatio,
+            maxSuggestions: candidates.length,
+            caseSensitive: false,
+          });
+
+          const relaxedSet = new Set(relaxed);
+          for (const suggestion of strict) {
+            assert.ok(relaxedSet.has(suggestion));
+          }
+        },
+      ),
+      propertyParameters,
+    );
+  });
+
+  it("findSimilar should never return duplicate suggestions", () => {
+    fc.assert(
+      fc.property(
+        safeStringArbitrary.filter((s: string) => s.length > 0),
+        fc.array(
+          safeStringArbitrary.filter((s: string) => s.length > 0),
+          { minLength: 0, maxLength: 20 },
+        ),
+        (input: string, candidates: readonly string[]) => {
+          const result = findSimilar(input, candidates, {
+            maxDistance: 3,
+            maxDistanceRatio: 0.5,
+            maxSuggestions: 10,
+            caseSensitive: false,
+          });
+          assert.deepEqual(result, [...new Set(result)]);
+        },
+      ),
+      propertyParameters,
+    );
+  });
+
+  it("deduplicateSuggestions should merge file suggestions preferring includeHidden: true", () => {
+    const suggestions: readonly Suggestion[] = [
+      { kind: "file", type: "file", pattern: "x", includeHidden: false },
+      { kind: "file", type: "file", pattern: "x", includeHidden: true },
+    ];
+    const result = deduplicateSuggestions(suggestions);
+    assert.equal(result.length, 1);
+    assert.deepEqual(result[0], {
+      kind: "file",
+      type: "file",
+      pattern: "x",
+      includeHidden: true,
+    });
+  });
+
+  it("deduplicateSuggestions should merge file suggestions preferring includeHidden: true (reverse order)", () => {
+    const suggestions: readonly Suggestion[] = [
+      { kind: "file", type: "file", pattern: "x", includeHidden: true },
+      { kind: "file", type: "file", pattern: "x", includeHidden: false },
+    ];
+    const result = deduplicateSuggestions(suggestions);
+    assert.equal(result.length, 1);
+    assert.deepEqual(result[0], {
+      kind: "file",
+      type: "file",
+      pattern: "x",
+      includeHidden: true,
+    });
+  });
+
+  it("deduplicateSuggestions should still collapse identical file suggestions with same includeHidden", () => {
+    const suggestions: readonly Suggestion[] = [
+      { kind: "file", type: "file", pattern: "x", includeHidden: true },
+      { kind: "file", type: "file", pattern: "x", includeHidden: true },
+    ];
+    const result = deduplicateSuggestions(suggestions);
+    assert.equal(result.length, 1);
+    assert.deepEqual(result, [suggestions[0]]);
+  });
+
+  it("deduplicateSuggestions should treat undefined and false includeHidden as equivalent", () => {
+    const suggestions: readonly Suggestion[] = [
+      { kind: "file", type: "file", pattern: "x" },
+      { kind: "file", type: "file", pattern: "x", includeHidden: false },
+    ];
+    const result = deduplicateSuggestions(suggestions);
+    assert.equal(result.length, 1);
+    assert.deepEqual(result, [suggestions[0]]);
+  });
+
+  it("deduplicateSuggestions should upgrade undefined includeHidden to true when merging", () => {
+    const suggestions: readonly Suggestion[] = [
+      { kind: "file", type: "file", pattern: "x" },
+      { kind: "file", type: "file", pattern: "x", includeHidden: true },
+    ];
+    const result = deduplicateSuggestions(suggestions);
+    assert.equal(result.length, 1);
+    assert.deepEqual(result[0], {
+      kind: "file",
+      type: "file",
+      pattern: "x",
+      includeHidden: true,
+    });
+  });
+
+  it("deduplicateSuggestions should treat extension order as insignificant", () => {
+    const suggestions: readonly Suggestion[] = [
+      {
+        kind: "file",
+        type: "file",
+        extensions: [".json", ".yaml"],
+        pattern: "x",
+      },
+      {
+        kind: "file",
+        type: "file",
+        extensions: [".yaml", ".json"],
+        pattern: "x",
+      },
+    ];
+    const result = deduplicateSuggestions(suggestions);
+    assert.equal(result.length, 1);
+    assert.deepEqual(result[0], suggestions[0]);
+  });
+
+  it("deduplicateSuggestions should be idempotent and stable", () => {
+    const literalSuggestionArbitrary = safeStringArbitrary.map(
+      (text: string): Suggestion => ({ kind: "literal", text }),
+    );
+    const fileSuggestionArbitrary = fc.record({
+      kind: fc.constant<"file">("file"),
+      pattern: fc.option(safeStringArbitrary, { nil: undefined }),
+      type: fc.constantFrom<"file" | "directory" | "any">(
+        "file",
+        "directory",
+        "any",
+      ),
+      extensions: fc.option(
+        fc.uniqueArray(
+          safeStringArbitrary.map((ext: string) => `.${ext}`),
+          { minLength: 1, maxLength: 3 },
+        ),
+        { nil: undefined },
+      ),
+      includeHidden: fc.option(fc.boolean(), { nil: undefined }),
+    }) as fc.Arbitrary<Suggestion>;
+
+    const suggestionsArbitrary = fc.array(
+      fc.oneof(literalSuggestionArbitrary, fileSuggestionArbitrary),
+      { minLength: 0, maxLength: 40 },
+    );
+
+    const keyOf = (suggestion: Suggestion): string => {
+      if (suggestion.kind === "literal") {
+        return suggestion.text;
+      }
+      return `__FILE__:${suggestion.type}:${
+        suggestion.extensions?.toSorted().join(",") ?? ""
+      }:${suggestion.pattern ?? ""}`;
+    };
+
+    fc.assert(
+      fc.property(
+        suggestionsArbitrary,
+        (suggestions: readonly Suggestion[]) => {
+          const deduplicated = deduplicateSuggestions(suggestions);
+          const deduplicatedTwice = deduplicateSuggestions(deduplicated);
+
+          assert.deepEqual(deduplicatedTwice, deduplicated);
+
+          const seen = new Set<string>();
+          for (const suggestion of deduplicated) {
+            const key = keyOf(suggestion);
+            assert.ok(!seen.has(key));
+            seen.add(key);
+          }
+
+          let previousIndex = -1;
+          for (const suggestion of deduplicated) {
+            const key = keyOf(suggestion);
+            const firstIndex = suggestions.findIndex((candidate: Suggestion) =>
+              keyOf(candidate) === key
+            );
+            assert.ok(firstIndex >= 0);
+            assert.ok(firstIndex > previousIndex);
+            previousIndex = firstIndex;
+          }
+
+          // File suggestions should have includeHidden: true if any input
+          // with the same key had includeHidden: true
+          for (const suggestion of deduplicated) {
+            if (suggestion.kind !== "file") continue;
+            const key = keyOf(suggestion);
+            const anyHidden = suggestions.some(
+              (s) =>
+                keyOf(s) === key && s.kind === "file" &&
+                s.includeHidden === true,
+            );
+            if (anyHidden) {
+              assert.ok(suggestion.includeHidden);
+            }
+          }
+        },
+      ),
+      propertyParameters,
+    );
+  });
+});
+
+describe("appendValueHint()", () => {
+  it("should return base message unchanged when no close candidate exists", () => {
+    const base = message`Expected one of dev or prod, but got xyz.`;
+    const result = appendValueHint(base, "xyz", ["dev", "prod"]);
+    assert.deepEqual(result, base);
+  });
+
+  it("should append Did you mean hint when input is close to a candidate", () => {
+    const base = message`Invalid environment.`;
+    const result = appendValueHint(base, "devo", ["dev", "prod"]);
+    const str = formatMessage(result);
+    assert.ok(str.includes("Did you mean"), `Expected hint in: ${str}`);
+    assert.ok(str.includes('"dev"'), `Expected suggested value in: ${str}`);
+  });
+
+  it("should respect custom maxDistance option", () => {
+    const base = message`Error.`;
+    const result = appendValueHint(base, "devoxxx", ["dev", "prod"], {
+      maxDistance: 1,
+    });
+    assert.deepEqual(result, base);
+  });
+
+  it("should respect custom maxSuggestions option", () => {
+    const base = message`Error.`;
+    const candidates = ["dev", "dew", "den"];
+    const result = appendValueHint(base, "devo", candidates, {
+      maxSuggestions: 1,
+    });
+    const str = formatMessage(result);
+    assert.ok(str.includes("Did you mean"), `Expected hint in: ${str}`);
+    // Should only show one suggestion due to maxSuggestions: 1
+    const matches = str.match(/"[^"]+"/g) ?? [];
+    assert.equal(matches.length, 1);
+  });
+
+  it("should return base message for empty input", () => {
+    const base = message`Error.`;
+    const result = appendValueHint(base, "", ["dev", "prod"]);
+    assert.deepEqual(result, base);
+  });
+
+  it("should return base message for empty candidates", () => {
+    const base = message`Error.`;
+    const result = appendValueHint(base, "devo", []);
+    assert.deepEqual(result, base);
+  });
+
+  it("should return only the hint when base is empty and input is close", () => {
+    const result = appendValueHint([], "devo", ["dev", "prod"]);
+    const str = formatMessage(result);
+    assert.ok(str.includes("Did you mean"), `Expected hint in: ${str}`);
+    assert.ok(!str.startsWith("\n"), `Should not start with newline: ${str}`);
+  });
+
+  it("should safely format candidates that contain backticks", () => {
+    const result = appendValueHint([], "foo`bar", ["foo`bar"]);
+    const str = formatMessage(result);
+    assert.ok(str.includes("Did you mean"), `Expected hint in: ${str}`);
+    assert.ok(
+      !str.includes("``"),
+      `Should not produce broken backtick pair in: ${str}`,
+    );
+  });
+});
+
+describe("appendValueSuggestions()", () => {
+  it("should return base unchanged when suggestions is empty", () => {
+    const base = message`Error.`;
+    assert.deepEqual(appendValueSuggestions(base, []), base);
+  });
+
+  it("should format a single suggestion as Did you mean X?", () => {
+    const base = message`Error.`;
+    const result = appendValueSuggestions(base, ["dev"]);
+    const str = formatMessage(result);
+    assert.ok(str.includes("Did you mean"), `Expected hint in: ${str}`);
+    assert.ok(str.includes('"dev"'), `Expected quoted value in: ${str}`);
+  });
+
+  it("should list multiple suggestions on separate lines", () => {
+    const base = message`Error.`;
+    const result = appendValueSuggestions(base, ["dev", "prod"]);
+    const str = formatMessage(result);
+    assert.ok(
+      str.includes("Did you mean one of these?"),
+      `Expected header in: ${str}`,
+    );
+    const lines = str.split("\n");
+    const devLine = lines.find((l) => l.includes('"dev"'));
+    const prodLine = lines.find((l) => l.includes('"prod"'));
+    assert.ok(devLine != null, `Expected "dev" on its own line in: ${str}`);
+    assert.ok(prodLine != null, `Expected "prod" on its own line in: ${str}`);
+  });
+
+  it("should not prepend newlines when base is empty", () => {
+    const result = appendValueSuggestions([], ["dev"]);
+    const str = formatMessage(result);
+    assert.ok(!str.startsWith("\n"), `Should not start with newline: ${str}`);
+  });
+});

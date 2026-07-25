@@ -1,0 +1,167 @@
+@optique/discover
+=================
+
+Runtime-aware command discovery for Optique CLI programs.
+
+Use *@optique/discover* when your CLI has many commands and you want the
+command tree to come from files instead of one large `or(command(...))`
+definition.  Each command module exports a `defineCommand()` result, and
+`runProgram()` discovers those modules, builds a parser tree, enables help,
+version, and shell completion, then dispatches to the selected command's
+handler.
+
+> [!WARNING]
+> *@optique/discover* reads command files and imports them dynamically at
+> runtime.  It is a poor fit for CLIs that rely on aggressive tree shaking,
+> static bundling, or single-file executable packaging.  In those cases, use
+> `commandsFromModules()` with a static module map, or manually imported
+> commands with `runProgram({ commands })`.
+
+
+Installation
+------------
+
+~~~~ bash
+deno add jsr:@optique/discover jsr:@optique/core jsr:@optique/run
+npm  add     @optique/discover     @optique/core     @optique/run
+pnpm add     @optique/discover     @optique/core     @optique/run
+yarn add     @optique/discover     @optique/core     @optique/run
+~~~~
+
+
+Quick example
+-------------
+
+Create command modules under a directory:
+
+~~~~ typescript
+// commands/user/add.ts
+import { defineCommand } from "@optique/discover/command";
+import { object } from "@optique/core/constructs";
+import { message } from "@optique/core/message";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+
+export default defineCommand({
+  parser: object({
+    name: option("--name", string()),
+  }),
+  metadata: {
+    brief: message`Add a user.`,
+  },
+  handler(value) {
+    console.log(`Adding ${value.name}.`);
+  },
+});
+~~~~
+
+Then run the discovered program from your entry point:
+
+~~~~ typescript
+// cli.ts
+import { runProgram } from "@optique/discover";
+import { message } from "@optique/core/message";
+
+await runProgram({
+  dir: new URL("./commands/", import.meta.url),
+  metadata: {
+    name: "admin",
+    version: "1.0.0",
+    brief: message`Administrative command-line tools.`,
+  },
+  commandList: "top-level",
+});
+~~~~
+
+The file path becomes the command path, so the example above is available as:
+
+~~~~ bash
+admin user add --name Ada
+admin --help
+admin completion bash
+~~~~
+
+For bundlers and single-file packagers, turn a static module map into command
+entries:
+
+~~~~ typescript
+// cli.ts
+import { commandsFromModules, runProgram } from "@optique/discover";
+import { message } from "@optique/core/message";
+
+const modules = import.meta.glob("./commands/**/*.ts", {
+  eager: true,
+});
+
+await runProgram({
+  commands: commandsFromModules(modules, {
+    base: "./commands",
+    extensions: [".ts"],
+  }),
+  metadata: {
+    name: "admin",
+    version: "1.0.0",
+    brief: message`Administrative command-line tools.`,
+  },
+});
+~~~~
+
+`commandsFromModules()` preserves the file-based command layout while making
+the module list visible to bundlers.  For smaller registries, you can also
+import commands manually, declare `path` in each `defineCommand()` call, and
+pass those commands to `runProgram({ commands })`.
+
+If you do not want to maintain the static module map by hand, generate one:
+
+~~~~ bash
+optique-discover ./commands --output ./commands.generated.ts --extension .ts
+~~~~
+
+The generated module starts with a fixed header containing lint, formatter,
+TypeScript check suppression, and generated-file marker comments for tools
+that support file-level comments.  Biome suppressions appear first because
+Biome expects file-level suppressions at the beginning of the file.  Command
+module exports are still validated at runtime by `commandsFromModules()`.
+Prettier and Oxfmt users should exclude the generated module through formatter
+configuration, such as *.prettierignore* or Oxfmt ignore paths.
+
+Then import the generated module from your CLI entry point:
+
+~~~~ typescript
+// cli.ts
+import { runProgram } from "@optique/discover";
+import { message } from "@optique/core/message";
+import commands from "./commands.generated.ts";
+
+await runProgram({
+  commands,
+  metadata: {
+    name: "admin",
+    version: "1.0.0",
+    brief: message`Administrative command-line tools.`,
+  },
+});
+~~~~
+
+Use `--watch` during development to regenerate only when command files are
+added, removed, or renamed.
+
+By default, Deno and Bun discover *.ts*, *.mts*, *.js*, and *.mjs* files.
+Node.js discovers *.js*, *.mjs*, and *.cjs* files, plus *.ts*, *.mts*, and
+*.cts* when it reports native TypeScript support or runs with a recognized
+TypeScript loader.  TypeScript declaration files such as *.d.ts* are ignored.
+Co-located test files whose names end in `.test` or `.spec` before the
+extension (such as `user.test.ts`) are ignored too.
+Entry files named `index` map to their containing command path, so
+*commands/index.ts* defines the root command and *commands/user/index.ts*
+defines `user`.  Use `entryFileName` to choose another entry name or disable
+this rule.  `commandsFromModules()` applies the same path rules to module map
+keys after stripping its `base` option.
+For large command trees, pass `commandList: "top-level"` to keep root help
+focused on first-level command groups while subcommand help remains available
+through `<command> --help`.
+
+For more resources, see the [docs] and the [*examples/*](/examples/)
+directory.
+
+[docs]: https://optique.dev/concepts/discover

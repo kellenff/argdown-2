@@ -1,0 +1,67 @@
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
+import { dependency } from "#src/internal/dependency.ts";
+import { parseSync } from "#src/internal/parser.ts";
+import {
+  choice,
+  type ValueParser,
+  type ValueParserResult,
+} from "#src/valueparser.ts";
+import { object } from "#src/constructs.ts";
+import { option } from "#src/primitives.ts";
+import type { NonEmptyString } from "#src/nonempty.ts";
+
+test("dependency resolution handles cyclic plain objects", () => {
+  type CyclicValue = {
+    id: string;
+    self?: CyclicValue;
+  };
+
+  const modeParser = dependency(choice(["dev", "prod"] as const));
+  const derivedParser = modeParser.derive({
+    metavar: "VALUE",
+    mode: "sync",
+    defaultValue: () => "dev" as const,
+    factory: (mode: "dev" | "prod") =>
+      choice(mode === "dev" ? (["a"] as const) : (["b"] as const)),
+  });
+
+  const cyclicValue: CyclicValue = { id: "meta" };
+  cyclicValue.self = cyclicValue;
+
+  const cyclicParser: ValueParser<"sync", CyclicValue> = {
+    mode: "sync",
+    metavar: "META" as NonEmptyString,
+    placeholder: cyclicValue,
+    parse(): ValueParserResult<CyclicValue> {
+      return { success: true, value: cyclicValue };
+    },
+    format(): string {
+      return "meta";
+    },
+    *suggest() {},
+  };
+
+  const parser = object({
+    mode: option("--mode", modeParser),
+    value: option("--value", derivedParser),
+    meta: option("--meta", cyclicParser),
+  });
+
+  const result = parseSync(parser, [
+    "--mode",
+    "dev",
+    "--value",
+    "a",
+    "--meta",
+    "meta",
+  ]);
+
+  assert.ok(result.success);
+  if (result.success) {
+    assert.equal(result.value.mode, "dev");
+    assert.equal(result.value.value, "a");
+    assert.equal(result.value.meta.id, "meta");
+    assert.equal(result.value.meta.self?.id, "meta");
+  }
+});

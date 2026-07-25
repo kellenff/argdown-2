@@ -1,0 +1,13 @@
+/.claude/settings.local.json
+/.playwright-mcp/
+/docs/.vitepress/.temp/
+/example.ts
+/examples/*/dist/
+/examples/*/node_modules/
+/node_modules/
+/packages/*/dist/
+/packages/*/coverage/
+/packages/*/node_modules/
+/PLAN.md
+/coverage/
+/tmp/

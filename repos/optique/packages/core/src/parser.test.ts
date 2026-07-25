@@ -1,0 +1,4579 @@
+import {
+  group,
+  longestMatch,
+  merge,
+  object,
+  or,
+  seq,
+  tuple,
+} from "@optique/core/constructs";
+import {
+  formatMessage,
+  type Message,
+  message,
+  text,
+} from "@optique/core/message";
+import { map, multiple, optional, withDefault } from "@optique/core/modifiers";
+import {
+  type ExecutionContext,
+  getDocPage,
+  getDocPageAsync,
+  getDocPageSync,
+  parse,
+  parseAsync,
+  type Parser,
+  parseSync,
+  suggestAsync,
+  suggestSync,
+} from "@optique/core/parser";
+import {
+  argument,
+  command,
+  constant,
+  flag,
+  option,
+} from "@optique/core/primitives";
+import { dependency, deriveFromSync } from "@optique/core/dependency";
+import {
+  getAnnotations,
+  isInjectedAnnotationWrapper,
+  type ParseOptions,
+} from "#src/internal/annotations.ts";
+import { formatUsage, type Usage } from "@optique/core/usage";
+import { choice, integer, string } from "@optique/core/valueparser";
+import { type DocEntry, formatDocPage } from "@optique/core/doc";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+
+function assertErrorIncludes(error: Message, text: string): void {
+  const formatted = formatMessage(error);
+  assert.ok(formatted.includes(text));
+}
+
+const issue183AnnotationKey = Symbol.for("@test/issue-183");
+const issue183Annotations = {
+  [issue183AnnotationKey]: true,
+} as const;
+
+function createIssue183Parser() {
+  return or(
+    object({ tag: constant("a" as const), silent: option("--silent") }),
+    object({ tag: constant("b" as const), verbose: option("--verbose") }),
+  );
+}
+
+const issue184AnnotationKey = Symbol.for("@test/issue-184");
+const issue184Annotations = {
+  [issue184AnnotationKey]: true,
+} as const;
+
+function createIssue184Branches() {
+  return [
+    object({ tag: constant("a" as const), silent: option("--silent") }),
+    object({ tag: constant("b" as const), verbose: option("--verbose") }),
+  ] as const;
+}
+
+function createIssue184OrParser() {
+  const [parserA, parserB] = createIssue184Branches();
+  return or(parserA, parserB);
+}
+
+function createIssue184LongestMatchParser() {
+  const [parserA, parserB] = createIssue184Branches();
+  return longestMatch(parserA, parserB);
+}
+
+function createIssue184SuggestionParsers() {
+  return [
+    ["or()", createIssue184OrParser()],
+    ["longestMatch()", createIssue184LongestMatchParser()],
+    ["group(or())", group("Issue 184", createIssue184OrParser())],
+    [
+      "group(longestMatch())",
+      group("Issue 184", createIssue184LongestMatchParser()),
+    ],
+    ["map(or())", map(createIssue184OrParser(), (value) => value)],
+    [
+      "map(longestMatch())",
+      map(createIssue184LongestMatchParser(), (value) => value),
+    ],
+  ] as const;
+}
+
+describe("parse", () => {
+  it("should parse simple option successfully", () => {
+    const parser = option("-v");
+    const result = parse(parser, ["-v"]);
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value, true);
+    }
+  });
+
+  it("should parse option with value", () => {
+    const parser = option("--port", integer());
+    const result = parse(parser, ["--port", "8080"]);
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value, 8080);
+    }
+  });
+
+  it("should fail on invalid input", () => {
+    const parser = option("-v");
+    const result = parse(parser, ["--help"]);
+
+    assert.ok(!result.success);
+    if (!result.success) {
+      assertErrorIncludes(result.error, "No matched option");
+    }
+  });
+
+  it("should fail when parser completion fails", () => {
+    const parser = option("--port", integer({ min: 1 }));
+    const result = parse(parser, ["--port", "0"]);
+
+    assert.ok(!result.success);
+  });
+
+  it("should handle empty arguments", () => {
+    const parser = option("-v");
+    const result = parse(parser, []);
+
+    assert.ok(!result.success);
+    if (!result.success) {
+      assertErrorIncludes(result.error, "Expected an option");
+    }
+  });
+
+  it("should process all arguments", () => {
+    const parser = object({
+      verbose: option("-v"),
+      port: option("-p", integer()),
+    });
+
+    const result = parse(parser, ["-v", "-p", "8080"]);
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value.verbose, true);
+      assert.equal(result.value.port, 8080);
+    }
+  });
+
+  it("should parse or() with annotations on the initial state", () => {
+    const parser = createIssue183Parser();
+    const result = parse(parser, ["--silent"], {
+      annotations: issue183Annotations,
+    });
+
+    assert.deepEqual(result, {
+      success: true,
+      value: { tag: "a", silent: true },
+    });
+  });
+
+  it("should return a normal parse failure for annotated or() mismatches", () => {
+    const parser = createIssue183Parser();
+    const result = parse(parser, ["--loud"], {
+      annotations: issue183Annotations,
+    });
+
+    assert.ok(!result.success);
+    if (!result.success) {
+      assertErrorIncludes(result.error, "Unexpected option or subcommand");
+    }
+  });
+
+  it("should parse grouped or() with annotations on the initial state", () => {
+    const parser = group("Issue 183", createIssue183Parser());
+    const result = parse(parser, ["--silent"], {
+      annotations: issue183Annotations,
+    });
+
+    assert.deepEqual(result, {
+      success: true,
+      value: { tag: "a", silent: true },
+    });
+  });
+
+  it("should parse mapped or() with annotations on the initial state", () => {
+    const parser = map(createIssue183Parser(), (value) => value.tag);
+    const result = parse(parser, ["--silent"], {
+      annotations: issue183Annotations,
+    });
+
+    assert.deepEqual(result, {
+      success: true,
+      value: "a",
+    });
+  });
+
+  it("should preserve flat trace when wrappers drop exec", () => {
+    const mode = dependency(choice(["dev", "prod"] as const));
+    const level = deriveFromSync({
+      metavar: "LEVEL",
+      dependencies: [mode] as const,
+      defaultValues: () => ["dev"] as const,
+      factory: (currentMode) =>
+        choice(
+          currentMode === "dev" ? ["debug"] as const : ["strict"] as const,
+        ),
+    });
+    const inner = object({
+      mode: option("--mode", mode),
+      level: option("--level", level),
+    });
+    const wrapper: Parser<
+      "sync",
+      { readonly mode: "dev" | "prod"; readonly level: string },
+      typeof inner.initialState
+    > = {
+      ...inner,
+      parse(context) {
+        const result = inner.parse(context);
+        if (!result.success) return result;
+        return {
+          success: true as const,
+          next: {
+            ...result.next,
+            exec: undefined,
+            trace: result.next.trace,
+          },
+          consumed: result.consumed,
+        };
+      },
+    };
+
+    const result = parse(wrapper, ["--mode", "prod", "--level", "strict"]);
+    assert.deepEqual(result, {
+      success: true,
+      value: {
+        mode: "prod",
+        level: "strict",
+      },
+    });
+  });
+
+  it("should handle options terminator", () => {
+    const parser = object({
+      verbose: option("-v"),
+    });
+
+    const result = parse(parser, ["-v", "--"]);
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value.verbose, true);
+    }
+  });
+});
+
+describe("Integration tests", () => {
+  it("should handle complex nested parser combinations", () => {
+    const serverParser = object("Server", {
+      port: option("-p", "--port", integer({ min: 1, max: 0xffff })),
+      host: option("-h", "--host", string({ metavar: "HOST" })),
+      verbose: option("-v", "--verbose"),
+    });
+
+    const clientParser = object("Client", {
+      connect: option("-c", "--connect", string({ metavar: "URL" })),
+      timeout: option("-t", "--timeout", integer({ min: 0 })),
+      retry: option("-r", "--retry"),
+    });
+
+    const mainParser = or(serverParser, clientParser);
+
+    const serverResult = parse(mainParser, [
+      "--port",
+      "8080",
+      "--host",
+      "localhost",
+      "-v",
+    ]);
+    assert.ok(serverResult.success);
+    if (serverResult.success) {
+      if ("port" in serverResult.value) {
+        assert.equal(serverResult.value.port, 8080);
+        assert.equal(serverResult.value.host, "localhost");
+        assert.equal(serverResult.value.verbose, true);
+      } else {
+        throw new Error("Expected server result");
+      }
+    }
+
+    const clientResult = parse(mainParser, [
+      "--connect",
+      "ws://example.com",
+      "--timeout",
+      "5000",
+    ]);
+    assert.ok(clientResult.success);
+    if (clientResult.success) {
+      if ("connect" in clientResult.value) {
+        assert.equal(clientResult.value.connect, "ws://example.com");
+        assert.equal(clientResult.value.timeout, 5000);
+        assert.equal(clientResult.value.retry, false);
+      } else {
+        throw new Error("Expected client result");
+      }
+    }
+  });
+
+  it("should enforce mutual exclusivity in complex scenarios", () => {
+    const group1 = object("Group 1", {
+      allow: option("-a", "--allow"),
+      value: option("-v", "--value", integer()),
+    });
+
+    const group2 = object("Group 2", {
+      foo: option("-f", "--foo"),
+      bar: option("-b", "--bar", string({ metavar: "VALUE" })),
+    });
+
+    const parser = or(group1, group2);
+
+    const conflictResult = parse(parser, ["--allow", "--foo"]);
+    assert.ok(!conflictResult.success);
+    if (!conflictResult.success) {
+      assertErrorIncludes(conflictResult.error, "cannot be used together");
+    }
+  });
+
+  it("should handle mixed option styles", () => {
+    const parser = object({
+      unixShort: option("-u"),
+      unixLong: option("--unix-long"),
+      dosStyle: option("/D"),
+      plusStyle: option("+p"),
+    });
+
+    const result1 = parse(parser, ["-u", "--unix-long"]);
+    assert.ok(result1.success);
+    if (result1.success) {
+      assert.equal(result1.value.unixShort, true);
+      assert.equal(result1.value.unixLong, true);
+      assert.equal(result1.value.dosStyle, false);
+      assert.equal(result1.value.plusStyle, false);
+    }
+
+    const result2 = parse(parser, ["/D", "+p"]);
+    assert.ok(result2.success);
+    if (result2.success) {
+      assert.equal(result2.value.dosStyle, true);
+      assert.equal(result2.value.plusStyle, true);
+      assert.equal(result2.value.unixShort, false);
+      assert.equal(result2.value.unixLong, false);
+    }
+  });
+
+  it("should handle bundled short options correctly", () => {
+    const parser = object({
+      verbose: option("-v"),
+      debug: option("-d"),
+      force: option("-f"),
+    });
+
+    const result = parse(parser, ["-vdf"]);
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value.verbose, true);
+      assert.equal(result.value.debug, true);
+      assert.equal(result.value.force, true);
+    }
+  });
+
+  it("should validate value constraints in complex scenarios", () => {
+    const parser = object({
+      port: option("-p", integer({ min: 1024, max: 0xffff })),
+      workers: option("-w", integer({ min: 1, max: 16 })),
+      name: option("-n", string({ pattern: /^[a-zA-Z][a-zA-Z0-9_]*$/ })),
+    });
+
+    const validResult = parse(parser, [
+      "-p",
+      "8080",
+      "-w",
+      "4",
+      "-n",
+      "myServer",
+    ]);
+    assert.ok(validResult.success);
+    if (validResult.success) {
+      assert.equal(validResult.value.port, 8080);
+      assert.equal(validResult.value.workers, 4);
+      assert.equal(validResult.value.name, "myServer");
+    }
+
+    const invalidPortResult = parse(parser, ["-p", "100"]);
+    assert.ok(!invalidPortResult.success);
+
+    const invalidNameResult = parse(parser, ["-n", "123invalid"]);
+    assert.ok(!invalidNameResult.success);
+  });
+
+  it("should handle three-way mutually exclusive options", () => {
+    const modeA = object("Mode A", { optionA: option("-a") });
+    const modeB = object("Mode B", { optionB: option("-b") });
+    const modeC = object("Mode C", { optionC: option("-c") });
+
+    const parser = or(modeA, modeB, modeC);
+
+    const resultA = parse(parser, ["-a"]);
+    assert.ok(resultA.success);
+    if (resultA.success && "optionA" in resultA.value) {
+      assert.equal(resultA.value.optionA, true);
+    }
+
+    const resultB = parse(parser, ["-b"]);
+    assert.ok(resultB.success);
+    if (resultB.success && "optionB" in resultB.value) {
+      assert.equal(resultB.value.optionB, true);
+    }
+
+    const resultC = parse(parser, ["-c"]);
+    assert.ok(resultC.success);
+    if (resultC.success && "optionC" in resultC.value) {
+      assert.equal(resultC.value.optionC, true);
+    }
+
+    const conflictResult = parse(parser, ["-a", "-b"]);
+    assert.ok(!conflictResult.success);
+    if (!conflictResult.success) {
+      assertErrorIncludes(conflictResult.error, "cannot be used together");
+    }
+  });
+
+  it("should handle nested or combinations", () => {
+    const innerOr = or(
+      option("-a"),
+      option("-b"),
+    );
+
+    const outerOr = or(
+      innerOr,
+      option("-c"),
+    );
+
+    const resultA = parse(outerOr, ["-a"]);
+    assert.ok(resultA.success);
+
+    const resultB = parse(outerOr, ["-b"]);
+    assert.ok(resultB.success);
+
+    const resultC = parse(outerOr, ["-c"]);
+    assert.ok(resultC.success);
+  });
+
+  it("should handle complex real-world CLI scenario", () => {
+    const buildParser = object("Build", {
+      output: option("-o", "--output", string({ metavar: "DIR" })),
+      minify: option("--minify"),
+      sourcemap: option("--sourcemap"),
+    });
+
+    const serveParser = object("Serve", {
+      port: option("-p", "--port", integer({ min: 1, max: 0xffff })),
+      host: option("-h", "--host", string({ metavar: "HOST" })),
+      open: option("--open"),
+    });
+
+    const testParser = object("Test", {
+      watch: option("-w", "--watch"),
+      coverage: option("--coverage"),
+      filter: option("--filter", string({ metavar: "PATTERN" })),
+    });
+
+    const mainParser = or(buildParser, serveParser, testParser);
+
+    const buildResult = parse(mainParser, [
+      "--output",
+      "dist",
+      "--minify",
+      "--sourcemap",
+    ]);
+    assert.ok(buildResult.success);
+    if (buildResult.success && "output" in buildResult.value) {
+      assert.equal(buildResult.value.output, "dist");
+      assert.equal(buildResult.value.minify, true);
+      assert.equal(buildResult.value.sourcemap, true);
+    }
+
+    const serveResult = parse(mainParser, [
+      "-p",
+      "3000",
+      "-h",
+      "0.0.0.0",
+      "--open",
+    ]);
+    assert.ok(serveResult.success);
+    if (serveResult.success && "port" in serveResult.value) {
+      assert.equal(serveResult.value.port, 3000);
+      assert.equal(serveResult.value.host, "0.0.0.0");
+      assert.equal(serveResult.value.open, true);
+    }
+
+    const testResult = parse(mainParser, [
+      "--watch",
+      "--coverage",
+      "--filter",
+      "unit",
+    ]);
+    assert.ok(testResult.success);
+    if (testResult.success && "watch" in testResult.value) {
+      assert.equal(testResult.value.watch, true);
+      assert.equal(testResult.value.coverage, true);
+      assert.equal(testResult.value.filter, "unit");
+    }
+
+    const mixedResult = parse(mainParser, [
+      "--output",
+      "dist",
+      "--port",
+      "3000",
+    ]);
+    assert.ok(!mixedResult.success);
+    if (!mixedResult.success) {
+      assertErrorIncludes(mixedResult.error, "cannot be used together");
+    }
+  });
+
+  it("should reproduce example.ts behavior", () => {
+    const group1 = object("Group 1", {
+      allow: option("-a", "--allow"),
+      value: option("-v", "--value", integer()),
+    });
+
+    const group2 = object("Group 2", {
+      foo: option("-f", "--foo"),
+      bar: option("-b", "--bar", string({ metavar: "VALUE" })),
+    });
+
+    const parser = or(group1, group2);
+
+    const allowResult = parse(parser, ["--allow"]);
+    assert.ok(!allowResult.success);
+    if (!allowResult.success) {
+      assertErrorIncludes(allowResult.error, "Missing option");
+    }
+
+    const fooBarResult = parse(parser, ["--foo", "--bar", "hello"]);
+    assert.ok(fooBarResult.success);
+    if (fooBarResult.success && "foo" in fooBarResult.value) {
+      assert.equal(fooBarResult.value.foo, true);
+      assert.equal(fooBarResult.value.bar, "hello");
+    }
+
+    const conflictResult = parse(parser, ["--allow", "--foo"]);
+    assert.ok(!conflictResult.success);
+    if (!conflictResult.success) {
+      assertErrorIncludes(conflictResult.error, "cannot be used together");
+    }
+  });
+
+  it("should handle edge cases with options terminator", () => {
+    const parser = object({
+      verbose: option("-v"),
+    });
+
+    const result1 = parse(parser, ["-v", "--"]);
+    assert.ok(result1.success);
+    if (result1.success) {
+      assert.equal(result1.value.verbose, true);
+    }
+
+    const result2 = parse(parser, ["--"]);
+    assert.ok(result2.success);
+    if (result2.success) {
+      assert.equal(result2.value.verbose, false);
+    }
+  });
+
+  it("should handle various option value formats", () => {
+    const parser = object({
+      port: option("--port", integer()),
+      name: option("--name", string({ metavar: "NAME" })),
+    });
+
+    const result1 = parse(parser, ["--port=8080", "--name", "test"]);
+    assert.ok(result1.success);
+    if (result1.success) {
+      assert.equal(result1.value.port, 8080);
+      assert.equal(result1.value.name, "test");
+    }
+
+    const dosParser = object({
+      dosPort: option("/P", integer()),
+    });
+
+    const result2 = parse(dosParser, ["/P:9000"]);
+    assert.ok(result2.success);
+    if (result2.success) {
+      assert.equal(result2.value.dosPort, 9000);
+    }
+  });
+
+  it("should handle argument parsers in object combinations", () => {
+    const parser = object({
+      verbose: option("-v"),
+      output: option("-o", string({ metavar: "FILE" })),
+      input: argument(string({ metavar: "INPUT" })),
+    });
+
+    const result = parse(parser, ["-v", "-o", "output.txt", "input.txt"]);
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value.verbose, true);
+      assert.equal(result.value.output, "output.txt");
+      assert.equal(result.value.input, "input.txt");
+    }
+  });
+
+  it("should reproduce example.ts behavior with arguments", () => {
+    const group1 = object("Group 1", {
+      type: constant("group1"),
+      allow: option("-a", "--allow"),
+      value: option("-v", "--value", integer()),
+      arg: argument(string({ metavar: "ARG" })),
+    });
+
+    const group2 = object("Group 2", {
+      type: constant("group2"),
+      foo: option("-f", "--foo"),
+      bar: option("-b", "--bar", string({ metavar: "VALUE" })),
+    });
+
+    const parser = or(group1, group2);
+
+    const group1Result = parse(parser, ["-a", "-v", "123", "myfile.txt"]);
+    assert.ok(group1Result.success);
+    if (
+      group1Result.success && "type" in group1Result.value &&
+      group1Result.value.type === "group1"
+    ) {
+      assert.equal(group1Result.value.allow, true);
+      assert.equal(group1Result.value.value, 123);
+      assert.equal(group1Result.value.arg, "myfile.txt");
+    }
+
+    const group2Result = parse(parser, ["-f", "-b", "hello"]);
+    assert.ok(group2Result.success);
+    if (
+      group2Result.success && "type" in group2Result.value &&
+      group2Result.value.type === "group2"
+    ) {
+      assert.equal(group2Result.value.foo, true);
+      assert.equal(group2Result.value.bar, "hello");
+    }
+  });
+
+  it("should handle argument parsing bug regression", () => {
+    // Regression test for bug where first parser incorrectly consumed arguments as options
+    // Before fix: first parser would consume '-t' as argument, preventing second parser from matching
+    // After fix: second parser correctly matches '-t title' as option with value
+
+    const firstParser = object({
+      name: option("-n", "--name", string()),
+      id: argument(string()),
+    });
+
+    const secondParser = object({
+      title: option("-t", "--title", string()),
+    });
+
+    const parser = or(firstParser, secondParser);
+
+    // This should succeed with the second parser, not fail because first parser consumed '-t' as argument
+    const result = parse(parser, ["-t", "title"]);
+    assert.ok(result.success);
+    if (result.success && "title" in result.value) {
+      assert.equal(result.value.title, "title");
+    }
+
+    // Verify that the first parser fails because it doesn't recognize the -t option
+    const firstParserResult = parse(firstParser, ["-t", "title"]);
+    assert.ok(!firstParserResult.success);
+    if (!firstParserResult.success) {
+      assertErrorIncludes(
+        firstParserResult.error,
+        "Unexpected option or argument",
+      );
+    }
+  });
+
+  it("should handle or() with arguments on both sides regression", () => {
+    // Regression test for bug where or() parser with arguments on both sides
+    // wouldn't work properly - first parser consuming arguments would prevent
+    // second parser from getting a chance to match properly
+
+    const parserA = object({
+      name: option("-n", "--name", string()),
+      file: argument(string()),
+    });
+
+    const parserB = object({
+      title: option("-t", "--title", string()),
+      input: argument(string()),
+    });
+
+    const parser = or(parserA, parserB);
+
+    // First case: should match parserB
+    const result1 = parse(parser, ["-t", "My Title", "input.txt"]);
+    assert.ok(result1.success);
+    if (result1.success && "title" in result1.value) {
+      assert.equal(result1.value.title, "My Title");
+      assert.equal(result1.value.input, "input.txt");
+    }
+
+    // Second case: should match parserA
+    const result2 = parse(parser, ["-n", "John", "output.txt"]);
+    assert.ok(result2.success);
+    if (result2.success && "name" in result2.value) {
+      assert.equal(result2.value.name, "John");
+      assert.equal(result2.value.file, "output.txt");
+    }
+
+    // Edge case: test that arguments don't interfere with option parsing across parsers
+    const result3 = parse(parser, ["-t", "Title"]);
+    assert.ok(!result3.success);
+    // This should fail because parserB requires both -t option AND an argument
+    // but we're only providing the option
+  });
+});
+
+describe("Parser usage field", () => {
+  describe("constant parser", () => {
+    it("should have empty usage", () => {
+      const parser = constant(42);
+      assert.deepEqual(parser.usage, []);
+    });
+  });
+
+  describe("option parser", () => {
+    it("should have correct usage for boolean flag", () => {
+      const parser = option("-v", "--verbose");
+      const expected = [{
+        type: "optional",
+        terms: [{
+          type: "option",
+          names: ["-v", "--verbose"],
+        }],
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+
+    it("should have correct usage for option with value", () => {
+      const parser = option("-p", "--port", integer());
+      const expected = [{
+        type: "option",
+        names: ["-p", "--port"],
+        metavar: "INTEGER",
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+
+    it("should have correct usage for single option name", () => {
+      const parser = option("--debug");
+      const expected = [{
+        type: "optional",
+        terms: [{
+          type: "option",
+          names: ["--debug"],
+        }],
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+
+    it("should have correct usage for multiple option names", () => {
+      const parser = option("-o", "--output", "--out", string());
+      const expected = [{
+        type: "option",
+        names: ["-o", "--output", "--out"],
+        metavar: "STRING",
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+  });
+
+  describe("argument parser", () => {
+    it("should have correct usage", () => {
+      const parser = argument(string());
+      const expected = [{
+        type: "argument",
+        metavar: "STRING",
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+
+    it("should have correct usage with integer", () => {
+      const parser = argument(integer());
+      const expected = [{
+        type: "argument",
+        metavar: "INTEGER",
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+  });
+
+  describe("optional parser", () => {
+    it("should wrap inner parser usage in optional term", () => {
+      const innerParser = option("-v", "--verbose");
+      const parser = optional(innerParser);
+      const expected = [{
+        type: "optional",
+        terms: [{
+          type: "optional",
+          terms: [{
+            type: "option",
+            names: ["-v", "--verbose"],
+          }],
+        }],
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+
+    it("should work with argument parser", () => {
+      const innerParser = argument(string());
+      const parser = optional(innerParser);
+      const expected = [{
+        type: "optional",
+        terms: [{
+          type: "argument",
+          metavar: "STRING",
+        }],
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+
+    it("should work with nested optional", () => {
+      const baseParser = option("-d", "--debug");
+      const innerOptional = optional(baseParser);
+      const outerOptional = optional(innerOptional);
+      const expected = [{
+        type: "optional",
+        terms: [{
+          type: "optional",
+          terms: [{
+            type: "optional",
+            terms: [{
+              type: "option",
+              names: ["-d", "--debug"],
+            }],
+          }],
+        }],
+      }];
+      assert.deepEqual(outerOptional.usage, expected);
+    });
+  });
+
+  describe("withDefault parser", () => {
+    it("should wrap inner parser usage in optional term", () => {
+      const innerParser = option("-p", "--port", integer());
+      const parser = withDefault(innerParser, 3000);
+      const expected = [{
+        type: "optional",
+        terms: [{
+          type: "option",
+          names: ["-p", "--port"],
+          metavar: "INTEGER",
+        }],
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+  });
+
+  describe("multiple parser", () => {
+    it("should wrap inner parser usage in multiple term with min 0", () => {
+      const innerParser = argument(string());
+      const parser = multiple(innerParser);
+      const expected = [{
+        type: "multiple",
+        terms: [{
+          type: "argument",
+          metavar: "STRING",
+        }],
+        min: 0,
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+
+    it("should wrap inner parser usage in multiple term with custom min", () => {
+      const innerParser = argument(string());
+      const parser = multiple(innerParser, { min: 2 });
+      const expected = [{
+        type: "multiple",
+        terms: [{
+          type: "argument",
+          metavar: "STRING",
+        }],
+        min: 2,
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+
+    it("should work with option parser", () => {
+      const innerParser = option("-I", "--include", string());
+      const parser = multiple(innerParser, { min: 1 });
+      const expected = [{
+        type: "multiple",
+        terms: [{
+          type: "option",
+          names: ["-I", "--include"],
+          metavar: "STRING",
+        }],
+        min: 1,
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+  });
+
+  describe("object parser", () => {
+    it("should combine usage from all parsers", () => {
+      const parser = object({
+        verbose: option("-v", "--verbose"),
+        output: option("-o", "--output", string()),
+        port: argument(integer()),
+      });
+
+      // Usage should be flattened and include all terms
+      assert.equal(parser.usage.length, 3);
+
+      // Check that all expected terms are present
+      const usageTypes = parser.usage.map((u) => u.type);
+      assert.ok(usageTypes.includes("optional")); // verbose flag is now optional
+      assert.ok(usageTypes.includes("option")); // output option with value
+      assert.ok(usageTypes.includes("argument"));
+
+      // Find the optional term (verbose flag)
+      const optionalTerm = parser.usage.find((u) => u.type === "optional");
+      assert.ok(optionalTerm);
+      assert.equal(optionalTerm.terms.length, 1);
+      const verboseOption = optionalTerm.terms[0];
+      assert.equal(verboseOption.type, "option");
+      assert.deepEqual(verboseOption.names, ["-v", "--verbose"]);
+
+      // Find the option term (output option with value)
+      const outputOption = parser.usage.find((u) =>
+        u.type === "option" && "names" in u && u.names.includes("-o")
+      );
+      assert.ok(outputOption);
+      if (outputOption?.type === "option") {
+        assert.deepEqual(outputOption.names, ["-o", "--output"]);
+        assert.equal(outputOption.metavar, "STRING");
+      }
+
+      // Find the argument term
+      const argTerm = parser.usage.find((u) => u.type === "argument");
+      assert.ok(argTerm);
+      assert.equal(argTerm?.type, "argument");
+      if (argTerm?.type === "argument") {
+        assert.equal(argTerm.metavar, "INTEGER");
+      }
+    });
+
+    it("should handle empty object", () => {
+      const parser = object({});
+      assert.deepEqual(parser.usage, []);
+    });
+
+    it("should work with labeled object", () => {
+      const parser = object("main options", {
+        verbose: option("-v", "--verbose"),
+        output: option("-o", "--output", string()),
+      });
+
+      assert.equal(parser.usage.length, 2);
+      const optionalTerms = parser.usage.filter((u) => u.type === "optional");
+      const optionTerms = parser.usage.filter((u) => u.type === "option");
+      assert.equal(optionalTerms.length, 1); // verbose flag is optional
+      assert.equal(optionTerms.length, 1); // output option with value
+    });
+  });
+
+  describe("tuple parser", () => {
+    it("should combine usage from all parsers", () => {
+      const parser = tuple([
+        option("-v", "--verbose"),
+        argument(string()),
+        option("-o", "--output", string()),
+      ]);
+
+      assert.equal(parser.usage.length, 3);
+
+      const optionalTerms = parser.usage.filter((u) => u.type === "optional");
+      const optionTerms = parser.usage.filter((u) => u.type === "option");
+      assert.equal(optionalTerms.length, 1); // verbose flag is optional
+      assert.equal(optionTerms.length, 1); // output option with value
+
+      const argTerms = parser.usage.filter((u) => u.type === "argument");
+      assert.equal(argTerms.length, 1);
+    });
+
+    it("should handle empty tuple", () => {
+      const parser = tuple([]);
+      assert.deepEqual(parser.usage, []);
+    });
+
+    it("should work with labeled tuple", () => {
+      const parser = tuple("command line args", [
+        option("-v", "--verbose"),
+        argument(string()),
+      ]);
+
+      assert.equal(parser.usage.length, 2);
+    });
+  });
+
+  describe("or parser", () => {
+    it("should create exclusive usage term", () => {
+      const parserA = option("-v", "--verbose");
+      const parserB = option("-q", "--quiet");
+      const parser = or(parserA, parserB);
+
+      const expected = [{
+        type: "exclusive",
+        terms: [
+          [{
+            type: "optional",
+            terms: [{
+              type: "option",
+              names: ["-v", "--verbose"],
+            }],
+          }],
+          [{
+            type: "optional",
+            terms: [{
+              type: "option",
+              names: ["-q", "--quiet"],
+            }],
+          }],
+        ],
+      }];
+      assert.deepEqual(parser.usage, expected);
+    });
+
+    it("should work with three parsers", () => {
+      const parserA = option("-v", "--verbose");
+      const parserB = option("-q", "--quiet");
+      const parserC = argument(string());
+      const parser = or(parserA, parserB, parserC);
+
+      assert.equal(parser.usage.length, 1);
+      assert.equal(parser.usage[0].type, "exclusive");
+
+      if (parser.usage[0].type === "exclusive") {
+        assert.equal(parser.usage[0].terms.length, 3);
+        assert.deepEqual(parser.usage[0].terms[0], [{
+          type: "optional",
+          terms: [{
+            type: "option",
+            names: ["-v", "--verbose"],
+          }],
+        }]);
+        assert.deepEqual(parser.usage[0].terms[1], [{
+          type: "optional",
+          terms: [{
+            type: "option",
+            names: ["-q", "--quiet"],
+          }],
+        }]);
+        assert.deepEqual(parser.usage[0].terms[2], [{
+          type: "argument",
+          metavar: "STRING",
+        }]);
+      }
+    });
+
+    it("should work with complex parser combinations", () => {
+      const objectParser = object({
+        count: option("-c", "--count", integer()),
+        input: argument(string()),
+      });
+      const optionParser = option("-h", "--help");
+      const parser = or(objectParser, optionParser);
+
+      assert.equal(parser.usage.length, 1);
+      assert.equal(parser.usage[0].type, "exclusive");
+
+      if (parser.usage[0].type === "exclusive") {
+        assert.equal(parser.usage[0].terms.length, 2);
+        // First term should have the object parser's usage
+        assert.equal(parser.usage[0].terms[0].length, 2);
+        // Second term should have the option parser's usage (now optional)
+        assert.equal(parser.usage[0].terms[1].length, 1);
+        assert.equal(parser.usage[0].terms[1][0].type, "optional");
+      }
+    });
+  });
+
+  describe("merge parser", () => {
+    it("should combine usage from merged parsers", () => {
+      const parserA = object({
+        verbose: option("-v", "--verbose"),
+        input: argument(string()),
+      });
+      const parserB = object({
+        output: option("-o", "--output", string()),
+        count: option("-c", "--count", integer()),
+      });
+      const parser = merge(parserA, parserB);
+
+      assert.equal(parser.usage.length, 4);
+
+      const optionalTerms = parser.usage.filter((u) => u.type === "optional");
+      const optionTerms = parser.usage.filter((u) => u.type === "option");
+      assert.equal(optionalTerms.length, 1); // verbose flag is optional
+      assert.equal(optionTerms.length, 2); // output and count options with values
+
+      const argTerms = parser.usage.filter((u) => u.type === "argument");
+      assert.equal(argTerms.length, 1);
+    });
+
+    it("should work with three merged parsers", () => {
+      const parserA = object({ verbose: option("-v", "--verbose") });
+      const parserB = object({ quiet: option("-q", "--quiet") });
+      const parserC = object({ debug: option("-d", "--debug") });
+      const parser = merge(parserA, parserB, parserC);
+
+      assert.equal(parser.usage.length, 3);
+      const optionalTerms = parser.usage.filter((u) => u.type === "optional");
+      assert.equal(optionalTerms.length, 3); // all are boolean flags, now optional
+    });
+  });
+
+  describe("command parser", () => {
+    it("should include command term and inner parser usage", () => {
+      const innerParser = object({
+        verbose: option("-v", "--verbose"),
+        input: argument(string()),
+      });
+      const parser = command("init", innerParser);
+
+      assert.equal(parser.usage.length, 3);
+      assert.equal(parser.usage[0].type, "command");
+
+      if (parser.usage[0].type === "command") {
+        assert.equal(parser.usage[0].name, "init");
+      }
+
+      // Rest should be from inner parser
+      const optionalTerms = parser.usage.filter((u) => u.type === "optional");
+      const argTerms = parser.usage.filter((u) => u.type === "argument");
+      assert.equal(optionalTerms.length, 1); // verbose flag is now optional
+      assert.equal(argTerms.length, 1);
+    });
+
+    it("should work with simple inner parser", () => {
+      const innerParser = constant("done");
+      const parser = command("test", innerParser);
+
+      assert.equal(parser.usage.length, 1);
+      assert.equal(parser.usage[0].type, "command");
+
+      if (parser.usage[0].type === "command") {
+        assert.equal(parser.usage[0].name, "test");
+      }
+    });
+
+    it("should work with nested commands", () => {
+      const subCommand = command("subcommand", argument(string()));
+      const mainCommand = command("main", subCommand);
+
+      assert.equal(mainCommand.usage.length, 3);
+      assert.equal(mainCommand.usage[0].type, "command");
+      assert.equal(mainCommand.usage[1].type, "command");
+      assert.equal(mainCommand.usage[2].type, "argument");
+
+      if (mainCommand.usage[0].type === "command") {
+        assert.equal(mainCommand.usage[0].name, "main");
+      }
+      if (mainCommand.usage[1].type === "command") {
+        assert.equal(mainCommand.usage[1].name, "subcommand");
+      }
+    });
+
+    it("should seed top-level suggest runtime through command wrappers", () => {
+      const dependencyId = Symbol("command-child-source");
+      const childParser = {
+        mode: "sync" as const,
+        $valueType: [] as readonly string[],
+        $stateType: [] as readonly string[],
+        priority: 0,
+        usage: [],
+        leadingNames: new Set<string>(),
+        acceptingAnyToken: false,
+        initialState: "",
+        dependencyMetadata: {
+          source: {
+            kind: "source" as const,
+            sourceId: dependencyId,
+            preservesSourceValue: true,
+            extractSourceValue(state: unknown) {
+              if (typeof state !== "string" || state.length === 0) {
+                return undefined;
+              }
+              return { success: true as const, value: state };
+            },
+          },
+        },
+        parse(context: {
+          readonly buffer: readonly string[];
+          readonly state: string;
+          readonly optionsTerminated: boolean;
+          readonly usage: Usage;
+        }) {
+          const token = context.buffer[0];
+          if (token == null) {
+            return {
+              success: false as const,
+              consumed: 0,
+              error: message`Expected value.`,
+            };
+          }
+          return {
+            success: true as const,
+            next: {
+              ...context,
+              buffer: context.buffer.slice(1),
+              state: token,
+            },
+            consumed: [token],
+          };
+        },
+        complete(state: string) {
+          return { success: true as const, value: state };
+        },
+        *suggest(context: {
+          readonly dependencyRegistry?: {
+            get(key: symbol): unknown;
+          };
+        }) {
+          if (context.dependencyRegistry?.get(dependencyId) === "prod") {
+            yield { kind: "literal" as const, text: "prod-only" };
+          }
+        },
+        getDocFragments() {
+          return { fragments: [] };
+        },
+      } as const satisfies Parser<"sync", string, string>;
+      const parser = command("deploy", childParser);
+
+      const suggestions = suggestSync(parser, ["deploy", "prod", ""]);
+
+      assert.deepEqual(suggestions, [{
+        kind: "literal",
+        text: "prod-only",
+      }]);
+    });
+
+    it("should seed top-level suggest runtime through async command wrappers", async () => {
+      const dependencyId = Symbol("async-command-child-source");
+      const childParser = {
+        mode: "async" as const,
+        $valueType: [] as readonly string[],
+        $stateType: [] as readonly string[],
+        priority: 0,
+        usage: [],
+        leadingNames: new Set<string>(),
+        acceptingAnyToken: false,
+        initialState: "",
+        dependencyMetadata: {
+          source: {
+            kind: "source" as const,
+            sourceId: dependencyId,
+            preservesSourceValue: true,
+            extractSourceValue(state: unknown) {
+              if (typeof state !== "string" || state.length === 0) {
+                return undefined;
+              }
+              return Promise.resolve({
+                success: true as const,
+                value: state,
+              });
+            },
+          },
+        },
+        parse(context: {
+          readonly buffer: readonly string[];
+          readonly state: string;
+          readonly optionsTerminated: boolean;
+          readonly usage: Usage;
+        }) {
+          const token = context.buffer[0];
+          if (token == null) {
+            return Promise.resolve({
+              success: false as const,
+              consumed: 0,
+              error: message`Expected value.`,
+            });
+          }
+          return Promise.resolve({
+            success: true as const,
+            next: {
+              ...context,
+              buffer: context.buffer.slice(1),
+              state: token,
+            },
+            consumed: [token],
+          });
+        },
+        complete(state: string) {
+          return Promise.resolve({ success: true as const, value: state });
+        },
+        async *suggest(context: {
+          readonly dependencyRegistry?: {
+            get(key: symbol): unknown;
+          };
+        }) {
+          if (context.dependencyRegistry?.get(dependencyId) === "prod") {
+            yield { kind: "literal" as const, text: "prod-only" };
+          }
+        },
+        getDocFragments() {
+          return { fragments: [] };
+        },
+      } as const satisfies Parser<"async", string, string>;
+      const parser = command("deploy", childParser);
+
+      const suggestions = await suggestAsync(parser, ["deploy", "prod", ""]);
+
+      assert.deepEqual(suggestions, [{
+        kind: "literal",
+        text: "prod-only",
+      }]);
+    });
+
+    it("should seed top-level suggest runtime through or() wrappers", () => {
+      const prodId = Symbol("or-prod-source");
+      const otherId = Symbol("or-other-source");
+      const prodBranch = {
+        mode: "sync" as const,
+        $valueType: [] as readonly string[],
+        $stateType: [] as readonly string[],
+        priority: 0,
+        usage: [],
+        leadingNames: new Set<string>(),
+        acceptingAnyToken: false,
+        initialState: "",
+        dependencyMetadata: {
+          source: {
+            kind: "source" as const,
+            sourceId: prodId,
+            preservesSourceValue: true,
+            extractSourceValue(state: unknown) {
+              if (typeof state !== "string" || state.length === 0) {
+                return undefined;
+              }
+              return { success: true as const, value: state };
+            },
+          },
+        },
+        parse(context: {
+          readonly buffer: readonly string[];
+          readonly state: string;
+          readonly optionsTerminated: boolean;
+          readonly usage: Usage;
+        }) {
+          const token = context.buffer[0];
+          if (token == null) {
+            return {
+              success: false as const,
+              consumed: 0,
+              error: message`Expected value.`,
+            };
+          }
+          return {
+            success: true as const,
+            next: {
+              ...context,
+              buffer: context.buffer.slice(1),
+              state: token,
+            },
+            consumed: [token],
+          };
+        },
+        complete(state: string) {
+          return { success: true as const, value: state };
+        },
+        *suggest(context: {
+          readonly dependencyRegistry?: {
+            get(key: symbol): unknown;
+          };
+        }) {
+          if (context.dependencyRegistry?.get(prodId) === "prod") {
+            yield { kind: "literal" as const, text: "prod-only" };
+          }
+        },
+        getDocFragments() {
+          return { fragments: [] };
+        },
+      } as const satisfies Parser<"sync", string, string>;
+      const otherBranch = {
+        ...prodBranch,
+        dependencyMetadata: {
+          source: {
+            ...prodBranch.dependencyMetadata.source,
+            sourceId: otherId,
+          },
+        },
+        parse(context: Parameters<typeof prodBranch.parse>[0]) {
+          if (context.buffer[0] === "prod") {
+            return {
+              success: false as const,
+              consumed: 0,
+              error: message`Expected non-prod control branch value.`,
+            };
+          }
+          return prodBranch.parse(context);
+        },
+        *suggest() {},
+      } as const satisfies Parser<"sync", string, string>;
+      const parser = or(prodBranch, otherBranch);
+
+      const suggestions = suggestSync(parser, ["prod", ""]);
+
+      assert.deepEqual(suggestions, [{
+        kind: "literal",
+        text: "prod-only",
+      }]);
+    });
+
+    it("should seed top-level suggest runtime through async longestMatch() wrappers", async () => {
+      const prodId = Symbol("longest-prod-source");
+      const otherId = Symbol("longest-other-source");
+      const prodBranch = {
+        mode: "async" as const,
+        $valueType: [] as readonly string[],
+        $stateType: [] as readonly string[],
+        priority: 0,
+        usage: [],
+        leadingNames: new Set<string>(),
+        acceptingAnyToken: false,
+        initialState: "",
+        dependencyMetadata: {
+          source: {
+            kind: "source" as const,
+            sourceId: prodId,
+            preservesSourceValue: true,
+            extractSourceValue(state: unknown) {
+              if (typeof state !== "string" || state.length === 0) {
+                return undefined;
+              }
+              return Promise.resolve({
+                success: true as const,
+                value: state,
+              });
+            },
+          },
+        },
+        parse(context: {
+          readonly buffer: readonly string[];
+          readonly state: string;
+          readonly optionsTerminated: boolean;
+          readonly usage: Usage;
+        }) {
+          const token = context.buffer[0];
+          if (token == null) {
+            return Promise.resolve({
+              success: false as const,
+              consumed: 0,
+              error: message`Expected value.`,
+            });
+          }
+          return Promise.resolve({
+            success: true as const,
+            next: {
+              ...context,
+              buffer: context.buffer.slice(1),
+              state: token,
+            },
+            consumed: [token],
+          });
+        },
+        complete(state: string) {
+          return Promise.resolve({ success: true as const, value: state });
+        },
+        async *suggest(context: {
+          readonly dependencyRegistry?: {
+            get(key: symbol): unknown;
+          };
+        }) {
+          if (context.dependencyRegistry?.get(prodId) === "prod") {
+            yield { kind: "literal" as const, text: "prod-only" };
+          }
+        },
+        getDocFragments() {
+          return { fragments: [] };
+        },
+      } as const satisfies Parser<"async", string, string>;
+      const otherBranch = {
+        ...prodBranch,
+        dependencyMetadata: {
+          source: {
+            ...prodBranch.dependencyMetadata.source,
+            sourceId: otherId,
+          },
+        },
+        parse(context: Parameters<typeof prodBranch.parse>[0]) {
+          if (context.buffer[0] === "prod") {
+            return Promise.resolve({
+              success: false as const,
+              consumed: 0,
+              error: message`Expected non-prod control branch value.`,
+            });
+          }
+          return prodBranch.parse(context);
+        },
+        async *suggest() {},
+      } as const satisfies Parser<"async", string, string>;
+      const parser = longestMatch(prodBranch, otherBranch);
+
+      const suggestions = await suggestAsync(parser, ["prod", ""]);
+
+      assert.deepEqual(suggestions, [{
+        kind: "literal",
+        text: "prod-only",
+      }]);
+    });
+  });
+});
+
+describe("Parser usage field integration", () => {
+  it("should work with complex real-world example", () => {
+    // Simulate a git-like CLI: git [--verbose] (commit [-m MSG] | add FILE...)
+    const commitCommand = command(
+      "commit",
+      object({
+        message: optional(option("-m", "--message", string())),
+      }),
+    );
+
+    const addCommand = command(
+      "add",
+      object({
+        files: multiple(argument(string()), { min: 1 }),
+      }),
+    );
+
+    const gitParser = object({
+      global: optional(option("--verbose")),
+      subcommand: or(commitCommand, addCommand),
+    });
+
+    // Check that usage is properly structured
+    assert.equal(gitParser.usage.length, 2); // exclusive subcommands + optional global option
+
+    // Find optional verbose option
+    const optionalTerms = gitParser.usage.filter((u) => u.type === "optional");
+    assert.equal(optionalTerms.length, 1);
+
+    // Find exclusive subcommands
+    const exclusiveTerms = gitParser.usage.filter((u) =>
+      u.type === "exclusive"
+    );
+    assert.equal(exclusiveTerms.length, 1);
+
+    if (exclusiveTerms[0].type === "exclusive") {
+      assert.equal(exclusiveTerms[0].terms.length, 2);
+      // Each subcommand should start with a command term
+      assert.ok(
+        exclusiveTerms[0].terms[0].some((term) =>
+          term.type === "command" && term.name === "commit"
+        ),
+      );
+      assert.ok(
+        exclusiveTerms[0].terms[1].some((term) =>
+          term.type === "command" && term.name === "add"
+        ),
+      );
+    }
+  });
+
+  it("should maintain usage consistency across parser combinations", () => {
+    const baseOption = option("-v", "--verbose");
+    const baseArg = argument(string());
+
+    // Test that wrapping parsers preserve inner usage correctly
+    const optionalWrapped = optional(baseOption);
+    const multipleWrapped = multiple(baseArg);
+    const defaultWrapped = withDefault(baseOption, false);
+
+    // Optional should wrap the original usage
+    assert.equal(optionalWrapped.usage[0].type, "optional");
+    if (optionalWrapped.usage[0].type === "optional") {
+      assert.deepEqual(optionalWrapped.usage[0].terms, baseOption.usage);
+    }
+
+    // Multiple should wrap the original usage
+    assert.equal(multipleWrapped.usage[0].type, "multiple");
+    if (multipleWrapped.usage[0].type === "multiple") {
+      assert.deepEqual(multipleWrapped.usage[0].terms, baseArg.usage);
+    }
+
+    // WithDefault should wrap like optional
+    assert.equal(defaultWrapped.usage[0].type, "optional");
+    if (defaultWrapped.usage[0].type === "optional") {
+      assert.deepEqual(defaultWrapped.usage[0].terms, baseOption.usage);
+    }
+  });
+});
+
+describe("nested command help", () => {
+  it("should show correct help for nested subcommands", () => {
+    const parser = command(
+      "nest",
+      or(
+        command(
+          "foo",
+          object("Foo Options", {
+            type: constant("foo"),
+            allow: option("-a", "--allow", {
+              description: message`Allow something in foo.`,
+            }),
+            value: option("-v", "--value", integer(), {
+              description: message`Set a foo value.`,
+            }),
+            arg: argument(string({ metavar: "ARG" }), {
+              description: message`A foo argument.`,
+            }),
+          }),
+          { description: message`Foo subcommand description.` },
+        ),
+        command(
+          "bar",
+          object("Bar Options", {
+            type: constant("bar"),
+            foo: option("-f", "--foo", {
+              description: message`Foo option in bar.`,
+            }),
+            bar: option("-b", "--bar", string({ metavar: "VALUE" }), {
+              description: message`Bar option in bar.`,
+            }),
+          }),
+          { description: message`Bar subcommand description.` },
+        ),
+      ),
+      { description: message`Nested command description.` },
+    );
+
+    // Test help for "nest" shows subcommands
+    const nestDocFragments = parser.getDocFragments(
+      { kind: "available" as const, state: ["matched", "nest"] },
+      undefined,
+    );
+    assert.equal(
+      formatMessage(nestDocFragments.description!),
+      "Nested command description.",
+    );
+    const nestAllEntries: DocEntry[] = [];
+    for (const f of nestDocFragments.fragments) {
+      if (f.type === "entry") nestAllEntries.push(f);
+      else nestAllEntries.push(...f.entries);
+    }
+    const nestEntries = nestAllEntries.filter((e) => e.term.type === "command");
+    assert.equal(nestEntries.length, 2);
+    assert.ok(
+      nestEntries.some((e) =>
+        e.term.type === "command" && e.term.name === "foo"
+      ),
+    );
+    assert.ok(
+      nestEntries.some((e) =>
+        e.term.type === "command" && e.term.name === "bar"
+      ),
+    );
+
+    // Test help for "nest foo" shows foo options
+    const fooDocFragments = parser.getDocFragments(
+      {
+        kind: "available" as const,
+        state: ["parsing", [0, {
+          success: true,
+          next: {
+            buffer: [],
+            optionsTerminated: false,
+            state: ["matched", "foo"],
+            usage: [],
+          },
+          consumed: ["foo"],
+        }]],
+      },
+      undefined,
+    );
+    assert.equal(
+      formatMessage(fooDocFragments.description!),
+      "Foo subcommand description.",
+    );
+    const fooEntries = fooDocFragments.fragments
+      .flatMap((f) => f.type === "section" ? f.entries : []);
+    assert.ok(fooEntries.some((e) =>
+      e.term.type === "option" &&
+      e.term.names.includes("-a") &&
+      e.description &&
+      formatMessage(e.description).includes("Allow something in foo")
+    ));
+
+    // Test help for "nest bar" shows bar options
+    const barDocFragments = parser.getDocFragments(
+      {
+        kind: "available" as const,
+        state: ["parsing", [1, {
+          success: true,
+          next: {
+            buffer: [],
+            optionsTerminated: false,
+            state: ["matched", "bar"],
+            usage: [],
+          },
+          consumed: ["bar"],
+        }]],
+      },
+      undefined,
+    );
+    assert.equal(
+      formatMessage(barDocFragments.description!),
+      "Bar subcommand description.",
+    );
+    const barEntries = barDocFragments.fragments
+      .flatMap((f) => f.type === "section" ? f.entries : []);
+    assert.ok(barEntries.some((e) =>
+      e.term.type === "option" &&
+      e.term.names.includes("-f") &&
+      e.description &&
+      formatMessage(e.description).includes("Foo option in bar")
+    ));
+  });
+});
+
+describe("getDocPage", () => {
+  it("should return documentation page for simple parser", () => {
+    const parser = option("-v", "--verbose");
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    assert.ok(Array.isArray(docPage.usage));
+    assert.ok(Array.isArray(docPage.sections));
+    assert.equal(docPage.usage.length, 1);
+    assert.equal(docPage.usage[0].type, "optional");
+  });
+
+  it("should return documentation page for object parser", () => {
+    const parser = object({
+      verbose: option("-v", "--verbose"),
+      port: option("-p", "--port", integer()),
+      file: argument(string({ metavar: "FILE" })),
+    });
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    assert.ok(Array.isArray(docPage.usage));
+    assert.ok(Array.isArray(docPage.sections));
+    assert.ok(docPage.sections.length > 0);
+
+    // Should have entries for all parsers
+    const allEntries = docPage.sections.flatMap((s) => s.entries);
+    assert.equal(allEntries.length, 3);
+
+    // Check for option entries
+    const optionEntries = allEntries.filter((e) => e.term.type === "option");
+    assert.equal(optionEntries.length, 2);
+
+    // Check for argument entry
+    const argumentEntries = allEntries.filter((e) =>
+      e.term.type === "argument"
+    );
+    assert.equal(argumentEntries.length, 1);
+    assert.equal(argumentEntries[0].term.metavar, "FILE");
+  });
+
+  it("should return documentation page with description when parser has description", () => {
+    const parser = object("Test Parser", {
+      verbose: option("-v", "--verbose", {
+        description: message`Enable verbose output`,
+      }),
+    });
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    assert.ok(docPage.sections.length > 0);
+
+    // Should have section with title
+    const labeledSection = docPage.sections.find((s) =>
+      s.title === "Test Parser"
+    );
+    assert.ok(labeledSection);
+    assert.equal(labeledSection.entries.length, 1);
+
+    const entry = labeledSection.entries[0];
+    assert.equal(entry.term.type, "option");
+    if (entry.term.type === "option") {
+      assert.deepEqual(entry.term.names, ["-v", "--verbose"]);
+    }
+    assert.deepEqual(entry.description, message`Enable verbose output`);
+  });
+
+  it("should handle empty arguments array", () => {
+    const parser = option("-v", "--verbose");
+
+    const docPage = getDocPage(parser, []);
+
+    assert.ok(docPage);
+    assert.ok(Array.isArray(docPage.usage));
+    assert.ok(Array.isArray(docPage.sections));
+  });
+
+  it("should return contextual documentation based on parsed arguments", () => {
+    const parser = object({
+      verbose: option("-v", "--verbose"),
+      port: option("-p", "--port", integer()),
+    });
+
+    // Documentation with no arguments
+    const emptyDoc = getDocPage(parser, []);
+    assert.ok(emptyDoc);
+
+    // Documentation after parsing some arguments
+    const contextDoc = getDocPage(parser, ["-v"]);
+    assert.ok(contextDoc);
+
+    // Both should have the same structure but potentially different state
+    assert.equal(emptyDoc.sections.length, contextDoc.sections.length);
+  });
+
+  it("should work with command parsers", () => {
+    const subParser = object({
+      file: argument(string({ metavar: "FILE" })),
+      verbose: option("-v", "--verbose"),
+    });
+
+    const parser = or(
+      command("add", subParser, { description: message`Add a new item` }),
+      command(
+        "remove",
+        object({
+          id: argument(string({ metavar: "ID" })),
+        }),
+        { description: message`Remove an item` },
+      ),
+    );
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage && docPage.usage.length > 0);
+    assert.ok(docPage.sections.length > 0);
+  });
+
+  it("should handle command context correctly", () => {
+    const subParser = object({
+      file: argument(string({ metavar: "FILE" })),
+      verbose: option("-v", "--verbose"),
+    });
+
+    const parser = command("process", subParser, {
+      description: message`Process files`,
+    });
+
+    // Documentation without command
+    const rootDoc = getDocPage(parser);
+    assert.ok(rootDoc);
+
+    // Documentation after command is matched
+    const commandDoc = getDocPage(parser, ["process"]);
+    assert.ok(commandDoc);
+
+    // Usage should be updated to reflect command context
+    assert.ok(rootDoc.usage && rootDoc.usage.length > 0);
+    assert.ok(commandDoc.usage && commandDoc.usage.length > 0);
+  });
+
+  it("should show inner docs for top-level command with no args", () => {
+    const targetDesc = message`Target to build`;
+    const subParser = object({
+      target: option("--target", string({ metavar: "TARGET" }), {
+        description: targetDesc,
+      }),
+    });
+    const brief = message`Build the project`;
+    const footer = message`Examples: build --target x86`;
+    const parser = command("build", subParser, { brief, footer });
+
+    const doc = getDocPage(parser);
+    assert.ok(doc);
+
+    // Should have inner option entries, not just the command entry
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    const targetEntry = allEntries.find(
+      (e) => e.term.type === "option" && e.term.names.includes("--target"),
+    );
+    assert.ok(
+      targetEntry,
+      "Should have --target option entry from inner parser",
+    );
+    assert.deepEqual(targetEntry?.description, targetDesc);
+
+    // Should have brief and footer from the command
+    assert.ok(doc.brief);
+    assert.ok(doc.footer);
+  });
+
+  it("should show inner docs for top-level command with no args (async)", async () => {
+    const targetDesc = message`Target to build`;
+    const subParser = object({
+      target: option("--target", string({ metavar: "TARGET" }), {
+        description: targetDesc,
+      }),
+    });
+    const brief = message`Build the project`;
+    const footer = message`Examples: build --target x86`;
+    const parser = command("build", subParser, { brief, footer });
+
+    const doc = await getDocPageAsync(parser);
+    assert.ok(doc);
+
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    const targetEntry = allEntries.find(
+      (e) => e.term.type === "option" && e.term.names.includes("--target"),
+    );
+    assert.ok(
+      targetEntry,
+      "Should have --target option entry from inner parser",
+    );
+    assert.deepEqual(targetEntry?.description, targetDesc);
+    assert.ok(doc.brief);
+    assert.ok(doc.footer);
+  });
+
+  it("should not auto-navigate for exclusive command groups with no args", () => {
+    const parser = or(
+      command(
+        "build",
+        object({
+          target: option("--target", string()),
+        }),
+      ),
+      command("test", object({})),
+    );
+
+    const doc = getDocPage(parser);
+    assert.ok(doc);
+
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    const cmdEntries = allEntries.filter((e) => e.term.type === "command");
+    assert.ok(cmdEntries.length >= 2, "Should list both commands");
+    const optEntries = allEntries.filter((e) => e.term.type === "option");
+    assert.equal(optEntries.length, 0, "Should not show inner options");
+  });
+
+  it("should not synthesize state for non-command parsers with command entry", () => {
+    // A wrapper that forwards everything from a command() parser but strips
+    // the internal brand symbol.  buildDocPage must not try to call
+    // getDocFragments with ["matched", name] on such a wrapper.
+    const inner: Parser<"sync", unknown, unknown> = command(
+      "wrapped",
+      object({
+        opt: option("--opt", string()),
+      }),
+    );
+    const wrapper: Parser<"sync", unknown, unknown> = {
+      mode: inner.mode,
+      $valueType: inner.$valueType,
+      $stateType: inner.$stateType,
+      priority: inner.priority,
+      usage: inner.usage,
+      leadingNames: inner.leadingNames,
+      acceptingAnyToken: inner.acceptingAnyToken,
+      initialState: inner.initialState,
+      parse: (ctx) => inner.parse(ctx),
+      complete: (state) => inner.complete(state),
+      suggest: (ctx, prefix) => inner.suggest(ctx, prefix),
+      getDocFragments: (state, dv) => inner.getDocFragments(state, dv),
+    };
+
+    const doc = getDocPage(wrapper);
+    assert.ok(doc);
+    // Without the brand, the wrapper should NOT auto-navigate into
+    // the inner parser's options—it should show the single command entry.
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    assert.equal(allEntries.length, 1);
+    assert.equal(allEntries[0].term.type, "command");
+  });
+
+  it("should show subcommand option descriptions with getDocPage", () => {
+    const targetDesc = message`Target language code`;
+    const sourceDesc = message`Source language code`;
+    const subParser = object({
+      target: option("-t", "--target", string({ metavar: "LANG" }), {
+        description: targetDesc,
+      }),
+      source: option("-s", "--source", string({ metavar: "LANG" }), {
+        description: sourceDesc,
+      }),
+    });
+    const translateCmd = command("translate", subParser);
+    const configCmd = command("config", object({}));
+    const parser = or(translateCmd, configCmd);
+
+    const doc = getDocPage(parser, ["translate"]);
+    assert.ok(doc);
+
+    // Sections should include option descriptions
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    const targetEntry = allEntries.find(
+      (e) => e.term.type === "option" && e.term.names.includes("--target"),
+    );
+    const sourceEntry = allEntries.find(
+      (e) => e.term.type === "option" && e.term.names.includes("--source"),
+    );
+
+    assert.ok(targetEntry, "Should have --target option entry");
+    assert.ok(sourceEntry, "Should have --source option entry");
+    assert.deepEqual(targetEntry?.description, targetDesc);
+    assert.deepEqual(sourceEntry?.description, sourceDesc);
+  });
+
+  it("should preserve command-specific docs inside seq()", () => {
+    const parser = seq(
+      optional(argument(string({ metavar: "PROFILE" }))),
+      or(
+        command("build", object({ clean: option("--clean") })),
+        command("deploy", object({ force: option("--force") }), {
+          usageLine: [{ type: "literal", value: "deployment-usage" }],
+        }),
+      ),
+    );
+
+    const docPage = getDocPage(parser, ["deploy"]);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage);
+    assert.equal(
+      formatUsage("tool", docPage.usage),
+      "tool deploy deployment-usage",
+    );
+    const allEntries = docPage.sections.flatMap((s) => s.entries);
+    assert.ok(
+      allEntries.some((e) =>
+        e.term.type === "option" && e.term.names.includes("--force")
+      ),
+    );
+    assert.ok(
+      !allEntries.some((e) =>
+        e.term.type === "option" && e.term.names.includes("--clean")
+      ),
+    );
+  });
+
+  it("should reveal matched hidden commands after exclusive terms", () => {
+    const parser = seq(
+      or(
+        command("alpha", object({}), { hidden: true }),
+        command("beta", object({}), { hidden: true }),
+      ),
+      command("child", object({}), { hidden: true }),
+    );
+
+    const docPage = getDocPageSync(parser, ["alpha", "child"]);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage);
+    assert.equal(formatUsage("tool", docPage.usage), "tool alpha child");
+  });
+
+  it("should preserve seq command docs after positional prefixes", () => {
+    const parser = seq(
+      optional(argument(string({ metavar: "PROFILE" }))),
+      or(
+        command("build", object({ clean: option("--clean") })),
+        command("deploy", object({ force: option("--force") }), {
+          usageLine: [{ type: "literal", value: "deployment-usage" }],
+        }),
+      ),
+    );
+
+    const docPage = getDocPage(parser, ["staging", "deploy"]);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage);
+    assert.equal(
+      formatUsage("tool", docPage.usage),
+      "tool deploy deployment-usage",
+    );
+  });
+
+  it("should not preserve seq command docs after invalid prefixes", () => {
+    const parser = seq(
+      or(
+        command("build", object({ clean: option("--clean") })),
+        command("deploy", object({ force: option("--force") }), {
+          usageLine: [{ type: "literal", value: "deployment-usage" }],
+        }),
+      ),
+    );
+
+    const docPage = getDocPage(parser, ["staging", "deploy"]);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage);
+    assert.equal(
+      formatUsage("tool", docPage.usage),
+      "tool (build [--clean] | deploy [--force])",
+    );
+  });
+
+  it("should not enter seq command docs for positional command names", () => {
+    const parser = seq(
+      argument(string({ metavar: "PROFILE" })),
+      command("deploy", object({ force: option("--force") }), {
+        usageLine: [{ type: "literal", value: "deployment-usage" }],
+      }),
+    );
+
+    const docPage = getDocPage(parser, ["deploy"]);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage);
+    assert.equal(
+      formatUsage("tool", docPage.usage),
+      "tool PROFILE deploy [--force]",
+    );
+    const allEntries = docPage.sections.flatMap((s) => s.entries);
+    assert.ok(
+      !allEntries.some((e) =>
+        e.term.type === "option" && e.term.names.includes("--force")
+      ),
+    );
+  });
+
+  it("should not enter async seq command docs for positional command names", async () => {
+    const parser = seq(
+      argument(string({ metavar: "PROFILE" })),
+      command("deploy", object({ force: option("--force") }), {
+        usageLine: [{ type: "literal", value: "deployment-usage" }],
+      }),
+    );
+
+    const docPage = await getDocPageAsync(parser, ["deploy"]);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage);
+    assert.equal(
+      formatUsage("tool", docPage.usage),
+      "tool PROFILE deploy [--force]",
+    );
+    const allEntries = docPage.sections.flatMap((s) => s.entries);
+    assert.ok(
+      !allEntries.some((e) =>
+        e.term.type === "option" && e.term.names.includes("--force")
+      ),
+    );
+  });
+
+  it("should enter seq command docs after repeated positional names", () => {
+    const parser = seq(
+      argument(string({ metavar: "PROFILE" })),
+      command("deploy", object({ force: option("--force") }), {
+        usageLine: [{ type: "literal", value: "deployment-usage" }],
+      }),
+    );
+
+    const docPage = getDocPage(parser, ["deploy", "deploy"]);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage);
+    assert.equal(
+      formatUsage("tool", docPage.usage),
+      "tool deploy deployment-usage",
+    );
+  });
+
+  it("should use actual buffer advancement for replayed command docs", () => {
+    const parser = or(
+      object({
+        shared: option("--shared", string()),
+        alpha: command("alpha", object({ a: option("--a") }), {
+          usageLine: [{ type: "literal", value: "alpha-usage" }],
+        }),
+      }),
+      object({
+        shared: option("--shared", string()),
+        deploy: command("deploy", object({ force: option("--force") }), {
+          usageLine: [{ type: "literal", value: "deployment-usage" }],
+        }),
+      }),
+    );
+
+    const docPage = getDocPage(parser, ["--shared", "value", "deploy"]);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage);
+    assert.equal(
+      formatUsage("tool", docPage.usage),
+      "tool deploy deployment-usage",
+    );
+  });
+
+  it("should use actual buffer advancement for async replayed command docs", async () => {
+    const parser = or(
+      object({
+        shared: option("--shared", string()),
+        alpha: command("alpha", object({ a: option("--a") }), {
+          usageLine: [{ type: "literal", value: "alpha-usage" }],
+        }),
+      }),
+      object({
+        shared: option("--shared", string()),
+        deploy: command("deploy", object({ force: option("--force") }), {
+          usageLine: [{ type: "literal", value: "deployment-usage" }],
+        }),
+      }),
+    );
+
+    const docPage = await getDocPageAsync(parser, [
+      "--shared",
+      "value",
+      "deploy",
+    ]);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage);
+    assert.equal(
+      formatUsage("tool", docPage.usage),
+      "tool deploy deployment-usage",
+    );
+  });
+
+  it("should handle exclusive (or) parsers correctly", () => {
+    const parser = or(
+      option("-v", "--verbose"),
+      option("-q", "--quiet"),
+      option("-d", "--debug"),
+    );
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    assert.ok(docPage.usage && docPage.usage.length > 0);
+    if (docPage.usage) {
+      assert.equal(docPage.usage[0].type, "exclusive");
+      if (docPage.usage[0].type === "exclusive") {
+        assert.equal(docPage.usage[0].terms.length, 3);
+      }
+    }
+  });
+
+  it("should handle multiple parser correctly", () => {
+    const parser = object({
+      files: multiple(argument(string({ metavar: "FILE" }))),
+      verbose: option("-v", "--verbose"),
+    });
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    const allEntries = docPage.sections.flatMap((s) => s.entries);
+
+    // Should have entries for both multiple files and verbose option
+    assert.ok(allEntries.length >= 2);
+
+    const fileEntry = allEntries.find((e) =>
+      e.term.type === "argument" && e.term.metavar === "FILE"
+    );
+    assert.ok(fileEntry);
+  });
+
+  it("should handle optional parser correctly", () => {
+    const parser = object({
+      verbose: option("-v", "--verbose"),
+      output: optional(option("-o", "--output", string({ metavar: "FILE" }))),
+    });
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    const allEntries = docPage.sections.flatMap((s) => s.entries);
+
+    // Should have entries for both verbose and optional output
+    assert.ok(allEntries.length >= 2);
+
+    const outputEntry = allEntries.find((e) =>
+      e.term.type === "option" &&
+      e.term.names && e.term.names.includes("--output")
+    );
+    assert.ok(outputEntry);
+  });
+
+  it("should handle withDefault parser correctly", () => {
+    const parser = object({
+      verbose: option("-v", "--verbose"),
+      port: withDefault(option("-p", "--port", integer()), 8080),
+    });
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    const allEntries = docPage.sections.flatMap((s) => s.entries);
+
+    const portEntry = allEntries.find((e) =>
+      e.term.type === "option" &&
+      e.term.names && e.term.names.includes("--port")
+    );
+    assert.ok(portEntry);
+    assert.deepEqual(portEntry.default, message`${"8080"}`);
+  });
+
+  it("should handle tuple parser correctly", () => {
+    const parser = tuple([
+      argument(string({ metavar: "INPUT" })),
+      option("-v", "--verbose"),
+      argument(string({ metavar: "OUTPUT" })),
+    ]);
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    const allEntries = docPage.sections.flatMap((s) => s.entries);
+
+    // Should have entries for all tuple elements
+    assert.ok(allEntries.length >= 3);
+
+    const inputEntry = allEntries.find((e) =>
+      e.term.type === "argument" && e.term.metavar === "INPUT"
+    );
+    const outputEntry = allEntries.find((e) =>
+      e.term.type === "argument" && e.term.metavar === "OUTPUT"
+    );
+    const verboseEntry = allEntries.find((e) =>
+      e.term.type === "option" &&
+      e.term.names && e.term.names.includes("--verbose")
+    );
+
+    assert.ok(inputEntry);
+    assert.ok(outputEntry);
+    assert.ok(verboseEntry);
+  });
+
+  it("should work with constant parser", () => {
+    const parser = constant("test-value");
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    // Constant parsers typically don't contribute to documentation
+    assert.ok(Array.isArray(docPage.usage));
+    assert.ok(Array.isArray(docPage.sections));
+  });
+
+  it("should handle parser that fails to parse arguments", () => {
+    const parser = option("-v", "--verbose");
+
+    // Try to get documentation with invalid arguments
+    const docPage = getDocPage(parser, ["--invalid-option"]);
+
+    assert.ok(docPage);
+    // Should still return documentation even if parsing fails
+    assert.ok(Array.isArray(docPage.usage));
+    assert.ok(Array.isArray(docPage.sections));
+  });
+
+  it("should handle complex nested parser structures", () => {
+    const parser = object("CLI Tool", {
+      verbose: option("-v", "--verbose", {
+        description: message`Enable verbose output`,
+      }),
+      config: option("-c", "--config", string({ metavar: "FILE" }), {
+        description: message`Configuration file`,
+      }),
+      file: argument(string({ metavar: "INPUT" })),
+    });
+
+    const docPage = getDocPage(parser);
+
+    assert.ok(docPage);
+    assert.ok(docPage.sections.length > 0);
+
+    // Should have sections from the structure
+    const cliSection = docPage.sections.find((s) => s.title === "CLI Tool");
+    assert.ok(cliSection);
+    assert.ok(cliSection.entries.length >= 3);
+  });
+
+  it("should resolve nested exclusive usage for nested subcommands", () => {
+    // Regression test for https://github.com/dahlia/optique/issues/96
+    // When using or(topLevelCommand, command("nested", or(foo, bar))),
+    // help for "nested foo" should only show foo's usage, not bar's.
+    const fooCommand = command(
+      "foo",
+      object({ flag: option("--fooflag", string()) }),
+    );
+    const barCommand = command(
+      "bar",
+      object({ flag: option("--barflag", string()) }),
+    );
+    const topLevelCommand = command(
+      "toplevel",
+      object({ flag: option("--toplevelflag", string()) }),
+    );
+    const nestedGroup = command("nested", or(fooCommand, barCommand));
+    const parser = or(topLevelCommand, nestedGroup);
+
+    const doc = getDocPage(parser, ["nested", "foo"]);
+    assert.ok(doc);
+    assert.ok(doc.usage && doc.usage.length > 0);
+
+    // The usage should show "nested foo --fooflag STRING",
+    // NOT an exclusive containing both foo and bar
+    const commandTerms = doc.usage.filter((t) => t.type === "command");
+    assert.equal(commandTerms.length, 2);
+    assert.equal(commandTerms[0].name, "nested");
+    assert.equal(commandTerms[1].name, "foo");
+
+    // Should not contain any exclusive terms (they should all be resolved)
+    const exclusiveTerms = doc.usage.filter((t) => t.type === "exclusive");
+    assert.equal(
+      exclusiveTerms.length,
+      0,
+      "Usage should not contain unresolved exclusive terms",
+    );
+
+    // Should contain --fooflag but not --barflag
+    const optionTerms = doc.usage.filter((t) => t.type === "option");
+    assert.ok(
+      optionTerms.some((t) =>
+        t.type === "option" && t.names.includes("--fooflag")
+      ),
+      "Usage should contain --fooflag",
+    );
+    assert.ok(
+      !optionTerms.some((t) =>
+        t.type === "option" && t.names.includes("--barflag")
+      ),
+      "Usage should NOT contain --barflag",
+    );
+  });
+
+  it("should resolve nested exclusive usage when using longestMatch with subcommands", () => {
+    // This test reproduces the bug where `help add` shows full usage instead of
+    // subcommand-specific usage when the parser is combined with longestMatch()
+    const addCommand = command(
+      "add",
+      object({
+        name: option("-n", "--name", string()),
+      }),
+    );
+
+    const listCommand = command(
+      "list",
+      object({
+        pattern: argument(string()),
+      }),
+    );
+
+    const globalOptions = object({
+      verbose: optional(option("--verbose")),
+    });
+
+    const parser = merge(globalOptions, or(addCommand, listCommand));
+
+    // Simulate what facade.ts does - combine with help command via longestMatch
+    const helpCommand = command(
+      "help",
+      multiple(argument(string())),
+    );
+
+    const combinedParser = longestMatch(parser, helpCommand);
+
+    // Get doc page for "add" subcommand
+    const doc = getDocPage(combinedParser, ["add"]);
+    assert.ok(doc);
+    assert.ok(doc.usage && doc.usage.length > 0);
+
+    // The usage should show only the "add" command usage, not all alternatives
+    // Expected: [command "add", option "-n/--name", optional "--verbose"]
+    // NOT: [exclusive [...add/list...], optional [...], exclusive [...help...]]
+    if (doc.usage) {
+      // First term should be the "add" command, not an exclusive
+      const firstTerm = doc.usage[0];
+      assert.equal(
+        firstTerm.type,
+        "command",
+        `Expected first usage term to be 'command', got '${firstTerm.type}'`,
+      );
+      if (firstTerm.type === "command") {
+        assert.equal(firstTerm.name, "add");
+      }
+    }
+  });
+
+  it("should resolve command-specific usage when navigating by alias", () => {
+    const installCommand = command(
+      "install",
+      object({
+        name: option("--name", string()),
+      }),
+      { aliases: ["i"] },
+    );
+
+    const inspectCommand = command(
+      "inspect",
+      object({
+        verbose: option("--verbose"),
+      }),
+    );
+
+    const parser = longestMatch(or(installCommand, inspectCommand));
+
+    const doc = getDocPage(parser, ["i"]);
+    assert.ok(doc);
+    assert.ok(doc.usage && doc.usage.length > 0);
+
+    if (doc.usage) {
+      const firstTerm = doc.usage[0];
+      assert.equal(
+        firstTerm.type,
+        "command",
+        `Expected first usage term to be 'command', got '${firstTerm.type}'`,
+      );
+      if (firstTerm.type === "command") {
+        assert.equal(firstTerm.name, "install");
+      }
+    }
+    assert.ok(
+      doc.usage.some((term) =>
+        term.type === "option" && term.names.includes("--name")
+      ),
+    );
+    assert.ok(
+      !doc.usage.some((term) =>
+        term.type === "option" && term.names.includes("--verbose")
+      ),
+    );
+  });
+
+  it("should apply command usageLine when navigating by alias", () => {
+    const installCommand = command(
+      "install",
+      object({
+        name: option("--name", string()),
+      }),
+      {
+        aliases: ["i"],
+        usageLine: [{ type: "literal", value: "install-usage" }],
+      },
+    );
+
+    const inspectCommand = command(
+      "inspect",
+      object({
+        verbose: option("--verbose"),
+      }),
+    );
+
+    const parser = longestMatch(or(installCommand, inspectCommand));
+
+    const doc = getDocPage(parser, ["i"]);
+    assert.ok(doc);
+    assert.ok(doc.usage && doc.usage.length > 0);
+
+    assert.ok(
+      doc.usage.some((term) =>
+        term.type === "literal" && term.value === "install-usage"
+      ),
+    );
+    assert.ok(
+      !doc.usage.some((term) =>
+        term.type === "option" && term.names.includes("--name")
+      ),
+    );
+    assert.ok(
+      !doc.usage.some((term) =>
+        term.type === "option" && term.names.includes("--verbose")
+      ),
+    );
+  });
+
+  it("should include choices in formatted help for option with choice()", () => {
+    const parser = object({
+      format: option("--format", choice(["json", "yaml", "xml"]), {
+        description: message`Output format`,
+      }),
+    });
+
+    const docPage = getDocPage(parser);
+    assert.ok(docPage);
+
+    const formatted = formatDocPage("myapp", docPage, { showChoices: true });
+    assert.ok(
+      formatted.includes("(choices: json, yaml, xml)"),
+      `Expected formatted help to include choices, got:\n${formatted}`,
+    );
+    assert.ok(formatted.includes("Output format"));
+  });
+
+  it("should include choices in formatted help for argument with choice()", () => {
+    const parser = object({
+      env: argument(choice(["dev", "staging", "prod"])),
+    });
+
+    const docPage = getDocPage(parser);
+    assert.ok(docPage);
+
+    const formatted = formatDocPage("myapp", docPage, { showChoices: true });
+    assert.ok(
+      formatted.includes("(choices: dev, staging, prod)"),
+      `Expected formatted help to include choices, got:\n${formatted}`,
+    );
+  });
+
+  it("should show both default and choices together", () => {
+    const parser = object({
+      format: withDefault(
+        option("--format", choice(["json", "yaml"]), {
+          description: message`Output format`,
+        }),
+        "json",
+      ),
+    });
+
+    const docPage = getDocPage(parser);
+    assert.ok(docPage);
+
+    const formatted = formatDocPage("myapp", docPage, {
+      showDefault: true,
+      showChoices: true,
+    });
+    assert.ok(formatted.includes('["json"]'), "Should include default value");
+    assert.ok(
+      formatted.includes("(choices: json, yaml)"),
+      "Should include choices",
+    );
+    // Verify order: default before choices
+    const defaultIdx = formatted.indexOf('["json"]');
+    const choicesIdx = formatted.indexOf("(choices:");
+    assert.ok(
+      defaultIdx < choicesIdx,
+      "Default should appear before choices",
+    );
+  });
+
+  it("should not show choices when showChoices is disabled", () => {
+    const parser = object({
+      format: option("--format", choice(["json", "yaml"])),
+    });
+
+    const docPage = getDocPage(parser);
+    assert.ok(docPage);
+
+    const formatted = formatDocPage("myapp", docPage);
+    assert.ok(!formatted.includes("choices"));
+    assert.ok(!formatted.includes("json, yaml"));
+  });
+});
+
+describe("Error message customization", () => {
+  it("should use custom noMatch error in or() combinator", () => {
+    const parser = or(
+      command("add", constant("add")),
+      command("remove", constant("remove")),
+      {
+        errors: {
+          noMatch: message`Please use either 'add' or 'remove' command.`,
+        },
+      },
+    );
+
+    const result = parse(parser, []);
+    assert.strictEqual(result.success, false);
+    if (!result.success) {
+      assert.strictEqual(
+        formatMessage(result.error),
+        "Please use either 'add' or 'remove' command.",
+      );
+    }
+  });
+
+  it("should use custom unexpectedInput error in or() combinator", () => {
+    const parser = or(
+      command("add", constant("add")),
+      command("remove", constant("remove")),
+      {
+        errors: {
+          unexpectedInput: (token) =>
+            message`Unknown command '${text(token)}'. Use 'add' or 'remove'.`,
+        },
+      },
+    );
+
+    const result = parse(parser, ["unknown"]);
+    assert.strictEqual(result.success, false);
+    if (!result.success) {
+      assert.strictEqual(
+        formatMessage(result.error),
+        "Unknown command 'unknown'. Use 'add' or 'remove'.",
+      );
+    }
+  });
+
+  it("should use custom noMatch error in longestMatch() combinator", () => {
+    const parser = longestMatch(
+      command("add", constant("add")),
+      command("remove", constant("remove")),
+      {
+        errors: {
+          noMatch: message`Please specify a valid command: add or remove.`,
+        },
+      },
+    );
+
+    const result = parse(parser, []);
+    assert.strictEqual(result.success, false);
+    if (!result.success) {
+      assert.strictEqual(
+        formatMessage(result.error),
+        "Please specify a valid command: add or remove.",
+      );
+    }
+  });
+
+  it("should use static unexpectedInput error in longestMatch() combinator", () => {
+    const parser = longestMatch(
+      command("add", constant("add")),
+      command("remove", constant("remove")),
+      {
+        errors: {
+          unexpectedInput: message`Invalid command. Supported: add, remove.`,
+        },
+      },
+    );
+
+    const result = parse(parser, ["invalid"]);
+    assert.strictEqual(result.success, false);
+    if (!result.success) {
+      assert.strictEqual(
+        formatMessage(result.error),
+        "Invalid command. Supported: add, remove.",
+      );
+    }
+  });
+
+  it("should use default messages when no custom errors are provided", () => {
+    const parser = or(
+      command("add", constant("add")),
+      command("remove", constant("remove")),
+    );
+
+    const result = parse(parser, []);
+    assert.strictEqual(result.success, false);
+    if (!result.success) {
+      assert.strictEqual(
+        formatMessage(result.error),
+        "No matching command found.",
+      );
+    }
+  });
+});
+
+describe("Annotations system", () => {
+  it("should pass annotations to parser via ParseOptions", async () => {
+    const testKey = Symbol.for("@test/data");
+    const testData = { value: 42 };
+    const { getAnnotations } = await import("#src/internal/annotations.ts");
+    let capturedState: unknown;
+
+    // Use constant parser and wrap complete() to capture state
+    const baseParser = constant("test-value");
+    const wrappedParser = {
+      ...baseParser,
+      complete: (state: unknown) => {
+        capturedState = state;
+        return baseParser.complete(state as "test-value");
+      },
+    };
+
+    const result = parse(wrappedParser, [], {
+      annotations: { [testKey]: testData },
+    });
+
+    assert.ok(result.success);
+    assert.ok(capturedState !== undefined);
+
+    const annotations = getAnnotations(capturedState);
+    assert.ok(annotations !== undefined);
+    assert.deepEqual(annotations[testKey], testData);
+  });
+
+  it("should extract annotations using getAnnotations()", async () => {
+    const { getAnnotations, annotationKey } = await import(
+      "./internal/annotations.ts"
+    );
+    const testKey = Symbol.for("@test/key");
+    const testData = { foo: "bar" };
+
+    // Test with valid state containing annotations
+    const stateWithAnnotations = {
+      [annotationKey]: { [testKey]: testData },
+    };
+    const annotations1 = getAnnotations(stateWithAnnotations);
+    assert.ok(annotations1 !== undefined);
+    assert.deepEqual(annotations1[testKey], testData);
+
+    // Test with state without annotations (returns undefined)
+    const stateWithoutAnnotations = { someField: "value" };
+    const annotations2 = getAnnotations(stateWithoutAnnotations);
+    assert.equal(annotations2, undefined);
+
+    // Test with non-object state (returns undefined)
+    const annotations3 = getAnnotations(null);
+    assert.equal(annotations3, undefined);
+
+    const annotations4 = getAnnotations(undefined);
+    assert.equal(annotations4, undefined);
+
+    const annotations5 = getAnnotations(42);
+    assert.equal(annotations5, undefined);
+
+    const annotations6 = getAnnotations("string");
+    assert.equal(annotations6, undefined);
+  });
+
+  it("should work with annotations in parse()", () => {
+    const configKey = Symbol.for("@test/config");
+    const configData = { apiUrl: "https://api.test" };
+
+    // Simply verify that annotations are passed without error
+    const parser = option("-v");
+    const result = parse(parser, ["-v"], {
+      annotations: { [configKey]: configData },
+    });
+
+    assert.ok(result.success);
+  });
+
+  it("should work without annotations (backward compatibility)", () => {
+    const parser = option("-v");
+    const result = parse(parser, ["-v"]); // No ParseOptions
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value, true);
+    }
+  });
+
+  it("should support multiple annotation keys", async () => {
+    const key1 = Symbol.for("@package1/data");
+    const key2 = Symbol.for("@package2/data");
+    const key3 = Symbol.for("@package3/data");
+    const data1 = { pkg1: "value1" };
+    const data2 = { pkg2: "value2" };
+    const data3 = { pkg3: "value3" };
+
+    const { getAnnotations } = await import("#src/internal/annotations.ts");
+    let capturedState: unknown;
+
+    const baseParser = constant("test");
+    const wrappedParser = {
+      ...baseParser,
+      complete: (state: unknown) => {
+        capturedState = state;
+        return baseParser.complete(state as "test");
+      },
+    };
+
+    const result = parse(wrappedParser, [], {
+      annotations: {
+        [key1]: data1,
+        [key2]: data2,
+        [key3]: data3,
+      },
+    });
+
+    assert.ok(result.success);
+    const annotations = getAnnotations(capturedState);
+    assert.ok(annotations !== undefined);
+    assert.deepEqual(annotations[key1], data1);
+    assert.deepEqual(annotations[key2], data2);
+    assert.deepEqual(annotations[key3], data3);
+  });
+
+  it("should support annotations in parseSync()", async () => {
+    const testKey = Symbol.for("@test/sync");
+    const testData = "sync-data";
+    const { getAnnotations } = await import("#src/internal/annotations.ts");
+    const { parseSync } = await import("#src/parser.ts");
+    let capturedState: unknown;
+
+    const baseParser = object({ value: constant("ok") });
+    const wrappedParser = {
+      ...baseParser,
+      complete: (state: unknown) => {
+        capturedState = state;
+        return baseParser.complete(
+          state as { readonly value: "ok" },
+        );
+      },
+    };
+
+    const result = parseSync(wrappedParser, [], {
+      annotations: { [testKey]: testData },
+    });
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.deepEqual(result.value, { value: "ok" });
+    }
+    const annotations = getAnnotations(capturedState);
+    assert.ok(annotations !== undefined);
+    assert.equal(annotations[testKey], testData);
+  });
+
+  it("should support annotations in parseAsync()", async () => {
+    const testKey = Symbol.for("@test/async-func");
+    const testData = "async-data";
+    const { getAnnotations } = await import("#src/internal/annotations.ts");
+    const { parseAsync } = await import("#src/parser.ts");
+    let capturedState: unknown;
+
+    const baseParser = object({ value: constant("ok") });
+    const wrappedParser = {
+      ...baseParser,
+      complete: (state: unknown) => {
+        capturedState = state;
+        return baseParser.complete(
+          state as { readonly value: "ok" },
+        );
+      },
+    };
+
+    const result = await parseAsync(wrappedParser, [], {
+      annotations: { [testKey]: testData },
+    });
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.deepEqual(result.value, { value: "ok" });
+    }
+    const annotations = getAnnotations(capturedState);
+    assert.ok(annotations !== undefined);
+    assert.equal(annotations[testKey], testData);
+  });
+
+  it("should parseAsync or() with annotations on the initial state", async () => {
+    const parser = createIssue183Parser();
+    const result = await parseAsync(parser, ["--silent"], {
+      annotations: issue183Annotations,
+    });
+
+    assert.deepEqual(result, {
+      success: true,
+      value: { tag: "a", silent: true },
+    });
+  });
+
+  it("should preserve non-object parser value when annotations are provided", () => {
+    const testKey = Symbol.for("@test/non-object");
+    const result = parse(constant("ok"), [], {
+      annotations: { [testKey]: "value" },
+    });
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value, "ok");
+    }
+  });
+
+  it("should preserve non-object parser value in parseAsync()", async () => {
+    const testKey = Symbol.for("@test/non-object-async");
+    const { parseAsync } = await import("#src/parser.ts");
+    const result = await parseAsync(constant("ok"), [], {
+      annotations: { [testKey]: "value" },
+    });
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value, "ok");
+    }
+  });
+
+  it("should preserve array state annotations across state transitions", async () => {
+    const testKey = Symbol.for("@test/array-state");
+    const { getAnnotations } = await import("#src/internal/annotations.ts");
+    const baseParser = multiple(argument(string()));
+    let capturedState: unknown;
+    const parser = {
+      ...baseParser,
+      complete: (state: unknown) => {
+        capturedState = state;
+        return baseParser.complete(state as typeof baseParser.initialState);
+      },
+    };
+    const result = parse(parser, ["a"], {
+      annotations: { [testKey]: "value" },
+    });
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.deepEqual(result.value, ["a"]);
+    }
+    const annotations = getAnnotations(capturedState);
+    assert.ok(annotations !== undefined);
+    assert.equal(annotations[testKey], "value");
+  });
+
+  it("should not unwrap regular objects that contain only internal value key", async () => {
+    const { annotationStateValueKey } = await import(
+      "./internal/annotations.ts"
+    );
+    const value = {
+      ok: true,
+      [annotationStateValueKey]: "not-wrapper",
+    };
+    const result = parse(constant(value), []);
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.deepEqual(result.value, value);
+    }
+  });
+
+  it("should not unwrap objects without wrapper marker", async () => {
+    const testKey = Symbol.for("@test/unwrap-guard");
+    const {
+      annotationKey,
+      annotationStateValueKey,
+    } = await import("#src/internal/annotations.ts");
+    const value = {
+      ok: true,
+      [annotationKey]: { [testKey]: "value" },
+      [annotationStateValueKey]: "not-wrapper",
+    };
+    const result = parse(constant(value), [], {
+      annotations: { [testKey]: "value" },
+    });
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.deepEqual(result.value, value);
+    }
+  });
+
+  it("should not unwrap objects when wrapper marker is not true", async () => {
+    const testKey = Symbol.for("@test/unwrap-marker");
+    const {
+      annotationKey,
+      annotationStateValueKey,
+      annotationWrapperKey,
+    } = await import("#src/internal/annotations.ts");
+    const value = {
+      ok: true,
+      [annotationKey]: { [testKey]: "value" },
+      [annotationStateValueKey]: "not-wrapper",
+      [annotationWrapperKey]: false,
+    };
+    const result = parse(constant(value), [], {
+      annotations: { [testKey]: "value" },
+    });
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.deepEqual(result.value, value);
+    }
+  });
+
+  it("should not unwrap user-defined wrapper shape with annotations", async () => {
+    const testKey = Symbol.for("@test/user-wrapper-shape");
+    const {
+      annotationKey,
+      annotationStateValueKey,
+      annotationWrapperKey,
+    } = await import("#src/internal/annotations.ts");
+    const value = {
+      ok: true,
+      [annotationKey]: { [testKey]: "value" },
+      [annotationStateValueKey]: "not-injected",
+      [annotationWrapperKey]: true,
+    };
+    const result = parse(constant(value), [], {
+      annotations: { [testKey]: "value" },
+    });
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.deepEqual(result.value, value);
+    }
+  });
+
+  it("should not unwrap wrapper-shaped objects without annotations", async () => {
+    const {
+      annotationKey,
+      annotationStateValueKey,
+      annotationWrapperKey,
+    } = await import("#src/internal/annotations.ts");
+    const value = {
+      ok: true,
+      [annotationKey]: {},
+      [annotationStateValueKey]: "not-wrapper",
+      [annotationWrapperKey]: true,
+    };
+    const result = parse(constant(value), []);
+
+    assert.ok(result.success);
+    if (result.success) {
+      assert.deepEqual(result.value, value);
+    }
+  });
+
+  it("should not unwrap object state rebuilt from primitive wrapper", () => {
+    const parser: Parser<"sync", unknown, unknown> = {
+      mode: "sync",
+      $stateType: [] as const,
+      $valueType: [] as const,
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: undefined,
+      parse(context) {
+        return {
+          success: true as const,
+          consumed: [context.buffer[0] ?? ""],
+          next: {
+            ...context,
+            buffer: context.buffer.slice(1),
+            state: {
+              ...(context.state as unknown as Record<PropertyKey, unknown>),
+              ok: true,
+            },
+          },
+        };
+      },
+      complete(state) {
+        return { success: true as const, value: state };
+      },
+      suggest() {
+        return [];
+      },
+      getDocFragments() {
+        return { fragments: [] };
+      },
+    };
+
+    const result = parse(parser, ["a"], {
+      annotations: { [Symbol.for("@test/unwrap-regression")]: true },
+    });
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(typeof result.value, "object");
+      assert.ok(result.value !== null);
+      assert.ok((result.value as Record<string, unknown>).ok);
+    }
+  });
+
+  it("should not unwrap wrapper state mutated in place", async () => {
+    const {
+      annotationWrapperKey,
+      annotationStateValueKey,
+    } = await import("#src/internal/annotations.ts");
+    const parser: Parser<"sync", unknown, unknown> = {
+      mode: "sync",
+      $stateType: [] as const,
+      $valueType: [] as const,
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: undefined,
+      parse(context) {
+        const nextState = context.state as Record<PropertyKey, unknown>;
+        nextState.ok = true;
+        return {
+          success: true as const,
+          consumed: [context.buffer[0] ?? ""],
+          next: {
+            ...context,
+            buffer: context.buffer.slice(1),
+            state: nextState,
+          },
+        };
+      },
+      complete(state) {
+        return { success: true as const, value: state };
+      },
+      suggest() {
+        return [];
+      },
+      getDocFragments() {
+        return { fragments: [] };
+      },
+    };
+
+    const result = parse(parser, ["a"], {
+      annotations: { [Symbol.for("@test/unwrap-mutation")]: true },
+    });
+    assert.ok(result.success);
+    if (result.success) {
+      const value = result.value as Record<PropertyKey, unknown>;
+      assert.ok(value.ok);
+      assert.ok(value[annotationWrapperKey]);
+      assert.equal(value[annotationStateValueKey], undefined);
+    }
+  });
+
+  it("should support annotations in suggestSync() with non-object state", () => {
+    const testKey = Symbol.for("@test/suggest-sync");
+    const parser = constant("ok");
+    const result = suggestSync(parser, [""], {
+      annotations: { [testKey]: "sync" },
+    });
+    assert.deepEqual(result, []);
+  });
+
+  it("should keep issue 184 exclusive suggestions under annotations in suggestSync()", () => {
+    for (const [name, parser] of createIssue184SuggestionParsers()) {
+      const suggestions = suggestSync(parser, ["--s"], {
+        annotations: issue184Annotations,
+      });
+
+      assert.deepEqual(
+        suggestions,
+        [{ kind: "literal", text: "--silent" }],
+        `${name} should keep annotated exclusive suggestions.`,
+      );
+    }
+  });
+
+  it("should support annotations in suggestAsync() with non-object state", async () => {
+    const testKey = Symbol.for("@test/suggest-async");
+    const parser = constant("ok");
+    const result = await suggestAsync(parser, [""], {
+      annotations: { [testKey]: "async" },
+    });
+    assert.deepEqual(result, []);
+  });
+
+  it("should keep issue 184 exclusive suggestions under annotations in suggestAsync()", async () => {
+    for (const [name, parser] of createIssue184SuggestionParsers()) {
+      const suggestions = await suggestAsync(parser, ["--s"], {
+        annotations: issue184Annotations,
+      });
+
+      assert.deepEqual(
+        suggestions,
+        [{ kind: "literal", text: "--silent" }],
+        `${name} should keep annotated exclusive suggestions.`,
+      );
+    }
+  });
+
+  it("should support annotations in getDocPage() with non-object state", () => {
+    const testKey = Symbol.for("@test/doc-sync");
+    const parser = constant("ok");
+    const doc = getDocPage(parser, [], {
+      annotations: { [testKey]: "doc-sync" },
+    });
+    assert.ok(doc !== undefined);
+  });
+
+  it("should support annotations in getDocPageAsync() with non-object state", async () => {
+    const testKey = Symbol.for("@test/doc-async");
+    const parser: Parser<"async", string, number> = {
+      $valueType: [] as const,
+      $stateType: [] as const,
+      mode: "async",
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: 0,
+      parse(context) {
+        if (context.buffer.length === 0) {
+          return Promise.resolve({
+            success: false as const,
+            consumed: 0,
+            error: message`no input`,
+          });
+        }
+        return Promise.resolve({
+          success: true as const,
+          consumed: [context.buffer[0]],
+          next: {
+            ...context,
+            buffer: context.buffer.slice(1),
+            state: context.state + 1,
+          },
+        });
+      },
+      complete(state) {
+        return Promise.resolve({
+          success: true as const,
+          value: String(state),
+        });
+      },
+      async *suggest() {
+        // no-op
+      },
+      getDocFragments() {
+        return { fragments: [] };
+      },
+    };
+
+    const doc = await getDocPageAsync(parser, [], {
+      annotations: { [testKey]: "doc-async" },
+    });
+    assert.ok(doc !== undefined);
+  });
+
+  it("should support annotations in getDocPage() with options as second argument", () => {
+    const testKey = Symbol.for("@test/doc-sync-options-as-2nd");
+    const parser: Parser<"sync", string, Record<PropertyKey, unknown>> = {
+      $valueType: [] as const,
+      $stateType: [] as const,
+      mode: "sync",
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: {},
+      parse(_context) {
+        return { success: false as const, consumed: 0, error: message`no` };
+      },
+      complete() {
+        return { success: true as const, value: "ok" };
+      },
+      *suggest() {},
+      getDocFragments(state) {
+        const ann = state.kind === "available"
+          ? getAnnotations(state.state)
+          : undefined;
+        return {
+          fragments: [],
+          footer: [{
+            type: "text" as const,
+            text: String(ann?.[testKey] ?? "none"),
+          }],
+        };
+      },
+    };
+
+    const doc = getDocPage(parser, { annotations: { [testKey]: "injected" } });
+    assert.ok(doc !== undefined);
+    assert.ok(doc!.footer !== undefined);
+    assert.equal(
+      (doc!.footer![0] as { type: "text"; text: string }).text,
+      "injected",
+    );
+  });
+
+  it("should preserve annotations when synthesizing top-level command docs", () => {
+    const testKey = Symbol.for("@test/doc-command-root");
+    const parser = command("build", {
+      $valueType: [] as const,
+      $stateType: [] as const,
+      mode: "sync",
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: {},
+      parse(_context) {
+        return { success: false as const, consumed: 0, error: message`no` };
+      },
+      complete() {
+        return { success: true as const, value: "ok" };
+      },
+      *suggest() {},
+      getDocFragments(state) {
+        const annotations = state.kind === "available"
+          ? getAnnotations(state.state)
+          : undefined;
+        return {
+          fragments: [],
+          footer: [{
+            type: "text" as const,
+            text: String(annotations?.[testKey] ?? "none"),
+          }],
+        };
+      },
+    });
+
+    const doc = getDocPage(parser, { annotations: { [testKey]: "injected" } });
+
+    assert.ok(doc?.footer !== undefined);
+    assert.equal(
+      (doc.footer![0] as { type: "text"; text: string }).text,
+      "injected",
+    );
+  });
+
+  it("should support annotations in getDocPageSync() with options as second argument", () => {
+    const testKey = Symbol.for("@test/doc-sync-fn-options-as-2nd");
+    const parser: Parser<"sync", string, Record<PropertyKey, unknown>> = {
+      $valueType: [] as const,
+      $stateType: [] as const,
+      mode: "sync",
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: {},
+      parse(_context) {
+        return { success: false as const, consumed: 0, error: message`no` };
+      },
+      complete() {
+        return { success: true as const, value: "ok" };
+      },
+      *suggest() {},
+      getDocFragments(state) {
+        const ann = state.kind === "available"
+          ? getAnnotations(state.state)
+          : undefined;
+        return {
+          fragments: [],
+          footer: [{
+            type: "text" as const,
+            text: String(ann?.[testKey] ?? "none"),
+          }],
+        };
+      },
+    };
+
+    const doc = getDocPageSync(parser, {
+      annotations: { [testKey]: "injected" },
+    });
+    assert.ok(doc !== undefined);
+    assert.ok(doc!.footer !== undefined);
+    assert.equal(
+      (doc!.footer![0] as { type: "text"; text: string }).text,
+      "injected",
+    );
+  });
+
+  it("should support annotations in getDocPageAsync() with options as second argument", async () => {
+    const testKey = Symbol.for("@test/doc-async-fn-options-as-2nd");
+    const parser: Parser<"async", string, Record<PropertyKey, unknown>> = {
+      $valueType: [] as const,
+      $stateType: [] as const,
+      mode: "async",
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: {},
+      parse(_context) {
+        return Promise.resolve({
+          success: false as const,
+          consumed: 0,
+          error: message`no`,
+        });
+      },
+      complete() {
+        return Promise.resolve({ success: true as const, value: "ok" });
+      },
+      async *suggest() {},
+      getDocFragments(state) {
+        const ann = state.kind === "available"
+          ? getAnnotations(state.state)
+          : undefined;
+        return {
+          fragments: [],
+          footer: [{
+            type: "text" as const,
+            text: String(ann?.[testKey] ?? "none"),
+          }],
+        };
+      },
+    };
+
+    const doc = await getDocPageAsync(parser, {
+      annotations: { [testKey]: "injected" },
+    });
+    assert.ok(doc !== undefined);
+    assert.ok(doc!.footer !== undefined);
+    assert.equal(
+      (doc!.footer![0] as { type: "text"; text: string }).text,
+      "injected",
+    );
+  });
+
+  it("should preserve options when args is explicitly undefined in getDocPage()", () => {
+    const testKey = Symbol.for("@test/doc-sync-undef-args");
+    const parser: Parser<"sync", string, Record<PropertyKey, unknown>> = {
+      $valueType: [] as const,
+      $stateType: [] as const,
+      mode: "sync",
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: {},
+      parse(_context) {
+        return { success: false as const, consumed: 0, error: message`no` };
+      },
+      complete() {
+        return { success: true as const, value: "ok" };
+      },
+      *suggest() {},
+      getDocFragments(state) {
+        const ann = state.kind === "available"
+          ? getAnnotations(state.state)
+          : undefined;
+        return {
+          fragments: [],
+          footer: [{
+            type: "text" as const,
+            text: String(ann?.[testKey] ?? "none"),
+          }],
+        };
+      },
+    };
+
+    const doc = getDocPage(parser, undefined, {
+      annotations: { [testKey]: "injected" },
+    });
+    assert.ok(doc !== undefined);
+    assert.ok(doc!.footer !== undefined);
+    assert.equal(
+      (doc!.footer![0] as { type: "text"; text: string }).text,
+      "injected",
+    );
+  });
+
+  it("should preserve options when args is explicitly undefined in getDocPageSync()", () => {
+    const testKey = Symbol.for("@test/doc-sync-fn-undef-args");
+    const parser: Parser<"sync", string, Record<PropertyKey, unknown>> = {
+      $valueType: [] as const,
+      $stateType: [] as const,
+      mode: "sync",
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: {},
+      parse(_context) {
+        return { success: false as const, consumed: 0, error: message`no` };
+      },
+      complete() {
+        return { success: true as const, value: "ok" };
+      },
+      *suggest() {},
+      getDocFragments(state) {
+        const ann = state.kind === "available"
+          ? getAnnotations(state.state)
+          : undefined;
+        return {
+          fragments: [],
+          footer: [{
+            type: "text" as const,
+            text: String(ann?.[testKey] ?? "none"),
+          }],
+        };
+      },
+    };
+
+    const doc = getDocPageSync(parser, undefined, {
+      annotations: { [testKey]: "injected" },
+    });
+    assert.ok(doc !== undefined);
+    assert.ok(doc!.footer !== undefined);
+    assert.equal(
+      (doc!.footer![0] as { type: "text"; text: string }).text,
+      "injected",
+    );
+  });
+
+  it("should preserve options when args is explicitly undefined in getDocPageAsync()", async () => {
+    const testKey = Symbol.for("@test/doc-async-fn-undef-args");
+    const parser: Parser<"async", string, Record<PropertyKey, unknown>> = {
+      $valueType: [] as const,
+      $stateType: [] as const,
+      mode: "async",
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: {},
+      parse(_context) {
+        return Promise.resolve({
+          success: false as const,
+          consumed: 0,
+          error: message`no`,
+        });
+      },
+      complete() {
+        return Promise.resolve({ success: true as const, value: "ok" });
+      },
+      async *suggest() {},
+      getDocFragments(state) {
+        const ann = state.kind === "available"
+          ? getAnnotations(state.state)
+          : undefined;
+        return {
+          fragments: [],
+          footer: [{
+            type: "text" as const,
+            text: String(ann?.[testKey] ?? "none"),
+          }],
+        };
+      },
+    };
+
+    const doc = await getDocPageAsync(parser, undefined, {
+      annotations: { [testKey]: "injected" },
+    });
+    assert.ok(doc !== undefined);
+    assert.ok(doc!.footer !== undefined);
+    assert.equal(
+      (doc!.footer![0] as { type: "text"; text: string }).text,
+      "injected",
+    );
+  });
+
+  it("should accept ParseOptions | undefined as second argument in getDocPage()", () => {
+    const parser = constant("ok");
+    const opts: ParseOptions | undefined = undefined;
+    const doc = getDocPage(parser, opts);
+    assert.ok(doc !== undefined);
+  });
+
+  it("should accept ParseOptions | undefined as second argument in getDocPageSync()", () => {
+    const parser = constant("ok");
+    const opts: ParseOptions | undefined = undefined;
+    const doc = getDocPageSync(parser, opts);
+    assert.ok(doc !== undefined);
+  });
+
+  it("should accept ParseOptions | undefined as second argument in getDocPageAsync()", async () => {
+    const parser = constant("ok");
+    const opts: ParseOptions | undefined = undefined;
+    const doc = await getDocPageAsync(parser, opts);
+    assert.ok(doc !== undefined);
+  });
+
+  it("should provide execution context during getDocPageSync() parse passes", () => {
+    const observations: Array<ExecutionContext | undefined> = [];
+    const parser: Parser<"sync", unknown, unknown> = {
+      mode: "sync",
+      $valueType: [] as const,
+      $stateType: [] as const,
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: {},
+      parse(context) {
+        observations.push(context.exec);
+        return {
+          success: true as const,
+          next: { ...context, buffer: [] },
+          consumed: [],
+        };
+      },
+      complete(state) {
+        return { success: true as const, value: state };
+      },
+      *suggest() {},
+      getDocFragments() {
+        return { fragments: [] };
+      },
+    };
+
+    getDocPageSync(parser, ["x"]);
+
+    assert.equal(observations.length, 1);
+    assert.equal(observations[0]?.phase, "parse");
+    assert.deepEqual(observations[0]?.path, []);
+    assert.ok(observations[0]?.trace != null);
+  });
+
+  it("should provide execution context during getDocPageAsync() parse passes", async () => {
+    const observations: Array<ExecutionContext | undefined> = [];
+    const parser: Parser<"async", unknown, unknown> = {
+      mode: "async",
+      $valueType: [] as const,
+      $stateType: [] as const,
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: {},
+      parse(context) {
+        observations.push(context.exec);
+        return Promise.resolve({
+          success: true as const,
+          next: { ...context, buffer: [] },
+          consumed: [],
+        });
+      },
+      complete(state) {
+        return Promise.resolve({ success: true as const, value: state });
+      },
+      async *suggest() {},
+      getDocFragments() {
+        return { fragments: [] };
+      },
+    };
+
+    await getDocPageAsync(parser, ["x"]);
+
+    assert.equal(observations.length, 1);
+    assert.equal(observations[0]?.phase, "parse");
+    assert.deepEqual(observations[0]?.path, []);
+    assert.ok(observations[0]?.trace != null);
+  });
+
+  it("should accept union-typed argsOrOptions forwarding", () => {
+    function wrapper(
+      argsOrOptions?: readonly string[] | ParseOptions,
+      options?: ParseOptions,
+    ) {
+      const parser = constant("ok");
+      return getDocPageSync(parser, argsOrOptions, options);
+    }
+    assert.ok(wrapper() !== undefined);
+    assert.ok(wrapper([]) !== undefined);
+    assert.ok(wrapper({ annotations: {} }) !== undefined);
+  });
+
+  describe("empty annotations object is a no-op (issue #484)", () => {
+    // Regression tests for
+    // https://github.com/dahlia/optique/issues/484
+    // An empty annotations object should behave like no annotations at all
+    // and must not change parser state shape or identity.
+    function makeObservingParser(initialState: unknown) {
+      const observations: Array<{
+        phase: "parse" | "complete" | "suggest" | "getDocFragments";
+        state: unknown;
+      }> = [];
+      const parser: Parser<"sync", unknown, unknown> = {
+        mode: "sync",
+        $valueType: [] as const,
+        $stateType: [] as const,
+        priority: 0,
+        usage: [],
+        leadingNames: new Set<string>(),
+        acceptingAnyToken: false,
+        initialState,
+        parse(context) {
+          observations.push({ phase: "parse", state: context.state });
+          return {
+            success: true as const,
+            next: { ...context, buffer: [] },
+            consumed: [],
+          };
+        },
+        complete(state) {
+          observations.push({ phase: "complete", state });
+          return { success: true as const, value: state };
+        },
+        *suggest(context) {
+          observations.push({ phase: "suggest", state: context.state });
+          yield { kind: "literal" as const, text: "x" };
+        },
+        getDocFragments(state) {
+          observations.push({
+            phase: "getDocFragments",
+            state: state.kind === "available" ? state.state : undefined,
+          });
+          return { fragments: [] };
+        },
+      };
+      return { parser, observations };
+    }
+
+    it("should not wrap undefined initial state in parseSync()", () => {
+      const { parser, observations } = makeObservingParser(undefined);
+      const result = parseSync(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, undefined);
+      }
+      for (const obs of observations) {
+        assert.ok(!isInjectedAnnotationWrapper(obs.state));
+        assert.equal(getAnnotations(obs.state), undefined);
+      }
+    });
+
+    it("should not wrap null initial state in parseSync()", () => {
+      const { parser, observations } = makeObservingParser(null);
+      const result = parseSync(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, null);
+      }
+      for (const obs of observations) {
+        assert.ok(!isInjectedAnnotationWrapper(obs.state));
+      }
+    });
+
+    it("should not wrap primitive initial state in parseSync()", () => {
+      const { parser, observations } = makeObservingParser(42);
+      const result = parseSync(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, 42);
+      }
+      for (const obs of observations) {
+        assert.ok(!isInjectedAnnotationWrapper(obs.state));
+        assert.equal(obs.state, 42);
+      }
+    });
+
+    it("should preserve referential identity of Date initial state", () => {
+      const source = new Date("2026-03-08T00:00:00.000Z");
+      const { parser, observations } = makeObservingParser(source);
+      const result = parse(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, source);
+      }
+      for (const obs of observations) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should preserve referential identity of Map initial state", () => {
+      const source = new Map<string, number>([["a", 1]]);
+      const { parser, observations } = makeObservingParser(source);
+      const result = parse(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      for (const obs of observations) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should preserve referential identity of Set initial state", () => {
+      const source = new Set(["a", "b"]);
+      const { parser, observations } = makeObservingParser(source);
+      const result = parse(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      for (const obs of observations) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should preserve referential identity of RegExp initial state", () => {
+      const source = /ab+/gi;
+      const { parser, observations } = makeObservingParser(source);
+      const result = parse(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      for (const obs of observations) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should preserve referential identity of array initial state", () => {
+      const source: readonly string[] = ["a", "b"];
+      const { parser, observations } = makeObservingParser(source);
+      const result = parse(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      for (const obs of observations) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should preserve referential identity of class instance initial state", () => {
+      class CustomState {
+        value = 1;
+      }
+      const source = new CustomState();
+      const { parser, observations } = makeObservingParser(source);
+      const result = parse(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      for (const obs of observations) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should preserve referential identity of plain object initial state", () => {
+      const source = { value: 1 };
+      const { parser, observations } = makeObservingParser(source);
+      const result = parse(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      for (const obs of observations) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should not wrap state in parseAsync()", async () => {
+      const { parser, observations } = makeObservingParser(undefined);
+      const result = await parseAsync(parser, [], { annotations: {} });
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, undefined);
+      }
+      for (const obs of observations) {
+        assert.ok(!isInjectedAnnotationWrapper(obs.state));
+      }
+    });
+
+    it("should not wrap state in suggestSync()", () => {
+      const { parser, observations } = makeObservingParser(undefined);
+      const suggestions = suggestSync(parser, [""], { annotations: {} });
+      assert.deepEqual(suggestions, [{ kind: "literal", text: "x" }]);
+      const suggestObs = observations.filter((o) => o.phase === "suggest");
+      assert.ok(suggestObs.length > 0);
+      for (const obs of suggestObs) {
+        assert.ok(!isInjectedAnnotationWrapper(obs.state));
+      }
+    });
+
+    it("should preserve Map identity in suggestSync()", () => {
+      const source = new Map<string, number>([["a", 1]]);
+      const { parser, observations } = makeObservingParser(source);
+      suggestSync(parser, [""], { annotations: {} });
+      const suggestObs = observations.filter((o) => o.phase === "suggest");
+      assert.ok(suggestObs.length > 0);
+      for (const obs of suggestObs) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should not wrap state in suggestAsync()", async () => {
+      const { parser, observations } = makeObservingParser(undefined);
+      const suggestions = await suggestAsync(parser, [""], {
+        annotations: {},
+      });
+      assert.deepEqual(suggestions, [{ kind: "literal", text: "x" }]);
+      const suggestObs = observations.filter((o) => o.phase === "suggest");
+      assert.ok(suggestObs.length > 0);
+      for (const obs of suggestObs) {
+        assert.ok(!isInjectedAnnotationWrapper(obs.state));
+      }
+    });
+
+    it("should preserve Map identity in suggestAsync()", async () => {
+      const source = new Map<string, number>([["a", 1]]);
+      const { parser, observations } = makeObservingParser(source);
+      await suggestAsync(parser, [""], { annotations: {} });
+      const suggestObs = observations.filter((o) => o.phase === "suggest");
+      assert.ok(suggestObs.length > 0);
+      for (const obs of suggestObs) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should not wrap state in getDocPage()", () => {
+      const { parser, observations } = makeObservingParser(undefined);
+      const doc = getDocPage(parser, { annotations: {} });
+      assert.ok(doc !== undefined);
+      const docObs = observations.filter((o) => o.phase === "getDocFragments");
+      assert.ok(docObs.length > 0);
+      for (const obs of docObs) {
+        assert.ok(!isInjectedAnnotationWrapper(obs.state));
+      }
+    });
+
+    it("should preserve Map identity in getDocPage()", () => {
+      const source = new Map<string, number>([["a", 1]]);
+      const { parser, observations } = makeObservingParser(source);
+      const doc = getDocPage(parser, { annotations: {} });
+      assert.ok(doc !== undefined);
+      const docObs = observations.filter((o) => o.phase === "getDocFragments");
+      assert.ok(docObs.length > 0);
+      for (const obs of docObs) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should not wrap state in getDocPageSync()", () => {
+      const { parser, observations } = makeObservingParser(undefined);
+      const doc = getDocPageSync(parser, { annotations: {} });
+      assert.ok(doc !== undefined);
+      const docObs = observations.filter((o) => o.phase === "getDocFragments");
+      assert.ok(docObs.length > 0);
+      for (const obs of docObs) {
+        assert.ok(!isInjectedAnnotationWrapper(obs.state));
+      }
+    });
+
+    it("should preserve Map identity in getDocPageSync()", () => {
+      const source = new Map<string, number>([["a", 1]]);
+      const { parser, observations } = makeObservingParser(source);
+      const doc = getDocPageSync(parser, { annotations: {} });
+      assert.ok(doc !== undefined);
+      const docObs = observations.filter((o) => o.phase === "getDocFragments");
+      assert.ok(docObs.length > 0);
+      for (const obs of docObs) {
+        assert.equal(obs.state, source);
+      }
+    });
+
+    it("should treat string-keyed annotations as a no-op in parse()", () => {
+      const { parser, observations } = makeObservingParser(undefined);
+      // JavaScript callers can construct string-keyed records even though the
+      // `Annotations` type only permits symbols.  Such records have no own
+      // symbol keys, so they must behave identically to an empty annotations
+      // object and leave parser state untouched.
+      const result = parse(parser, [], {
+        annotations: { stringKey: "value" } as unknown as Record<
+          symbol,
+          unknown
+        >,
+      });
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, undefined);
+      }
+      for (const obs of observations) {
+        assert.ok(!isInjectedAnnotationWrapper(obs.state));
+        assert.equal(getAnnotations(obs.state), undefined);
+      }
+    });
+
+    it("should not wrap state in getDocPageAsync()", async () => {
+      const { parser, observations } = makeObservingParser(undefined);
+      const doc = await getDocPageAsync(parser, { annotations: {} });
+      assert.ok(doc !== undefined);
+      const docObs = observations.filter((o) => o.phase === "getDocFragments");
+      assert.ok(docObs.length > 0);
+      for (const obs of docObs) {
+        assert.ok(!isInjectedAnnotationWrapper(obs.state));
+      }
+    });
+
+    it("should preserve Map identity in getDocPageAsync()", async () => {
+      const source = new Map<string, number>([["a", 1]]);
+      const { parser, observations } = makeObservingParser(source);
+      const doc = await getDocPageAsync(parser, { annotations: {} });
+      assert.ok(doc !== undefined);
+      const docObs = observations.filter((o) => o.phase === "getDocFragments");
+      assert.ok(docObs.length > 0);
+      for (const obs of docObs) {
+        assert.equal(obs.state, source);
+      }
+    });
+  });
+});
+
+describe("getDocPage regression: meta commands with withDefault(or(...))", () => {
+  // Regression test for https://github.com/dahlia/optique/issues/121
+  // Meta commands were missing from the command list when the user parser
+  // included withDefault(or(...)), because getDocPage's do...while loop
+  // ran the parser once even with an empty buffer, causing longestMatch to
+  // record the user parser as "selected" and skip all other parsers in
+  // getDocFragments.
+  it("should include all commands when longestMatch wraps a parser with withDefault(or(...))", () => {
+    // Reproduce the issue: a user parser where withDefault(or(...)) allows
+    // the merge to succeed with zero consumed tokens.
+    const configOption = withDefault(
+      or(
+        object({ ignoreConfig: flag("--ignore-config") }),
+        object({ configPath: option("--config", string({ metavar: "PATH" })) }),
+      ),
+      { ignoreConfig: false, configPath: undefined } as {
+        readonly ignoreConfig: boolean;
+        readonly configPath: string | undefined;
+      },
+    );
+
+    const userParser = merge(
+      or(
+        command("foo", object({}), { description: message`foo cmd` }),
+        command("bar", object({}), { description: message`bar cmd` }),
+      ),
+      configOption,
+    );
+
+    // Simulate what run() does: combine the user parser with meta commands
+    // via longestMatch.
+    const helpCmd = command("help", object({}));
+    const versionCmd = command("version", object({}));
+    const combined = longestMatch(helpCmd, versionCmd, userParser);
+
+    // Root-level help: getDocPage called with empty args (no subcommand selected).
+    const doc = getDocPage(combined, []);
+    assert.ok(doc, "doc should not be undefined");
+
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    const commandNames = allEntries
+      .filter((e) => e.term.type === "command")
+      .map((e) => (e.term.type === "command" ? e.term.name : ""));
+
+    assert.ok(
+      commandNames.includes("help"),
+      `"help" should appear in the command list, got: [${
+        commandNames.join(", ")
+      }]`,
+    );
+    assert.ok(
+      commandNames.includes("version"),
+      `"version" should appear in the command list, got: [${
+        commandNames.join(", ")
+      }]`,
+    );
+    assert.ok(
+      commandNames.includes("foo"),
+      `"foo" should appear in the command list, got: [${
+        commandNames.join(", ")
+      }]`,
+    );
+    assert.ok(
+      commandNames.includes("bar"),
+      `"bar" should appear in the command list, got: [${
+        commandNames.join(", ")
+      }]`,
+    );
+  });
+
+  it("should resolve nested exclusive terms and preserve trailing terms", () => {
+    const globalOption = object({
+      global: option("--global"),
+    });
+    const parser = or(
+      merge(
+        or(
+          command("foo", object({})),
+          command("bar", object({})),
+        ),
+        globalOption,
+      ),
+      merge(
+        command("baz", object({})),
+        globalOption,
+      ),
+    );
+
+    const doc = getDocPage(parser, ["foo"]);
+    assert.ok(doc !== undefined);
+    if (doc == null) return;
+    assert.ok(doc.usage !== undefined);
+    if (doc.usage == null) return;
+
+    assert.ok(doc.usage.length >= 2);
+    assert.equal(doc.usage[0]?.type, "command");
+    if (doc.usage[0]?.type === "command") {
+      assert.equal(doc.usage[0].name, "foo");
+    }
+    assert.equal(doc.usage[1]?.type, "optional");
+    if (doc.usage[1]?.type === "optional") {
+      assert.equal(doc.usage[1].terms[0]?.type, "option");
+      if (doc.usage[1].terms[0]?.type === "option") {
+        assert.ok(doc.usage[1].terms[0].names.includes("--global"));
+      }
+    }
+  });
+});
+
+describe("getDocPage: section merging (issue #138)", () => {
+  // Regression tests for https://github.com/dahlia/optique/issues/138
+  // Same-named sections from different parsers should be merged into one.
+
+  it("should merge same-titled sections from group() combinators", () => {
+    const parser = or(
+      group("Tools", command("format", constant("format"))),
+      group("Tools", command("lint", constant("lint"))),
+    );
+
+    const doc = getDocPage(parser);
+    assert.ok(doc, "doc should not be undefined");
+
+    const toolsSections = doc.sections.filter((s) => s.title === "Tools");
+    assert.equal(
+      toolsSections.length,
+      1,
+      "Should have exactly one Tools section",
+    );
+    const entries = toolsSections[0].entries;
+    const names = entries
+      .filter((e) => e.term.type === "command")
+      .map((e) => (e.term.type === "command" ? e.term.name : ""));
+    assert.ok(names.includes("format"), "format should be in Tools section");
+    assert.ok(names.includes("lint"), "lint should be in Tools section");
+  });
+
+  it("should preserve fragment insertion order within merged sections", () => {
+    const parser = or(
+      group("Commands", command("aaa", constant("aaa"))),
+      group("Commands", command("zzz", constant("zzz"))),
+    );
+
+    const doc = getDocPage(parser);
+    assert.ok(doc);
+
+    const cmdSection = doc.sections.find((s) => s.title === "Commands");
+    assert.ok(cmdSection, "Commands section should exist");
+    const names = cmdSection.entries
+      .filter((e) => e.term.type === "command")
+      .map((e) => (e.term.type === "command" ? e.term.name : ""));
+
+    assert.ok(
+      names.indexOf("aaa") < names.indexOf("zzz"),
+      "aaa should appear before zzz (insertion order preserved)",
+    );
+  });
+
+  it("should place raw entry fragments after titled sections", () => {
+    // When user's commands are in a titled section and meta items produce
+    // raw entries, the raw entries should appear after the titled section.
+    const parser = longestMatch(
+      group("Commands", command("build", constant("build"))),
+      command("help", constant("help")),
+    );
+
+    const doc = getDocPage(parser);
+    assert.ok(doc);
+
+    const commandsSection = doc.sections.find((s) => s.title === "Commands");
+    const untitledSection = doc.sections.find((s) => s.title == null);
+    assert.ok(commandsSection, "Commands section should exist");
+    assert.ok(untitledSection, "Untitled section should exist");
+
+    // Titled section should have a lower index than untitled
+    const commandsIdx = doc.sections.indexOf(commandsSection);
+    const untitledIdx = doc.sections.indexOf(untitledSection);
+    assert.ok(
+      commandsIdx < untitledIdx,
+      `Commands section (idx=${commandsIdx}) should appear before untitled section (idx=${untitledIdx})`,
+    );
+  });
+});
+
+// Regression test for https://github.com/dahlia/optique/issues/500
+describe("getDocPage reference isolation", () => {
+  it("should not leak mutations of returned DocPage back to parser", () => {
+    const inner = option("-v", "--verbose", {
+      description: message`Verbose level`,
+    });
+    const parser = command("cmd", inner, {
+      brief: message`A command`,
+    });
+    const page1 = getDocPageSync(parser as Parser<"sync", unknown, unknown>);
+    assert.ok(page1);
+    assert.ok(page1.usage);
+    assert.ok(page1.usage.length > 0);
+    assert.ok(page1.brief);
+    assert.ok(page1.brief.length > 0);
+    assert.ok(page1.sections.length > 0);
+    assert.ok(page1.sections[0].entries.length > 0);
+    assert.ok(page1.sections[0].entries[0].description);
+
+    // Mutate the returned page's usage terms, brief, and entry description
+    (page1.usage[0] as Record<string, unknown>).name = "MUTATED";
+    (page1.brief[0] as Record<string, unknown>).text = "MUTATED";
+    (page1.sections[0].entries[0]
+      .description[0] as Record<string, unknown>).text = "MUTATED";
+
+    // Second call should return the original values
+    const page2 = getDocPageSync(parser as Parser<"sync", unknown, unknown>);
+    assert.ok(page2);
+    assert.ok(page2.usage);
+    assert.equal(page2.usage[0].type, "command");
+    assert.equal(
+      (page2.usage[0] as { type: "command"; name: string }).name,
+      "cmd",
+    );
+    assert.deepEqual(page2.brief, [{ type: "text", text: "A command" }]);
+    assert.ok(page2.sections[0].entries[0].description);
+    assert.notEqual(
+      (page2.sections[0].entries[0].description[0] as { text?: string }).text,
+      "MUTATED",
+    );
+  });
+
+  it("should not leak usageLine callback mutations back to parser", () => {
+    const inner = option("-v", "--verbose");
+    const parser = command("cmd", inner, {
+      usageLine(defaultUsageLine: Usage) {
+        // Mutate the passed-in defaultUsageLine elements
+        if (defaultUsageLine.length > 0) {
+          (defaultUsageLine[0] as Record<string, unknown>).type = "MUTATED";
+        }
+        return defaultUsageLine;
+      },
+    });
+
+    getDocPageSync(parser as Parser<"sync", unknown, unknown>);
+
+    // Parser's own usage terms should not be corrupted by the callback
+    for (const term of parser.usage) {
+      assert.notEqual(
+        (term as Record<string, unknown>).type,
+        "MUTATED",
+      );
+    }
+  });
+
+  it("should not leak when usageLine callback returns shared usage", () => {
+    // usageLine callback returns parser.usage itself (a shared array)
+    const inner = option("-v", "--verbose");
+    const sharedUsage: Usage = [{ type: "ellipsis" }];
+    const parser = command("cmd", inner, {
+      usageLine(_defaultUsageLine: Usage) {
+        return sharedUsage;
+      },
+    });
+
+    const page1 = getDocPageSync(parser as Parser<"sync", unknown, unknown>);
+    assert.ok(page1);
+    assert.ok(page1.usage);
+    assert.ok(page1.usage.length > 1);
+    assert.equal(page1.usage[1].type, "ellipsis");
+
+    // Mutate the returned page's usage
+    (page1.usage[1] as Record<string, unknown>).type = "MUTATED";
+
+    // The shared array should not be corrupted
+    assert.equal(sharedUsage[0].type, "ellipsis");
+  });
+});
+
+// Regression test for https://github.com/dahlia/optique/issues/494
+// getDocPage() should filter out hidden terms from custom DocFragments
+// before producing the final DocPage.
+describe("getDocPage: filter hidden terms from custom DocFragments", () => {
+  function makeCustomParser(
+    fragments: Parser<"sync", unknown, unknown>["getDocFragments"],
+  ): Parser<"sync", unknown, unknown> {
+    return {
+      mode: "sync",
+      $valueType: [] as unknown[],
+      $stateType: [] as unknown[],
+      priority: 0,
+      usage: [],
+      leadingNames: new Set(),
+      acceptingAnyToken: false,
+      initialState: undefined,
+      parse: (ctx) => ({
+        success: true as const,
+        next: ctx,
+        consumed: [],
+      }),
+      complete: () => ({ success: true as const, value: undefined }),
+      suggest: function* () {},
+      getDocFragments: fragments,
+    };
+  }
+
+  it("should filter entry with hidden: true", () => {
+    const parser = makeCustomParser(() => ({
+      fragments: [
+        {
+          type: "entry",
+          term: { type: "option", names: ["--secret"], hidden: true },
+        },
+        {
+          type: "entry",
+          term: { type: "option", names: ["--visible"] },
+          description: message`A visible option.`,
+        },
+      ],
+    }));
+
+    const doc = getDocPageSync(parser);
+    assert.ok(doc);
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    assert.equal(allEntries.length, 1);
+    assert.equal(allEntries[0].term.type, "option");
+    assert.ok(
+      allEntries[0].term.type === "option" &&
+        allEntries[0].term.names.includes("--visible"),
+    );
+  });
+
+  it('should filter entry with hidden: "doc"', () => {
+    const parser = makeCustomParser(() => ({
+      fragments: [
+        {
+          type: "entry",
+          term: { type: "option", names: ["--doc-hidden"], hidden: "doc" },
+        },
+        {
+          type: "entry",
+          term: { type: "option", names: ["--visible"] },
+        },
+      ],
+    }));
+
+    const doc = getDocPageSync(parser);
+    assert.ok(doc);
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    assert.equal(allEntries.length, 1);
+    assert.ok(
+      allEntries[0].term.type === "option" &&
+        allEntries[0].term.names.includes("--visible"),
+    );
+  });
+
+  it('should filter entry with hidden: "help"', () => {
+    const parser = makeCustomParser(() => ({
+      fragments: [
+        {
+          type: "entry",
+          term: { type: "option", names: ["--help-hidden"], hidden: "help" },
+        },
+        {
+          type: "entry",
+          term: { type: "option", names: ["--visible"] },
+        },
+      ],
+    }));
+
+    const doc = getDocPageSync(parser);
+    assert.ok(doc);
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    assert.equal(allEntries.length, 1);
+    assert.ok(
+      allEntries[0].term.type === "option" &&
+        allEntries[0].term.names.includes("--visible"),
+    );
+  });
+
+  it('should keep entry with hidden: "usage"', () => {
+    const parser = makeCustomParser(() => ({
+      fragments: [
+        {
+          type: "entry",
+          term: {
+            type: "option",
+            names: ["--usage-hidden"],
+            hidden: "usage",
+          },
+          description: message`Hidden from usage only.`,
+        },
+      ],
+    }));
+
+    const doc = getDocPageSync(parser);
+    assert.ok(doc);
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    assert.equal(allEntries.length, 1);
+    assert.ok(
+      allEntries[0].term.type === "option" &&
+        allEntries[0].term.names.includes("--usage-hidden"),
+    );
+  });
+
+  it("should filter hidden entries within section fragments", () => {
+    const parser = makeCustomParser(() => ({
+      fragments: [
+        {
+          type: "section",
+          title: "Options",
+          entries: [
+            {
+              term: { type: "option", names: ["--secret"], hidden: true },
+            },
+            {
+              term: { type: "option", names: ["--visible"] },
+              description: message`A visible option.`,
+            },
+          ],
+        },
+      ],
+    }));
+
+    const doc = getDocPageSync(parser);
+    assert.ok(doc);
+    const section = doc.sections.find((s) => s.title === "Options");
+    assert.ok(section);
+    assert.equal(section.entries.length, 1);
+    assert.ok(
+      section.entries[0].term.type === "option" &&
+        section.entries[0].term.names.includes("--visible"),
+    );
+  });
+
+  it("should filter hidden argument and command terms", () => {
+    const parser = makeCustomParser(() => ({
+      fragments: [
+        {
+          type: "entry",
+          term: { type: "argument", metavar: "HIDDEN", hidden: true },
+        },
+        {
+          type: "entry",
+          term: { type: "command", name: "secret", hidden: true },
+        },
+        {
+          type: "entry",
+          term: { type: "option", names: ["--visible"] },
+        },
+      ],
+    }));
+
+    const doc = getDocPageSync(parser);
+    assert.ok(doc);
+    const allEntries = doc.sections.flatMap((s) => s.entries);
+    assert.equal(allEntries.length, 1);
+    assert.ok(
+      allEntries[0].term.type === "option" &&
+        allEntries[0].term.names.includes("--visible"),
+    );
+  });
+
+  it("should not create empty sections for hidden-only fragments", () => {
+    const parser = makeCustomParser(() => ({
+      fragments: [
+        {
+          type: "section",
+          title: "Hidden Section",
+          entries: [
+            {
+              term: { type: "option", names: ["--secret"], hidden: true },
+            },
+          ],
+        },
+        {
+          type: "section",
+          title: "Visible Section",
+          entries: [
+            {
+              term: { type: "option", names: ["--visible"] },
+              description: message`Visible.`,
+            },
+          ],
+        },
+      ],
+    }));
+
+    const doc = getDocPageSync(parser);
+    assert.ok(doc);
+    assert.equal(doc.sections.length, 1);
+    assert.equal(doc.sections[0].title, "Visible Section");
+  });
+
+  it("should position titled section at first visible entry", () => {
+    const parser = makeCustomParser(() => ({
+      fragments: [
+        {
+          type: "section",
+          title: "A",
+          entries: [
+            {
+              term: { type: "option", names: ["--hidden-a"], hidden: true },
+            },
+          ],
+        },
+        {
+          type: "section",
+          title: "B",
+          entries: [
+            {
+              term: { type: "option", names: ["--b"] },
+            },
+          ],
+        },
+        {
+          type: "section",
+          title: "A",
+          entries: [
+            {
+              term: { type: "option", names: ["--a"] },
+            },
+          ],
+        },
+      ],
+    }));
+
+    const doc = getDocPageSync(parser);
+    assert.ok(doc);
+    // Section A's only visible entry came after B, so B should come first
+    assert.equal(doc.sections.length, 2);
+    assert.equal(doc.sections[0].title, "B");
+    assert.equal(doc.sections[1].title, "A");
+  });
+});

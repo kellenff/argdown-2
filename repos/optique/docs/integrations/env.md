@@ -1,0 +1,629 @@
+---
+description: >-
+  Bind parser fields to environment variables with type-safe parsing and
+  fallback behavior.
+---
+
+Environment variable support
+============================
+
+*This API is available since Optique 1.0.0.*
+
+The *@optique/env* package lets you bind parser values to environment
+variables while preserving Optique's type safety and parser composition model.
+
+The fallback priority is:
+
+1.  CLI argument
+2.  Environment variable
+3.  *.env* file value
+4.  Default value
+5.  Error
+
+::: code-group
+
+~~~~ bash [Deno]
+deno add jsr:@optique/env
+~~~~
+
+~~~~ bash [npm]
+npm add @optique/env
+~~~~
+
+~~~~ bash [pnpm]
+pnpm add @optique/env
+~~~~
+
+~~~~ bash [Yarn]
+yarn add @optique/env
+~~~~
+
+~~~~ bash [Bun]
+bun add @optique/env
+~~~~
+
+:::
+
+
+Basic usage
+-----------
+
+### 1. Create an environment context
+
+~~~~ typescript twoslash
+import { createEnvContext } from "@optique/env";
+
+const envContext = createEnvContext({
+  prefix: "MYAPP_",
+});
+~~~~
+
+You can also provide a custom source function for tests or custom runtimes:
+
+~~~~ typescript twoslash
+import { createEnvContext } from "@optique/env";
+
+const mockEnv: Record<string, string> = {
+  MYAPP_HOST: "test.example.com",
+};
+
+const envContext = createEnvContext({
+  prefix: "MYAPP_",
+  source: (key) => mockEnv[key],
+});
+~~~~
+
+To load *.env* files as an internal fallback layer, pass `envFile`:
+
+~~~~ typescript twoslash
+import { createEnvContext } from "@optique/env";
+
+const envContext = createEnvContext({
+  prefix: "MYAPP_",
+  envFile: [".env", ".env.local"],
+});
+~~~~
+
+Values from *.env* files are read by `bindEnv()` but are not written to
+`process.env` or `Deno.env`.  Real environment variables still take
+priority over file values.
+
+### 2. Bind parsers to environment keys
+
+~~~~ typescript twoslash
+import { bindEnv, bool, createEnvContext } from "@optique/env";
+import { option } from "@optique/core/primitives";
+import { integer, string } from "@optique/core/valueparser";
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+
+const host = bindEnv(option("--host", string()), {
+  context: envContext,
+  key: "HOST",
+  parser: string(),
+  default: "localhost",
+});
+
+const port = bindEnv(option("--port", integer()), {
+  context: envContext,
+  key: "PORT",
+  parser: integer(),
+  default: 3000,
+});
+
+const verbose = bindEnv(option("--verbose"), {
+  context: envContext,
+  key: "VERBOSE",
+  parser: bool(),
+  default: false,
+});
+~~~~
+
+### 3. Run with contexts
+
+Use `run()`, `runSync()`, or `runAsync()` from *@optique/run* with
+`contexts: [envContext]`.
+
+> [!WARNING]
+> `bindEnv()` only reads environment variables when its context is registered
+> with the runner.  If you omit `contexts: [envContext]` from the `run()` call,
+> the env lookup is silently skipped and the parser falls back to the default
+> or fails with an error indicating the context was not registered.
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { option } from "@optique/core/primitives";
+import { integer, string } from "@optique/core/valueparser";
+import { bindEnv, bool, createEnvContext } from "@optique/env";
+import { runAsync } from "@optique/run";
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+
+const parser = object({
+  host: bindEnv(option("--host", string()), {
+    context: envContext,
+    key: "HOST",
+    parser: string(),
+    default: "localhost",
+  }),
+  port: bindEnv(option("--port", integer()), {
+    context: envContext,
+    key: "PORT",
+    parser: integer(),
+    default: 3000,
+  }),
+  verbose: bindEnv(option("--verbose"), {
+    context: envContext,
+    key: "VERBOSE",
+    parser: bool(),
+    default: false,
+  }),
+});
+
+const result = await runAsync(parser, {
+  contexts: [envContext],
+});
+~~~~
+
+
+Boolean values
+--------------
+
+`bool()` parses common environment Boolean literals (case-insensitive):
+
+ -  true values: `"true"`, `"1"`, `"yes"`, `"on"`
+ -  false values: `"false"`, `"0"`, `"no"`, `"off"`
+
+~~~~ typescript twoslash
+import { bool } from "@optique/env";
+
+const parser = bool();
+~~~~
+
+
+*.env* files
+------------
+
+`envFile` accepts `true`, a path string, an array of paths, or an options
+object:
+
+~~~~ typescript twoslash
+import { createEnvContext } from "@optique/env";
+
+const envContext = createEnvContext({
+  prefix: "MYAPP_",
+  envFile: {
+    paths: [".env", ".env.local"],
+    substitute: (command) =>
+      command === "whoami" ? "developer" : undefined,
+  },
+});
+~~~~
+
+Passing `true` loads only *.env* from the current working directory.
+When several paths are provided, files are loaded in order and later
+files override earlier file values.  Missing files are skipped.
+
+The parser supports common dotenv syntax:
+
+ -  blank lines and comments
+ -  optional `export` prefixes
+ -  `KEY=VALUE` assignments
+ -  single-quoted, double-quoted, and unquoted values
+ -  multiline quoted values
+ -  inline comments after unquoted values
+ -  `$VAR` and `${VAR}` expansion
+
+Single-quoted values are literal.  Optique does not expand variables,
+perform command substitution, or interpret escape sequences inside
+single quotes.
+
+Double-quoted and unquoted values expand variables in a single
+left-to-right pass.  Expansion reads from the configured `source` first,
+then from values already loaded from *.env* files.  Missing variables
+expand to the empty string.
+
+Optique recognizes `$(...)` and backtick command-substitution forms, but
+it never executes commands by itself.  If `substitute` is provided, Optique
+passes the command text to that hook and inserts the returned string.  If
+the hook is absent or returns `undefined`, the substitution becomes the
+empty string.
+
+Encrypted dotenvx values are not decrypted; they are treated as ordinary
+string values.
+
+
+Env-only values
+---------------
+
+If a value should come only from environment (or default), pair `bindEnv()`
+with `fail<T>()`:
+
+~~~~ typescript twoslash
+import { bindEnv, createEnvContext } from "@optique/env";
+import { fail } from "@optique/core/primitives";
+import { integer } from "@optique/core/valueparser";
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+
+const timeout = bindEnv(fail<number>(), {
+  context: envContext,
+  key: "TIMEOUT",
+  parser: integer(),
+  default: 30,
+});
+~~~~
+
+
+Composing with other contexts
+-----------------------------
+
+Environment context is a regular `SourceContext`, so it composes naturally
+with configuration contexts.  The *outermost* wrapper is checked first
+during completion, so nesting order determines fallback priority.
+Wrapping as `bindEnv(bindConfig(option(...)))` gives:
+
+CLI argument > Environment variable > Config file > Default value
+
+~~~~ typescript twoslash
+import { z } from "zod";
+import { object } from "@optique/core/constructs";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { createConfigContext, bindConfig } from "@optique/config";
+import { bindEnv, createEnvContext } from "@optique/env";
+import { runAsync } from "@optique/run";
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+const configContext = createConfigContext({
+  schema: z.object({ host: z.string() }),
+});
+
+const parser = object({
+  config: option("--config", string()),
+  host: bindEnv(
+    bindConfig(option("--host", string()), {
+      context: configContext,
+      key: "host",
+      default: "localhost",
+    }),
+    {
+      context: envContext,
+      key: "HOST",
+      parser: string(),
+    },
+  ),
+});
+
+await runAsync(parser, {
+  contexts: [envContext, configContext],
+  contextOptions: {
+    getConfigPath: (parsed) => parsed.config,
+  },
+});
+~~~~
+
+
+Prefix and key resolution
+-------------------------
+
+When `bindEnv()` looks up an environment variable, it concatenates the
+context's `prefix` with the `key` you pass.  For example:
+
+| `prefix`   | `key`      | Looked-up variable |
+| ---------- | ---------- | ------------------ |
+| `"MYAPP_"` | `"HOST"`   | `MYAPP_HOST`       |
+| `"MYAPP_"` | `"PORT"`   | `MYAPP_PORT`       |
+| `""`       | `"EDITOR"` | `EDITOR`           |
+
+If you omit `prefix` (or pass `""`), the key is used as-is.  This is useful
+when binding to well-known variables like `EDITOR` or `HOME` that have no
+application-specific prefix:
+
+~~~~ typescript twoslash
+import { bindEnv, createEnvContext } from "@optique/env";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+
+const envContext = createEnvContext();  // no prefix
+
+const editor = bindEnv(option("--editor", string()), {
+  context: envContext,
+  key: "EDITOR",
+  parser: string(),
+  default: "vi",
+});
+~~~~
+
+
+Using other value parsers
+-------------------------
+
+The `parser` option in `bindEnv()` accepts any Optique `ValueParser`.
+Because environment variables are always strings, the value parser converts
+the raw string into the target type.  All built-in value parsers from
+*@optique/core* work here:
+
+~~~~ typescript twoslash
+import { bindEnv, createEnvContext } from "@optique/env";
+import { option } from "@optique/core/primitives";
+import { port, url, string } from "@optique/core/valueparser";
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+
+// Parse as a URL
+const apiUrl = bindEnv(option("--api-url", url()), {
+  context: envContext,
+  key: "API_URL",
+  parser: url(),
+});
+
+// Parse as a port number (validated range 0–65535)
+const listenPort = bindEnv(option("--port", port()), {
+  context: envContext,
+  key: "PORT",
+  parser: port(),
+  default: 8080,
+});
+~~~~
+
+You can also use value parsers from integration packages such as
+*@optique/zod* or *@optique/valibot* if you need richer validation:
+
+~~~~ typescript twoslash
+import { z } from "zod";
+import { bindEnv, createEnvContext } from "@optique/env";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { zod } from "@optique/zod";
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+
+const logLevel = bindEnv(
+  option(
+    "--log-level",
+    zod(
+      z.enum(["debug", "info", "warn", "error"]),
+      { placeholder: "debug" },
+    ),
+  ),
+  {
+    context: envContext,
+    key: "LOG_LEVEL",
+    parser: zod(
+      z.enum(["debug", "info", "warn", "error"]),
+      { placeholder: "debug" },
+    ),
+    default: "info" as const,
+  },
+);
+~~~~
+
+
+Error handling
+--------------
+
+### Missing environment variable
+
+When the environment variable is not set and no `default` is provided,
+`bindEnv()` falls through to the wrapped parser's `complete()` result.
+This means the final error message depends on the wrapped parser (or other
+wrappers such as `bindConfig()`), rather than always being an environment-
+specific error.
+
+If a `default` is provided, the default is used silently.
+
+### Invalid value
+
+When the environment variable is set but the value parser rejects it,
+the error from the value parser propagates directly.  For example, if
+`MYAPP_PORT` is set to `"abc"` and the parser is `integer()`:
+
+~~~~ text
+Expected an integer, but received "abc".
+~~~~
+
+Similarly, `bool()` rejects unrecognized literals:
+
+~~~~ text
+Invalid Boolean value: "maybe". Expected one of "true", "1", "yes", "on",
+"false", "0", "no", or "off"
+~~~~
+
+### Fallback validation
+
+Since Optique 1.0.0, fallback values produced by `bindEnv()` are
+re-validated against the inner CLI parser's constraints (regex patterns,
+numeric bounds, `choice()` values, etc.).  This applies to both
+environment variable values—which may have been parsed by a looser
+env-level `parser` option—and to the configured `default`.
+
+For example, the following parser rejects the default `"abc"` because
+it does not match the inner CLI pattern `/^[A-Z]+$/`:
+
+~~~~ typescript twoslash
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { bindEnv, createEnvContext } from "@optique/env";
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+// ---cut-before---
+bindEnv(option("--name", string({ pattern: /^[A-Z]+$/ })), {
+  context: envContext,
+  key: "NAME",
+  parser: string(), // looser than the inner parser
+  default: "abc", // rejected at runtime: must match /^[A-Z]+$/
+});
+~~~~
+
+Validation is forwarded through standard combinators (`optional()`,
+`withDefault()`, `group()`, `command()`) and through wrapping
+`bindEnv()`/`bindConfig()` layers, so a constraint defined on a deeply
+nested primitive is still enforced against a fallback value.
+
+`multiple()` attaches its own `validateValue`: it enforces the
+configured `min`/`max` arity against the fallback array length and,
+*if* the inner parser exposes a `validateValue` hook, walks each
+element through it.  Arity enforcement is unconditional—it kicks in
+even when the inner parser has no `validateValue`—and a non-array
+fallback (for example a mis-typed default escaped through `as never`)
+is rejected outright because `multiple()` can never produce a
+non-array shape from CLI input.
+
+`nonEmpty()` is a pure pass-through: it does not add an extra
+non-empty check on the fallback path.  On the CLI path `nonEmpty()`
+still enforces that at least one token was consumed, but on fallback
+values `nonEmpty(multiple(...))` delegates entirely to the inner
+`multiple()`'s arity rules.  If you need a “must have at least one
+element” guarantee against fallback arrays, use
+`multiple(..., { min: 1 })` directly.
+
+`map()`, `derive()`, and `deriveFrom()` intentionally *strip* the
+inner parser's `validateValue`: the mapping function is one-way, so
+the mapped output type no longer corresponds to the inner parser's
+constraints, and derived value parsers rebuild from *default*
+dependency values rather than the live-resolved ones.  Wrapping an
+inner parser in any of these suppresses revalidation of the wrapped
+primitive's constraints—but outer combinators layered above
+(notably `multiple()`) still enforce their own checks.
+
+### Help, version, and completion
+
+Like config contexts, environment contexts work seamlessly with help,
+version, and completion features.  Genuine help, version, and
+completion requests are handled before environment variable lookup, so
+`--help` still works even when required environment variables are
+missing, unless the user parser already consumes that same token
+sequence as ordinary data:
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { bindEnv, createEnvContext } from "@optique/env";
+import { runAsync } from "@optique/run";
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+
+const parser = object({
+  apiKey: bindEnv(option("--api-key", string()), {
+    context: envContext,
+    key: "API_KEY",
+    parser: string(),
+    // No default — required from CLI or env
+  }),
+});
+
+await runAsync(parser, {
+  contexts: [envContext],
+  help: "option",
+  version: "1.0.0",
+});
+~~~~
+
+
+API reference
+-------------
+
+### `createEnvContext(options?)`
+
+Creates an environment context for use with Optique runners.
+
+Parameters
+:    -  `options.prefix`: String prefix prepended to all keys when looking
+        up environment variables.  Defaults to `""`.
+     -  `options.source`: Custom function `(key: string) => string | undefined`
+        for reading environment values.  Defaults to `Deno.env.get` on Deno
+        and `process.env` on Node.js/Bun.
+     -  `options.envFile`: Optional *.env* file fallback layer.  Pass `true`
+        to load *.env*, a path string, an array of paths, or an object with
+        `paths` and `substitute`.
+
+Returns
+:   `EnvContext` implementing `SourceContext` and `Disposable`.
+
+> [!IMPORTANT]
+> If you call `envContext.getAnnotations()` manually, pass the returned
+> object to low-level APIs such as `parse()`, `parseAsync()`,
+> `parser.complete()`, `suggest()`, or `getDocPage()`. Environment contexts
+> are single-pass, so calling `getAnnotations()` without a request still
+> reads the final snapshot. Calling it alone does not affect later parses.
+
+### `bindEnv(parser, options)`
+
+Binds a parser to environment variables with fallback priority
+(CLI > environment > default > error).
+
+Fallback values—environment variable values and the configured
+`default`—are re-validated against the inner CLI parser's constraints,
+so constraints like `integer({ min })`, `string({ pattern })`, and
+`choice([...])` cannot be bypassed through an environment variable or
+default.  See *Fallback validation* under “Error handling” for details.
+
+Parameters
+:    -  `parser`: The inner parser to wrap.
+     -  `options.context`: `EnvContext` to read from.
+     -  `options.key`: Environment variable key *without* the prefix.
+        The actual variable looked up is `prefix + key`.
+     -  `options.parser`: A `ValueParser` used to parse the raw string value
+        from the environment.
+     -  `options.default`: Optional default value used when neither CLI
+        nor environment provides a value.
+
+Returns
+:   A new parser with environment fallback behavior.
+
+### `bool(options?)`
+
+Creates a synchronous `ValueParser<"sync", boolean>` that accepts common
+Boolean literals (case-insensitive).
+
+Parameters
+:    -  `options.metavar`: Metavariable name shown in help text.
+        Defaults to `"BOOLEAN"`.
+     -  `options.errors.invalidFormat`: Custom error message or function
+        for unrecognized input.
+
+Returns
+:   `ValueParser<"sync", boolean>`
+
+### `EnvContext`
+
+Interface extending `SourceContext` with two additional properties:
+
+ -  `prefix`: The prefix string passed to `createEnvContext()`
+ -  `source`: The `EnvSource` function used to read variables
+
+
+Limitations
+-----------
+
+ -  *String-only input* — Environment variables are always strings, so a
+    `parser` is required in every `bindEnv()` call to convert the raw string
+    into the target type.  Unlike `bindConfig()`, there is no way to skip
+    the parser.
+ -  *Flat keys only* — Environment variables have no native nesting structure.
+    Unlike config files, you cannot use accessor functions to navigate nested
+    objects.  Use naming conventions (e.g., `DB_HOST`, `DB_PORT`) to
+    represent structure.
+ -  *No schema validation* — Unlike *@optique/config*, there is no schema that
+    validates the set of environment variables as a whole.  Each binding is
+    validated independently.
+ -  *No automatic dotenv conventions* — `envFile: true` loads only *.env*.
+    Optique does not automatically load *.env.local*, *.env.development*,
+    or framework-specific file sets.
+ -  *No built-in command execution* — Command-substitution syntax is
+    recognized only so applications can opt in with `envFile.substitute`.
+    Without that hook, command substitutions become empty strings.
+ -  *No dotenvx decryption* — Encrypted values remain ordinary strings.
+ -  *Synchronous reads*: `createEnvContext()` reads environment variables
+    and *.env* files synchronously.  The context itself does not add async
+    overhead, but if the `parser` used in `bindEnv()` is async, the overall
+    parsing becomes async.
+
+> [!TIP]
+> See the [cookbook](../cookbook.md#environment-variable-fallbacks) for
+> additional patterns, including
+> [combining env with config files](../cookbook.md#combining-with-environment-variables)
+> and
+> [env-only values with `fail()`](../cookbook.md#config-only-and-env-only-values-with-fail).

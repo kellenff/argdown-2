@@ -1,0 +1,907 @@
+/**
+ * @optique/git - Git value parsers for Optique
+ *
+ * This package provides async value parsers for validating Git references
+ * (branches, tags, commits, remotes) using isomorphic-git.
+ */
+import type { ValueParser, ValueParserResult } from "@optique/core/valueparser";
+import type { Suggestion } from "@optique/core/parser";
+import { type Message, message, value, valueSet } from "@optique/core/message";
+import {
+  ensureNonEmptyString,
+  type NonEmptyString,
+} from "@optique/core/nonempty";
+
+import * as git from "isomorphic-git";
+import * as fs from "node:fs/promises";
+import process from "node:process";
+import { getLogger } from "@logtape/logtape";
+
+const logger = getLogger(["optique", "git"]);
+
+export {
+  expandOid,
+  listBranches,
+  listRemotes,
+  listTags,
+  readObject,
+  resolveRef,
+} from "isomorphic-git";
+
+/**
+ * Read-only filesystem interface passed to isomorphic-git.
+ *
+ * This package only performs read operations (validation and listing).
+ * Write methods are implemented as stubs that return rejected promises,
+ * enforcing the read-only contract and preventing accidental writes.
+ */
+const readOnlyFsMethod = () =>
+  Promise.reject(new Error("gitFs is read-only for write operations."));
+
+const gitFs = {
+  readFile: fs.readFile,
+  writeFile: readOnlyFsMethod,
+  mkdir: readOnlyFsMethod,
+  rmdir: readOnlyFsMethod,
+  unlink: readOnlyFsMethod,
+  readdir: fs.readdir,
+  readlink: fs.readlink,
+  symlink: readOnlyFsMethod,
+  stat: fs.stat,
+  lstat: fs.lstat,
+};
+
+/**
+ * Options for creating git value parsers.
+ *
+ * @since 0.9.0
+ */
+export interface GitParserOptions {
+  /**
+   * The directory of the git repository.
+   * Defaults to the current working directory.
+   */
+  dir?: string;
+
+  /**
+   * The metavar name for this parser.
+   * Used in help messages to indicate what kind of value this parser expects.
+   */
+  metavar?: NonEmptyString;
+
+  /**
+   * Custom error messages for validation failures.
+   *
+   * @since 0.9.0
+   */
+  errors?: GitParserErrors;
+
+  /**
+   * Maximum number of recent commits to include in shell completion suggestions.
+   * Only affects suggestions from `gitCommit()` and `gitRef()` parsers, but
+   * is validated by all git parser functions.
+   * Must be a positive integer.
+   * Defaults to 15.
+   *
+   * @since 0.9.0
+   */
+  suggestionDepth?: number;
+}
+
+/**
+ * Custom error messages for git value parsers.
+ *
+ * @since 0.9.0
+ */
+export interface GitParserErrors {
+  /**
+   * Error message when the git reference (branch, tag, remote, commit) is not found.
+   *
+   * @param input The user-provided input that was not found.
+   * @param available List of available references (if applicable).
+   * @returns A custom error message.
+   */
+  notFound?: (input: string, available?: readonly string[]) => Message;
+
+  /**
+   * Error message when listing git references fails.
+   * This typically occurs when the directory is not a valid git repository.
+   *
+   * @param dir The directory that was being accessed.
+   * @returns A custom error message.
+   */
+  listFailed?: (dir: string) => Message;
+
+  /**
+   * Error message when the input format is invalid.
+   * Applies to parsers that validate format (e.g., commit SHA).
+   *
+   * @param input The user-provided input that has invalid format.
+   * @returns A custom error message.
+   */
+  invalidFormat?: (input: string) => Message;
+
+  /**
+   * Error message when the remote does not exist.
+   * Only used by {@link gitRemoteBranch}.
+   *
+   * @param remote The remote name that was not found.
+   * @param availableRemotes List of available remote names.
+   * @returns A custom error message.
+   * @since 1.0.0
+   */
+  remoteNotFound?: (
+    remote: string,
+    availableRemotes: readonly string[],
+  ) => Message;
+}
+
+/**
+ * Git parsers factory interface.
+ *
+ * @since 0.9.0
+ */
+export interface GitParsers {
+  /**
+   * Creates a value parser that validates local branch names.
+   * @param options Configuration options for the parser.
+   * @returns A value parser that accepts existing branch names.
+   * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+   */
+  branch(options?: GitParserOptions): ValueParser<"async", string>;
+
+  /**
+   * Creates a value parser that validates remote branch names.
+   * @param remote The remote name to validate against.
+   * @param options Configuration options for the parser.
+   * @returns A value parser that accepts existing remote branch names.
+   * @throws {TypeError} If `remote` is not a valid non-empty string without
+   *   whitespace or control characters.
+   * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+   */
+  remoteBranch(
+    remote: string,
+    options?: GitParserOptions,
+  ): ValueParser<"async", string>;
+
+  /**
+   * Creates a value parser that validates tag names.
+   * @param options Configuration options for the parser.
+   * @returns A value parser that accepts existing tag names.
+   * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+   */
+  tag(options?: GitParserOptions): ValueParser<"async", string>;
+
+  /**
+   * Creates a value parser that validates remote names.
+   * @param options Configuration options for the parser.
+   * @returns A value parser that accepts existing remote names.
+   * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+   */
+  remote(options?: GitParserOptions): ValueParser<"async", string>;
+
+  /**
+   * Creates a value parser that validates commit SHAs.
+   * @param options Configuration options for the parser.
+   * @returns A value parser that accepts existing commit SHAs.
+   * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+   */
+  commit(options?: GitParserOptions): ValueParser<"async", string>;
+
+  /**
+   * Creates a value parser that validates any git reference.
+   * Accepts branch names, tag names, or commit SHAs.
+   * @param options Configuration options for the parser.
+   * @returns A value parser that accepts any git reference.
+   * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+   */
+  ref(options?: GitParserOptions): ValueParser<"async", string>;
+}
+
+interface GitRemote {
+  remote: string;
+  url: string;
+}
+
+const METAVAR_BRANCH: NonEmptyString = "BRANCH";
+const METAVAR_TAG: NonEmptyString = "TAG";
+const METAVAR_REMOTE: NonEmptyString = "REMOTE";
+
+/**
+ * Resolves the repository directory from the provided option or process.cwd().
+ *
+ * Note: This function does not validate that the directory exists or is
+ * accessible. Directory validation is deferred to the Git operations
+ * themselves, which will produce appropriate error messages if the directory
+ * is invalid or not a Git repository.
+ */
+function getRepoDir(dirOption: string | undefined): string {
+  if (dirOption != null) {
+    return dirOption;
+  }
+  if (typeof process !== "undefined" && typeof process.cwd === "function") {
+    return process.cwd();
+  }
+  throw new Error(
+    "Git parser requires a `dir` option in environments where " +
+      "`process.cwd()` is unavailable.",
+  );
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error as { readonly code?: unknown }).code === code;
+}
+
+function listFailureMessage(
+  error: unknown,
+  dir: string,
+  errors: GitParserErrors | undefined,
+  fallback: Message,
+): Message {
+  if (errors?.listFailed) {
+    return errors.listFailed(dir);
+  }
+
+  if (
+    hasErrorCode(error, "NotAGitRepositoryError") ||
+    hasErrorCode(error, "NotFoundError")
+  ) {
+    return message`${value(dir)} is not a git repository.`;
+  }
+
+  return fallback;
+}
+
+/** Default depth for commit suggestions. */
+const DEFAULT_SUGGESTION_DEPTH = 15;
+
+/**
+ * Computes the shortest unique short OID for each given full OID within the
+ * provided set, starting from a minimum length.  When two or more OIDs share
+ * the same short prefix, their prefixes are lengthened until each is unique
+ * (up to the full 40-char OID).
+ *
+ * Note: this only disambiguates within the given set, not against the entire
+ * object database.  In the rare case that a suggested short OID collides with
+ * an older commit outside the suggestion window, the parser will report a
+ * clear "ambiguous" error prompting the user to type more characters.
+ */
+function uniqueShortOids(
+  oids: readonly string[],
+  minLength: number,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  const lengths = new Map<string, number>();
+  for (const oid of oids) {
+    lengths.set(oid, minLength);
+  }
+  let remaining = new Set(oids);
+  while (remaining.size > 0) {
+    const groups = new Map<string, string[]>();
+    for (const oid of remaining) {
+      const len = lengths.get(oid)!;
+      const short = oid.slice(0, len);
+      const group = groups.get(short);
+      if (group != null) {
+        group.push(oid);
+      } else {
+        groups.set(short, [oid]);
+      }
+    }
+    const nextRemaining = new Set<string>();
+    for (const [short, group] of groups) {
+      if (group.length === 1) {
+        result.set(group[0], short);
+      } else {
+        for (const oid of group) {
+          const currentLen = lengths.get(oid)!;
+          if (currentLen >= oid.length) {
+            result.set(oid, oid);
+          } else {
+            lengths.set(oid, currentLen + 1);
+            nextRemaining.add(oid);
+          }
+        }
+      }
+    }
+    remaining = nextRemaining;
+  }
+  return result;
+}
+
+function createAsyncValueParser(
+  options: GitParserOptions | undefined,
+  metavar: NonEmptyString,
+  parseFn: (
+    dir: string,
+    input: string,
+    errors: GitParserErrors | undefined,
+  ) => Promise<ValueParserResult<string>>,
+  suggestFn?: (
+    dir: string,
+    prefix: string,
+    suggestionDepth: number,
+  ) => AsyncIterable<Suggestion>,
+): ValueParser<"async", string> {
+  ensureNonEmptyString(metavar);
+  if (options?.suggestionDepth !== undefined) {
+    if (
+      !Number.isInteger(options.suggestionDepth) ||
+      options.suggestionDepth < 1
+    ) {
+      const depth = options.suggestionDepth;
+      const repr = typeof depth === "number"
+        ? String(depth)
+        : typeof depth === "string"
+        ? JSON.stringify(depth)
+        : `${typeof depth} ${String(depth)}`;
+      throw new RangeError(
+        `Invalid suggestionDepth (must be a positive integer): ${repr}`,
+      );
+    }
+  }
+  const validatedDepth = options?.suggestionDepth ?? DEFAULT_SUGGESTION_DEPTH;
+
+  return {
+    mode: "async",
+    metavar,
+    placeholder: "",
+    parse(input: string): Promise<ValueParserResult<string>> {
+      const dir = getRepoDir(options?.dir);
+      return parseFn(dir, input, options?.errors);
+    },
+    format(value: string): string {
+      return value;
+    },
+    async *suggest(prefix: string): AsyncIterable<Suggestion> {
+      const dir = getRepoDir(options?.dir);
+      if (suggestFn) {
+        yield* suggestFn(dir, prefix, validatedDepth);
+      }
+    },
+  };
+}
+
+/**
+ * Creates a value parser that validates local branch names.
+ *
+ * This parser uses isomorphic-git to verify that the provided input
+ * matches an existing branch in the repository.
+ *
+ * @param options Configuration options for the parser.
+ * @returns A value parser that accepts existing branch names.
+ * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+ * @since 0.9.0
+ *
+ * @example
+ * ~~~~ typescript
+ * import { gitBranch } from "@optique/git";
+ * import { argument } from "@optique/core/primitives";
+ *
+ * const parser = argument(gitBranch());
+ * ~~~~
+ */
+export function gitBranch(
+  options?: GitParserOptions,
+): ValueParser<"async", string> {
+  const metavar: NonEmptyString = options?.metavar ?? METAVAR_BRANCH;
+  return createAsyncValueParser(
+    options,
+    metavar,
+    async (dir, input, errors) => {
+      try {
+        const branches = await git.listBranches({ fs: gitFs, dir });
+        if (branches.includes(input)) {
+          return { success: true, value: input };
+        }
+        if (errors?.notFound) {
+          return { success: false, error: errors.notFound(input, branches) };
+        }
+        return {
+          success: false,
+          error: message`Branch ${value(input)} does not exist.${
+            branches.length > 0
+              ? message` Available branches: ${valueSet(branches, "")}`
+              : message``
+          }`,
+        };
+      } catch (error) {
+        const fallback = message`Failed to list branches. Ensure ${
+          value(dir)
+        } is a valid git repository.`;
+        return {
+          success: false,
+          error: listFailureMessage(error, dir, errors, fallback),
+        };
+      }
+    },
+    async function* suggestBranch(dir, prefix, _depth) {
+      try {
+        const branches = await git.listBranches({ fs: gitFs, dir });
+        for (const branch of branches) {
+          if (branch.startsWith(prefix)) {
+            yield { kind: "literal" as const, text: branch };
+          }
+        }
+      } catch (error) {
+        logger.debug("Failed to list branches for suggestions.", {
+          dir,
+          prefix,
+          error,
+        });
+      }
+    },
+  );
+}
+
+/**
+ * Creates a value parser that validates remote branch names.
+ *
+ * This parser uses isomorphic-git to verify that the provided input
+ * matches an existing branch on the specified remote.
+ *
+ * @param remote The remote name to validate against.
+ * @param options Configuration options for the parser.
+ * @returns A value parser that accepts existing remote branch names.
+ * @throws {TypeError} If `remote` is not a valid non-empty string without
+ *   whitespace or control characters.
+ * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+ * @since 0.9.0
+ *
+ * @example
+ * ~~~~ typescript
+ * import { gitRemoteBranch } from "@optique/git";
+ * import { option } from "@optique/core/primitives";
+ *
+ * const parser = option("-b", "--branch", gitRemoteBranch("origin"));
+ * ~~~~
+ */
+export function gitRemoteBranch(
+  remote: string,
+  options?: GitParserOptions,
+): ValueParser<"async", string> {
+  const expectedMessage =
+    "Expected remote to be a non-empty string without whitespace" +
+    " or control characters";
+  if (typeof remote !== "string") {
+    throw new TypeError(
+      `${expectedMessage}, but got: ${
+        remote === null
+          ? "null"
+          : Array.isArray(remote)
+          ? "array"
+          : typeof remote
+      }.`,
+    );
+  }
+  // deno-lint-ignore no-control-regex
+  if (remote === "" || /[\s\x00-\x1f]/.test(remote)) {
+    throw new TypeError(
+      `${expectedMessage}, but got: ${JSON.stringify(remote)}.`,
+    );
+  }
+  const metavar: NonEmptyString = options?.metavar ?? METAVAR_BRANCH;
+  return createAsyncValueParser(
+    options,
+    metavar,
+    async (dir, input, errors) => {
+      try {
+        const branches = await git.listBranches({ fs: gitFs, dir, remote });
+        if (branches.includes(input)) {
+          return { success: true, value: input };
+        }
+        if (branches.length === 0) {
+          const remotes = await git.listRemotes({ fs: gitFs, dir });
+          const names = remotes.map((r: GitRemote) => r.remote);
+          if (!names.includes(remote)) {
+            if (errors?.remoteNotFound) {
+              return {
+                success: false,
+                error: errors.remoteNotFound(remote, names),
+              };
+            }
+            if (errors?.notFound) {
+              return {
+                success: false,
+                error: errors.notFound(input, branches),
+              };
+            }
+            return {
+              success: false,
+              error: message`Remote ${value(remote)} does not exist.${
+                names.length > 0
+                  ? message` Available remotes: ${valueSet(names, "")}`
+                  : message``
+              }`,
+            };
+          }
+        }
+        if (errors?.notFound) {
+          return { success: false, error: errors.notFound(input, branches) };
+        }
+        return {
+          success: false,
+          error: message`Remote branch ${
+            value(input)
+          } does not exist on remote ${value(remote)}.${
+            branches.length > 0
+              ? message` Available branches: ${valueSet(branches, "")}`
+              : message``
+          }`,
+        };
+      } catch (error) {
+        const fallback =
+          message`Failed to list remote branches. Ensure remote ${
+            value(remote)
+          } exists.`;
+
+        return {
+          success: false,
+          error: listFailureMessage(error, dir, errors, fallback),
+        };
+      }
+    },
+    async function* suggestRemoteBranch(dir, prefix, _depth) {
+      try {
+        const branches = await git.listBranches({ fs: gitFs, dir, remote });
+        for (const branch of branches) {
+          if (branch.startsWith(prefix)) {
+            yield { kind: "literal" as const, text: branch };
+          }
+        }
+      } catch (error) {
+        logger.debug("Failed to list remote branches for suggestions.", {
+          dir,
+          remote,
+          prefix,
+          error,
+        });
+      }
+    },
+  );
+}
+
+/**
+ * Creates a value parser that validates tag names.
+ *
+ * @param options Configuration options for the parser.
+ * @returns A value parser that accepts existing tag names.
+ * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+ * @since 0.9.0
+ */
+export function gitTag(
+  options?: GitParserOptions,
+): ValueParser<"async", string> {
+  const metavar: NonEmptyString = options?.metavar ?? METAVAR_TAG;
+  return createAsyncValueParser(
+    options,
+    metavar,
+    async (dir, input, errors) => {
+      try {
+        const tags = await git.listTags({ fs: gitFs, dir });
+        if (tags.includes(input)) {
+          return { success: true, value: input };
+        }
+        if (errors?.notFound) {
+          return { success: false, error: errors.notFound(input, tags) };
+        }
+        return {
+          success: false,
+          error: message`Tag ${value(input)} does not exist.${
+            tags.length > 0
+              ? message` Available tags: ${valueSet(tags, "")}`
+              : message``
+          }`,
+        };
+      } catch (error) {
+        const fallback = message`Failed to list tags. Ensure ${
+          value(dir)
+        } is a valid git repository.`;
+        return {
+          success: false,
+          error: listFailureMessage(error, dir, errors, fallback),
+        };
+      }
+    },
+    async function* suggestTag(dir, prefix, _depth) {
+      try {
+        const tags = await git.listTags({ fs: gitFs, dir });
+        for (const tag of tags) {
+          if (tag.startsWith(prefix)) {
+            yield { kind: "literal" as const, text: tag };
+          }
+        }
+      } catch (error) {
+        logger.debug("Failed to list tags for suggestions.", {
+          dir,
+          prefix,
+          error,
+        });
+      }
+    },
+  );
+}
+
+/**
+ * Creates a value parser that validates remote names.
+ *
+ * @param options Configuration options for the parser.
+ * @returns A value parser that accepts existing remote names.
+ * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+ * @since 0.9.0
+ */
+export function gitRemote(
+  options?: GitParserOptions,
+): ValueParser<"async", string> {
+  const metavar: NonEmptyString = options?.metavar ?? METAVAR_REMOTE;
+  return createAsyncValueParser(
+    options,
+    metavar,
+    async (dir, input, errors) => {
+      try {
+        const remotes = await git.listRemotes({ fs: gitFs, dir });
+        const names = remotes.map((r: GitRemote) => r.remote);
+        if (names.includes(input)) {
+          return { success: true, value: input };
+        }
+        if (errors?.notFound) {
+          return { success: false, error: errors.notFound(input, names) };
+        }
+        return {
+          success: false,
+          error: message`Remote ${value(input)} does not exist.${
+            names.length > 0
+              ? message` Available remotes: ${valueSet(names, "")}`
+              : message``
+          }`,
+        };
+      } catch (error) {
+        const fallback = message`Failed to list remotes. Ensure ${
+          value(dir)
+        } is a valid git repository.`;
+        return {
+          success: false,
+          error: listFailureMessage(error, dir, errors, fallback),
+        };
+      }
+    },
+    async function* suggestRemote(dir, prefix, _depth) {
+      try {
+        const remotes = await git.listRemotes({ fs: gitFs, dir });
+        for (const r of remotes) {
+          if (r.remote.startsWith(prefix)) {
+            yield { kind: "literal" as const, text: r.remote };
+          }
+        }
+      } catch (error) {
+        logger.debug("Failed to list remotes for suggestions.", {
+          dir,
+          prefix,
+          error,
+        });
+      }
+    },
+  );
+}
+
+/**
+ * Creates a value parser that validates commit SHAs.
+ *
+ * This parser resolves the provided commit reference to its full 40-character
+ * OID.
+ *
+ * @param options Configuration options for the parser.
+ * @returns A value parser that accepts existing commit SHAs.
+ * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+ * @since 0.9.0
+ */
+export function gitCommit(
+  options?: GitParserOptions,
+): ValueParser<"async", string> {
+  const metavar: NonEmptyString = options?.metavar ?? "COMMIT";
+  return createAsyncValueParser(
+    options,
+    metavar,
+    async (dir, input, errors) => {
+      if (!/^[0-9a-f]{4,40}$/i.test(input)) {
+        if (errors?.invalidFormat) {
+          return { success: false, error: errors.invalidFormat(input) };
+        }
+        return {
+          success: false,
+          error: message`Invalid commit SHA: ${
+            value(input)
+          }. Provide an abbreviated (4+) or full (40) hexadecimal commit SHA.`,
+        };
+      }
+
+      try {
+        const oid = await git.expandOid({ fs: gitFs, dir, oid: input });
+        return { success: true, value: oid };
+      } catch (e) {
+        if (
+          hasErrorCode(e, "AmbiguousShortOidError") ||
+          hasErrorCode(e, "AmbiguousError")
+        ) {
+          return {
+            success: false,
+            error: message`Commit SHA ${
+              value(input)
+            } is ambiguous. Provide more characters to disambiguate.`,
+          };
+        }
+        if (errors?.notFound) {
+          return { success: false, error: errors.notFound(input) };
+        }
+        return {
+          success: false,
+          error: message`Commit ${
+            value(input)
+          } does not exist. Provide a valid commit SHA.`,
+        };
+      }
+    },
+    async function* suggestCommit(dir, prefix, depth) {
+      try {
+        const commits = await git.log({ fs: gitFs, dir, depth });
+        const matching = commits.filter((c) => c.oid.startsWith(prefix));
+        const minLen = Math.max(7, prefix.length);
+        const shortOids = uniqueShortOids(
+          matching.map((c) => c.oid),
+          minLen,
+        );
+        for (const commit of matching) {
+          const shortOid = shortOids.get(commit.oid)!;
+          const firstLine = commit.commit.message.split("\n")[0];
+          yield {
+            kind: "literal" as const,
+            text: shortOid,
+            description: message`${firstLine}`,
+          };
+        }
+      } catch (error) {
+        logger.debug("Failed to list commits for suggestions.", {
+          dir,
+          prefix,
+          error,
+        });
+      }
+    },
+  );
+}
+
+/**
+ * Creates a value parser that validates any git reference.
+ *
+ * Accepts branch names, tag names, or commit SHAs and resolves them to the
+ * corresponding commit OID.
+ *
+ * @param options Configuration options for the parser.
+ * @returns A value parser that accepts any git reference.
+ * @throws {RangeError} If `suggestionDepth` is not a positive integer.
+ * @since 0.9.0
+ */
+export function gitRef(
+  options?: GitParserOptions,
+): ValueParser<"async", string> {
+  const metavar: NonEmptyString = options?.metavar ?? "REF";
+  return createAsyncValueParser(
+    options,
+    metavar,
+    async (dir, input, errors) => {
+      let resolved: string | undefined;
+      try {
+        resolved = await git.resolveRef({ fs: gitFs, dir, ref: input });
+      } catch {
+        // Not a branch or tag, will try as a commit SHA.
+      }
+
+      if (resolved) {
+        return { success: true, value: resolved };
+      }
+
+      try {
+        const oid = await git.expandOid({ fs: gitFs, dir, oid: input });
+        return { success: true, value: oid };
+      } catch (e) {
+        if (
+          hasErrorCode(e, "AmbiguousShortOidError") ||
+          hasErrorCode(e, "AmbiguousError")
+        ) {
+          return {
+            success: false,
+            error: message`Reference ${
+              value(input)
+            } is ambiguous. Provide more characters to disambiguate.`,
+          };
+        }
+        if (errors?.notFound) {
+          return { success: false, error: errors.notFound(input) };
+        }
+        return {
+          success: false,
+          error: message`Reference ${
+            value(input)
+          } does not exist. Provide a valid branch, tag, or commit SHA.`,
+        };
+      }
+    },
+    async function* suggestRef(dir, prefix, depth) {
+      try {
+        const [branches, tags, commits] = await Promise.all([
+          git.listBranches({ fs: gitFs, dir }),
+          git.listTags({ fs: gitFs, dir }),
+          git.log({ fs: gitFs, dir, depth }),
+        ]);
+
+        const seen = new Set<string>();
+
+        for (const branch of branches) {
+          if (branch.startsWith(prefix) && !seen.has(branch)) {
+            seen.add(branch);
+            yield { kind: "literal" as const, text: branch };
+          }
+        }
+
+        for (const tag of tags) {
+          if (tag.startsWith(prefix) && !seen.has(tag)) {
+            seen.add(tag);
+            yield { kind: "literal" as const, text: tag };
+          }
+        }
+
+        const matching = commits.filter((c) => c.oid.startsWith(prefix));
+        const minLen = Math.max(7, prefix.length);
+        const shortOids = uniqueShortOids(
+          matching.map((c) => c.oid),
+          minLen,
+        );
+        for (const commit of matching) {
+          const shortOid = shortOids.get(commit.oid)!;
+          if (seen.has(shortOid)) continue;
+          seen.add(shortOid);
+          const firstLine = commit.commit.message.split("\n")[0];
+          yield {
+            kind: "literal" as const,
+            text: shortOid,
+            description: message`${firstLine}`,
+          };
+        }
+      } catch (error) {
+        logger.debug("Failed to list refs for suggestions.", {
+          dir,
+          prefix,
+          error,
+        });
+      }
+    },
+  );
+}
+
+/**
+ * Creates a set of git parsers with shared configuration.
+ *
+ * @param options Shared configuration for the parsers.
+ * @returns An object containing git parsers.  Each returned method may throw
+ *   a {@link RangeError} if the merged `suggestionDepth` is not a positive
+ *   integer.  `remoteBranch()` may also throw a {@link TypeError} if `remote`
+ *   is not a valid non-empty string without whitespace or control characters.
+ * @since 0.9.0
+ */
+export function createGitParsers(options?: GitParserOptions): GitParsers {
+  return {
+    branch: (branchOptions?: GitParserOptions) =>
+      gitBranch({ ...options, ...branchOptions }),
+    remoteBranch: (remote: string, branchOptions?: GitParserOptions) =>
+      gitRemoteBranch(remote, { ...options, ...branchOptions }),
+    tag: (tagOptions?: GitParserOptions) =>
+      gitTag({ ...options, ...tagOptions }),
+    remote: (remoteOptions?: GitParserOptions) =>
+      gitRemote({ ...options, ...remoteOptions }),
+    commit: (commitOptions?: GitParserOptions) =>
+      gitCommit({ ...options, ...commitOptions }),
+    ref: (refOptions?: GitParserOptions) =>
+      gitRef({ ...options, ...refOptions }),
+  } satisfies GitParsers;
+}

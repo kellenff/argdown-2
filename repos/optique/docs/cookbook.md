@@ -1,0 +1,2890 @@
+---
+description: >-
+  Practical recipes for common command-line interface patterns using Optique:
+  subcommands, dependent options, mutually exclusive flags, key–value pairs,
+  and more complex CLI designs with detailed explanations.
+---
+
+CLI patterns cookbook
+=====================
+
+This cookbook provides practical recipes for common command-line interface
+patterns using Optique. Each pattern demonstrates not just how to implement
+a specific feature, but the underlying principles that make it work, helping
+you understand how to adapt these techniques to your own applications.
+
+The examples focus on real-world CLI patterns you'll encounter when building
+command-line tools: handling mutually exclusive options, implementing dependent
+flags, parsing key–value pairs, and organizing complex subcommand structures.
+
+
+Core patterns
+-------------
+
+These recipes use only *@optique/core* and *@optique/run*.
+
+### Subcommands with distinct behaviors
+
+   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+Many CLI tools organize functionality into subcommands, where each subcommand
+has its own set of options and arguments. This pattern is essential for tools
+that perform multiple related operations, like Git (`git commit`, `git push`)
+or Docker (`docker run`, `docker build`).
+
+~~~~ typescript twoslash
+import { object, or } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { argument, command, constant, option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+// ---cut-before---
+const addCommand = command(
+  "add",
+  object({
+    action: constant("add"),
+    key: argument(string({ metavar: "KEY" })),
+    value: argument(string({ metavar: "VALUE" })),
+  }),
+);
+
+const removeCommand = command(
+  "remove",
+  object({
+    action: constant("remove"),
+    key: argument(string({ metavar: "KEY" })),
+  }),
+);
+
+const editCommand = command(
+  "edit",
+  object({
+    action: constant("edit"),
+    key: argument(string({ metavar: "KEY" })),
+    value: argument(string({ metavar: "VALUE" })),
+  }),
+);
+
+const listCommand = command(
+  "list",
+  object({
+    action: constant("list"),
+    pattern: optional(
+      option("-p", "--pattern", string({ metavar: "PATTERN" })),
+    ),
+  }),
+);
+
+const parser = or(addCommand, removeCommand, editCommand, listCommand);
+
+const result = run(parser);
+//    ^?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// The result type consists of a discriminated union of all commands.
+~~~~
+
+The key insight here is using [`or()`](./concepts/constructs.md#or-parser)
+to create a discriminated union of different command parsers.
+Each [`command()`](./concepts/primitives.md#command-parser) parser:
+
+1.  *Matches a specific keyword* (`"add"`, `"remove"`, etc.) as the first
+    argument
+2.  *Provides a unique type tag* using
+    [`constant()`](./concepts/primitives.md#constant-parser) to distinguish
+    commands in the result type
+3.  *Defines command-specific arguments* that only apply to that particular
+    command
+
+The `constant("add")` pattern is crucial because it creates a literal type that
+TypeScript can use for exhaustive checking. When you handle the result,
+TypeScript knows exactly which fields are available based on the `action` value:
+
+~~~~ typescript twoslash
+const result = 0 as unknown as {
+    readonly action: "add";
+    readonly key: string;
+    readonly value: string;
+} | {
+    readonly action: "remove";
+    readonly key: string;
+} | {
+    readonly action: "edit";
+    readonly key: string;
+    readonly value: string;
+} | {
+    readonly action: "list";
+    readonly pattern: string | undefined;
+};
+// ---cut-before---
+if (result.action === "add") {
+  // TypeScript knows: result.key and result.value are available
+  console.log(`Adding ${result.key}=${result.value}`);
+} else if (result.action === "remove") {
+  // TypeScript knows: only result.key is available
+  console.log(`Removing ${result.key}`);
+}
+~~~~
+
+This pattern scales well because adding new subcommands only requires extending
+the `or()` combinator with new command parsers.
+
+### Shared options across subcommands
+
+Real-world CLIs almost always have a handful of flags that apply to every
+subcommand: `--verbose`, `--config`, `--dry-run`, and so on. Duplicating them
+into each `or()` branch is error-prone and makes the help output harder to
+maintain. The canonical solution is to lift the shared options into their own
+`object()` and compose it with the subcommand dispatcher using `merge()`:
+
+~~~~ typescript twoslash
+import { merge, object, or } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { argument, command, constant, option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+// ---cut-before---
+const globals = object({
+  verbose: option("-v", "--verbose"),
+  config: optional(option("-c", "--config", string({ metavar: "FILE" }))),
+});
+
+const buildCommand = command(
+  "build",
+  object({
+    action: constant("build"),
+    target: argument(string({ metavar: "TARGET" })),
+  }),
+);
+
+const deployCommand = command(
+  "deploy",
+  object({
+    action: constant("deploy"),
+    environment: argument(string({ metavar: "ENV" })),
+    force: option("--force"),
+  }),
+);
+
+const parser = merge(globals, or(buildCommand, deployCommand));
+
+const result = run(parser);
+//    ^?
+
+
+
+
+// verbose and config are always present; action, target, environment,
+// and force depend on which subcommand was invoked.
+~~~~
+
+The result type *flattens* the shared fields alongside the command-specific
+ones. `result.verbose` and `result.config` are always present regardless of
+which subcommand was invoked. Switching on `result.action` narrows the
+branch-specific fields:
+
+~~~~ typescript twoslash
+const result = 0 as unknown as {
+    readonly verbose: boolean;
+    readonly config: string | undefined;
+    readonly action: "build";
+    readonly target: string;
+} | {
+    readonly verbose: boolean;
+    readonly config: string | undefined;
+    readonly action: "deploy";
+    readonly environment: string;
+    readonly force: boolean;
+};
+// ---cut-before---
+if (result.action === "build") {
+  // TypeScript knows: result.target is available
+  console.log(`Building ${result.target}${result.verbose ? " (verbose)" : ""}.`);
+} else {
+  // TypeScript knows: result.environment and result.force are available
+  console.log(`Deploying to ${result.environment}${result.force ? " (forced)" : ""}.`);
+}
+~~~~
+
+A few things to note about this pattern:
+
+ -  *`group()` for help text*: Wrap `globals` with
+    `group("Global options", globals)` to place the shared options under a
+    labeled section in the help output. See the
+    [grouped mutually exclusive options](#grouped-mutually-exclusive-options)
+    recipe for an example of `group()` in action.
+
+ -  *Config-file defaults*: When `--config` should supply defaults from a
+    file via *@optique/config*, the same `merge(globals, or(...))` shape
+    plugs directly into the `contexts:` option of `runAsync()`. See the
+    [config file integration](#config-file-integration) recipe.
+
+ -  *When this pattern is not the right fit*: If the shared options need
+    different defaults per command, this idiom does not help. Reach for
+    *@optique/discover* instead; it lets each command module declare its
+    own defaults while sharing a common entry point.
+
+### Positional prefixes before subcommands
+
+Some tools accept a small positional prefix before the subcommand itself. For
+example, a deployment tool might accept an optional profile before commands
+such as `build` or `deploy`:
+
+~~~~ bash
+tool build app
+tool staging deploy production --force
+~~~~
+
+Use [`seq()`](./concepts/constructs.md#seq-parser) when the order of parsers is
+part of the grammar. The optional profile is considered first, then the command
+parser is considered after it:
+
+~~~~ typescript twoslash
+import { object, or, seq } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { argument, command, constant, option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+// ---cut-before---
+const parser = seq(
+  optional(argument(string({ metavar: "PROFILE" }))),
+  or(
+    command(
+      "build",
+      object({
+        action: constant("build"),
+        target: argument(string({ metavar: "TARGET" })),
+      }),
+    ),
+    command(
+      "deploy",
+      object({
+        action: constant("deploy"),
+        environment: argument(string({ metavar: "ENV" })),
+        force: option("--force"),
+      }),
+    ),
+  ),
+);
+
+const [profile, commandResult] = run(parser);
+//     ^?
+
+
+
+
+
+
+
+
+
+
+const profileName = profile ?? "default";
+
+if (commandResult.action === "build") {
+  console.log(`Building ${commandResult.target} with ${profileName}.`);
+} else {
+  console.log(`Deploying ${commandResult.environment} with ${profileName}.`);
+}
+~~~~
+
+The important distinction from
+[`tuple()`](./concepts/constructs.md#tuple-parser) is that `seq()` advances
+through child parsers in declaration order. A fixed optional positional parser
+can be skipped when the next token is a later command name, so `tool build app`
+is parsed as “no profile, then the `build` command.”
+
+`seq()` deliberately avoids backtracking. If you put a variadic positional
+parser before a command, it may consume too much input before the command has a
+chance to match. Keep the prefix fixed, or add a clear boundary such as an
+option, command name, or `--`.
+
+### Mutually exclusive options
+
+Sometimes you need to accept different sets of options that cannot be used
+together. This pattern is common in tools that can operate in different modes,
+where each mode requires its own configuration.
+
+~~~~ typescript twoslash
+import { object, or } from "@optique/core/constructs";
+import { withDefault } from "@optique/core/modifiers";
+import { argument, constant, option } from "@optique/core/primitives"
+import { integer, string, url } from "@optique/core/valueparser";
+import { message } from "@optique/core/message";
+import { print, run } from "@optique/run";
+// ---cut-before---
+const parser = or(
+  object({
+    mode: constant("server"),
+    host: withDefault(
+      option(
+        "-h",
+        "--host",
+        string({ metavar: "HOST" }),
+      ),
+      "0.0.0.0",
+    ),
+    port: option(
+      "-p",
+      "--port",
+      integer({ metavar: "PORT", min: 1, max: 0xffff }),
+    ),
+  }),
+  object({
+    mode: constant("client"),
+    url: argument(url()),
+  }),
+);
+
+const result = run(parser);
+//    ^?
+
+
+
+
+
+
+
+
+
+
+// The result type is a discriminated union of server and client modes.
+~~~~
+
+This pattern uses [`or()`](./concepts/constructs.md#or-parser) at the parser
+level rather than just for individual flags. Each branch of the `or()`
+represents a complete, valid configuration:
+
+Server mode
+:   Requires `--port` option and accepts optional `--host`
+
+Client mode
+:   Requires a URL argument
+
+The [`constant()`](./concepts/primitives.md#constant-parser) combinator in
+each branch serves as a discriminator, making it easy to determine which mode
+was selected and what options are available. The type system prevents you from
+accidentally accessing client-only fields when in server mode.
+
+The [`withDefault()`](./concepts/modifiers.md#withdefault-parser) wrapper
+ensures that optional fields have sensible defaults, but only within their
+respective modes. The client mode doesn't get a default host because
+it doesn't use one.
+
+### Mutually exclusive flags
+
+For simpler cases where you need exactly one of several flags, you can use
+mutually exclusive flags that map to different values.
+
+~~~~ typescript twoslash
+import { or } from "@optique/core/constructs";
+import { map, withDefault } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { message } from "@optique/core/message";
+import { run } from "@optique/run";
+// ---cut-before---
+const modeParser = withDefault(
+  or(
+    map(option("-a", "--mode-a"), () => "a" as const),
+    map(option("-b", "--mode-b"), () => "b" as const),
+    map(option("-c", "--mode-c"), () => "c" as const),
+  ),
+  "default" as const,
+);
+
+const result = run(modeParser);
+//    ^?
+
+
+// The result type is a union of "a", "b", "c", or "default".
+~~~~
+
+This pattern combines [`or()`](./concepts/constructs.md#or-parser) with
+[`map()`](./concepts/modifiers.md#map-parser) to transform boolean flag presence
+into more meaningful values. Each
+[`option()`](./concepts/primitives.md#option-parser) parser only succeeds when
+its flag is present, and `map()` transforms the boolean result into a string
+literal.
+
+The [`withDefault()`](./concepts/modifiers.md#withdefault-parser) wrapper
+handles the case where no flags are provided, giving you a fallback behavior.
+This is different from the previous pattern because:
+
+ -  *Conflict detection*: If multiple flags are provided, the parser rejects
+    them with an error (e.g., `--mode-a` and `--mode-b` cannot be used
+    together)
+ -  *Simpler structure*: Returns a simple string rather than an object
+ -  *Default handling*: Has a meaningful fallback when no options are given
+
+### Optional mutually exclusive flags
+
+Sometimes you want mutually exclusive options where *none* of them need to be
+provided. For example, a verbosity setting where you can specify `--verbose`
+or `--quiet`, but the default behavior applies when neither is given.
+
+The key insight is that [`or()`](./concepts/constructs.md#or-parser) requires
+at least one alternative to match. To make all alternatives optional, wrap
+the `or()` with [`optional()`](./concepts/modifiers.md#optional-parser):
+
+~~~~ typescript twoslash
+import { object, or } from "@optique/core/constructs";
+import { map, optional, withDefault } from "@optique/core/modifiers";
+import { flag } from "@optique/core/primitives";
+import { run } from "@optique/run";
+// ---cut-before---
+// Using optional(): returns undefined when no flag is provided
+const outputMode = optional(
+  or(
+    map(flag("--verbose", "-v"), () => "verbose" as const),
+    map(flag("--quiet", "-q"), () => "quiet" as const),
+  ),
+);
+
+// Using withDefault(): returns a default value when no flag is provided
+const outputModeWithDefault = withDefault(
+  or(
+    map(flag("--verbose", "-v"), () => "verbose" as const),
+    map(flag("--quiet", "-q"), () => "quiet" as const),
+  ),
+  "normal" as const,
+);
+
+const result1 = run(outputMode);
+//    ^?
+
+
+
+const result2 = run(outputModeWithDefault);
+//    ^?
+
+
+console.debug(result1, result2);
+~~~~
+
+This pattern differs from the basic
+[mutually exclusive flags](#mutually-exclusive-flags) pattern in an important
+way:
+
+ -  *Without wrapper*: `or(A, B)` requires at least one to match—parsing fails
+    if neither is provided
+ -  *With `optional()`*: Returns `undefined` when no alternative matches
+ -  *With `withDefault()`*: Returns a fallback value when no alternative matches
+
+Choose based on your needs:
+
+ -  Use `optional(or(...))` when the absence of a choice is meaningful
+    (e.g., “use system default”)
+ -  Use `withDefault(or(...), fallback)` when you always want a concrete value
+
+### Dependent options
+
+Some CLI tools have options that only make sense when another option is
+present. This creates a dependency relationship where certain options are
+only valid in specific contexts.
+
+~~~~ typescript twoslash
+import { merge, object } from "@optique/core/constructs";
+import { withDefault } from "@optique/core/modifiers";
+import { flag, option } from "@optique/core/primitives";
+import { message } from "@optique/core/message";
+import { run } from "@optique/run";
+// ---cut-before---
+const unionParser = withDefault(
+  object({
+    flag: flag("-f", "--flag"),
+    dependentFlag: option("-d", "--dependent-flag"),
+    dependentFlag2: option("-D", "--dependent-flag-2"),
+  }),
+  { flag: false as const } as const,
+);
+
+const parser = merge(
+  unionParser,
+  object({
+    normalFlag: option("-n", "--normal-flag"),
+  }),
+);
+
+const result = run(parser);
+//    ^?
+
+
+
+
+
+
+
+
+
+
+
+// The result type enforces that dependentFlag and dependentFlag2 are only
+// available when flag is true.
+~~~~
+
+This pattern uses conditional typing to enforce dependencies at compile time.
+The [`withDefault()`](./concepts/modifiers.md#withdefault-parser) combinator
+creates a union type where:
+
+When `flag: false`
+:   Only the main flag is available
+
+When `flag: true`
+:   Additional dependent options become available
+
+This ensures that TypeScript prevents accessing dependent options unless the
+main flag is `true`. The [`merge()`](./concepts/constructs.md#merge-parser)
+combinator allows you to combine the conditional parser with other independent
+options that are always available.
+
+The key insight is that dependent options are often about context: when certain
+features are enabled, additional configuration becomes relevant.
+
+### Inter-option value dependencies
+
+*This API is available since Optique 0.10.0.*
+
+Sometimes one option's *valid values* depend on another option's value.
+For example, a `--log-level` option might accept `debug` and `trace` in
+development mode, but only `warn` and `error` in production. The
+[`dependency()`](./concepts/dependencies.md) system provides type-safe
+support for these relationships.
+
+~~~~ typescript twoslash
+import { dependency } from "@optique/core/dependency";
+import { object } from "@optique/core/constructs";
+import { option } from "@optique/core/primitives";
+import { choice } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+
+// Create a dependency source from the mode option
+const modeParser = dependency(choice(["dev", "prod"] as const));
+
+// Create a derived parser whose valid values depend on mode
+const logLevelParser = modeParser.derive({
+  metavar: "LEVEL",
+  mode: "sync",
+  factory: (mode) =>
+    choice(mode === "dev"
+      ? ["debug", "info", "warn", "error"]
+      : ["warn", "error"]),
+  defaultValue: () => "dev" as const,
+});
+
+const parser = object({
+  mode: option("--mode", modeParser),
+  logLevel: option("--log-level", logLevelParser),
+});
+
+const config = run(parser);
+//    ^?
+
+
+
+
+// In dev mode: --log-level debug ✓
+// In prod mode: --log-level debug ✗ (invalid)
+~~~~
+
+This pattern differs from the [dependent options](#dependent-options) pattern
+above in an important way:
+
+ -  *Dependent options*: Controls whether options are *available* based on
+    a flag's presence
+ -  *Value dependencies*: Controls which *values are valid* based on another
+    option's value
+
+### Multiple dependencies
+
+When an option depends on multiple other options, use `deriveFrom()`:
+
+~~~~ typescript twoslash
+import { dependency, deriveFrom } from "@optique/core/dependency";
+import { object } from "@optique/core/constructs";
+import { option } from "@optique/core/primitives";
+import { choice } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+
+const envParser = dependency(choice(["local", "staging", "prod"] as const));
+const regionParser = dependency(choice(["us", "eu", "asia"] as const));
+
+// Server names depend on both environment and region
+const serverParser = deriveFrom({
+  metavar: "SERVER",
+  mode: "sync",
+  dependencies: [envParser, regionParser] as const,
+  factory: (env, region) =>
+    choice(env === "local"
+      ? ["localhost"]
+      : [`${env}-${region}-1`, `${env}-${region}-2`]),
+  defaultValues: () => ["local", "us"] as const,
+});
+
+const parser = object({
+  env: option("--env", envParser),
+  region: option("--region", regionParser),
+  server: option("--server", serverParser),
+});
+
+const config = run(parser);
+// --env prod --region eu --server prod-eu-1 ✓
+// --env local --server localhost ✓
+// --env local --server prod-us-1 ✗ (invalid for local)
+~~~~
+
+The dependency system also integrates with shell completion—when users request
+completions for `--server`, they see suggestions appropriate for the current
+`--env` and `--region` values.
+
+For more details, see the
+[*Inter-option dependencies*](./concepts/dependencies.md) concept guide.
+
+### Conditional options based on discriminator
+
+*This API is available since Optique 0.8.0.*
+
+When you have options that depend on a specific discriminator value (like
+a `--reporter` option determining which additional options are valid), the
+[`conditional()`](./concepts/constructs.md#conditional-parser) combinator
+provides a clean solution.
+
+~~~~ typescript twoslash
+import { conditional, object } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { choice, integer, string } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+// ---cut-before---
+const reporterParser = conditional(
+  option("--reporter", choice(["console", "junit", "html", "json"])),
+  {
+    console: object({
+      colors: optional(option("--colors")),
+    }),
+    junit: object({
+      outputFile: option("--output-file", string({ metavar: "FILE" })),
+    }),
+    html: object({
+      outputDir: option("--output-dir", string({ metavar: "DIR" })),
+      title: optional(option("--title", string())),
+    }),
+    json: object({
+      pretty: optional(option("--pretty")),
+      indent: optional(option("--indent", integer({ min: 0, max: 8 }))),
+    }),
+  }
+);
+
+const result = run(reporterParser);
+// The result type is a tuple union based on the discriminator value.
+~~~~
+
+This pattern is different from using
+[`or()`](./concepts/constructs.md#or-parser) with
+[`constant()`](./concepts/primitives.md#constant-parser) because:
+
+ -  *Explicit discriminator*: The user provides `--reporter junit` rather than
+    inferring mode from which options are present
+ -  *Clear error messages*: If `--reporter junit` is provided but
+    `--output-file` is missing, the error clearly states that `--output-file`
+    is required when using the junit reporter
+ -  *Tuple result*: The result is `["junit", { outputFile: "..." }]` rather than
+    a merged object, making the discriminator value easily accessible
+
+### With default branch
+
+For CLIs where the discriminator is optional, provide a default branch:
+
+~~~~ typescript twoslash
+import { conditional, object } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { choice, string } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+// ---cut-before---
+const outputParser = conditional(
+  option("--format", choice(["json", "xml", "csv"])),
+  {
+    json: object({ pretty: optional(option("--pretty")) }),
+    xml: object({ indent: optional(option("--indent", string())) }),
+    csv: object({ delimiter: optional(option("--delimiter", string())) }),
+  },
+  // Default: text output with optional color
+  object({ color: optional(option("--color")) })
+);
+
+const [format, options] = run(outputParser);
+//     ^?
+
+
+if (format === undefined) {
+  // Default branch: text output
+  console.log(`Text output, color: ${options.color ?? false}`);
+} else if (format === "json") {
+  // JSON format with pretty option
+  console.log(`JSON output, pretty: ${options.pretty ?? false}`);
+}
+~~~~
+
+When no `--format` option is provided, the default branch is used and the
+format is `undefined`.
+
+### Type-safe pattern matching
+
+The tuple result enables concise pattern matching:
+
+~~~~ typescript twoslash
+import { conditional, object } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { choice, string, integer } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+
+const reporterParser = conditional(
+  option("--reporter", choice(["console", "junit", "html", "json"])),
+  {
+    console: object({
+      colors: optional(option("--colors")),
+    }),
+    junit: object({
+      outputFile: option("--output-file", string({ metavar: "FILE" })),
+    }),
+    html: object({
+      outputDir: option("--output-dir", string({ metavar: "DIR" })),
+      title: optional(option("--title", string())),
+    }),
+    json: object({
+      pretty: optional(option("--pretty")),
+      indent: optional(option("--indent", integer({ min: 0, max: 8 }))),
+    }),
+  }
+);
+// ---cut-before---
+const [reporter, config] = run(reporterParser);
+
+switch (reporter) {
+  case "console":
+    // TypeScript knows: config is { colors: boolean | undefined }
+    console.log(`Console output with colors: ${config.colors ?? true}`);
+    break;
+  case "junit":
+    // TypeScript knows: config is { outputFile: string }
+    console.log(`Writing JUnit report to ${config.outputFile}`);
+    break;
+  case "html":
+    // TypeScript knows: config is { outputDir: string, title: string | undefined }
+    console.log(`Writing HTML report to ${config.outputDir}`);
+    break;
+  case "json":
+    // TypeScript knows: config is { pretty: boolean | undefined, indent: number | undefined }
+    console.log(`JSON output, pretty: ${config.pretty ?? false}`);
+    break;
+}
+~~~~
+
+The [`conditional()`](./concepts/constructs.md#conditional-parser) combinator
+is ideal when your CLI has a discriminator option that determines which set of
+additional options becomes valid. It provides better type inference and clearer
+error messages than manually building discriminated unions with `or()`.
+
+### Key–value pair options
+
+Many CLI tools accept configuration as key–value pairs, similar to environment
+variables or configuration files. This pattern is common in containerization
+tools and configuration management systems.
+
+~~~~ typescript twoslash
+import { object, or } from "@optique/core/constructs";
+import { map, multiple } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { message } from "@optique/core/message";
+import { keyValue } from "@optique/core/valueparser";
+import { print, run } from "@optique/run";
+// ---cut-before---
+// Docker-style environment variables
+const dockerParser = object({
+  env: map(
+    multiple(option("-e", "--env", keyValue())),
+    (pairs) => Object.fromEntries(pairs),
+  ),
+  labels: map(
+    multiple(option("-l", "--label", keyValue({ separator: ":" }))),
+    (pairs) => Object.fromEntries(pairs),
+  ),
+});
+
+// Kubernetes-style configuration
+const k8sParser = object({
+  set: map(
+    multiple(option("--set", keyValue())),
+    (pairs) => Object.fromEntries(pairs),
+  ),
+  values: map(
+    multiple(option("--values", keyValue({ separator: ":" }))),
+    (pairs) => Object.fromEntries(pairs),
+  ),
+});
+
+const parser = or(dockerParser, k8sParser);
+
+const config = run(parser);
+//    ^?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if ("env" in config) {
+  // config.env and config.labels are now Record<string, string>
+  print(message`Environment: ${JSON.stringify(config.env, null, 2)}`);
+  print(message`Labels: ${JSON.stringify(config.labels, null, 2)}`);
+} else {
+  // config.set and config.values are now Record<string, string>
+  print(message`Set: ${JSON.stringify(config.set, null, 2)}`);
+  print(message`Values: ${JSON.stringify(config.values, null, 2)}`);
+}
+~~~~
+
+This pattern demonstrates several advanced techniques:
+
+### Built-in key–value parser
+
+The built-in `keyValue()` parser:
+
+ -  *Validates format*: Ensures the input contains the separator
+ -  *Splits correctly*: Handles the separator appearing in values
+ -  *Allows empty values*: Accepts values such as `KEY=` by default, which is
+    useful for environment variables and build defines
+ -  *Supports different separators*: Configurable for different use cases
+ -  *Narrows either side*: Accepts child `key` and `value` parsers for stricter
+    validation and type inference
+
+### Multiple collection
+
+Using [`multiple()`](./concepts/modifiers.md#multiple-parser) allows collecting
+many key–value pairs:
+
+~~~~ bash
+myapp -e DATABASE_URL=postgres://... -e DEBUG=true -l app:web -l version:1.0
+~~~~
+
+### Type transformation with `map()`
+
+The example uses [`map()`](./concepts/modifiers.md#map-parser) to transform
+the parsed `readonly [string, string][]` array directly into a
+`Record<string, string>`.
+
+This transformation happens at parse time, so your application receives
+structured objects rather than arrays of tuples. The type system correctly
+infers `Record<string, string>` for each field, providing better IDE support
+and type safety.
+
+This pattern is powerful because it bridges the gap between command-line
+interfaces and structured configuration data.
+
+For stricter domains, pass child value parsers to `keyValue()`:
+
+~~~~ typescript twoslash
+import { choice, integer, keyValue } from "@optique/core/valueparser";
+
+const portSetting = keyValue({
+  key: choice(["port"] as const),
+  value: integer({ min: 1, max: 65535 }),
+});
+
+const result = portSetting.parse("port=5432");
+//    ^?
+~~~~
+
+Shell escaping and quotes are handled before Optique receives an argv token.
+For example, `--set name="hello world"` normally arrives as the single value
+`name=hello world`, and `keyValue()` splits only that final token.
+
+### Verbosity levels
+
+Command-line tools often need different levels of output detail. The traditional
+Unix approach uses repeated flags: `-v` for verbose, `-vv` for very verbose,
+and so on.
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { map, multiple } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { message } from "@optique/core/message";
+import { print, run } from "@optique/run";
+// ---cut-before---
+const VERBOSITY_LEVELS = ["debug", "info", "warning", "error"] as const;
+
+const verbosityParser = object({
+  verbosity: map(
+    multiple(option("-v", "--verbose")),
+    (v) =>
+      VERBOSITY_LEVELS.at(
+        -Math.min(v.length, VERBOSITY_LEVELS.length - 1) - 1,
+      )!,
+  ),
+});
+
+const result = run(verbosityParser);
+//    ^?
+
+
+
+
+
+print(message`Verbosity level: ${result.verbosity}.`);
+~~~~
+
+This pattern combines several concepts:
+
+### Repeated flag collection
+
+`multiple(option("-v", "--verbose"))` collects all instances of the flag,
+creating an array of boolean values. Each occurrence adds another `true` to
+the array.
+
+### Length-based mapping
+
+The [`map()`](./concepts/modifiers.md#map-parser) transformation converts array
+length into verbosity levels:
+
+ -  `-v` → `["debug", "info", "warning", "error"].at(-1-1)` → `"error"`
+ -  `-vv` → `["debug", "info", "warning", "error"].at(-2-1)` → `"warning"`
+ -  `-vvv` → `["debug", "info", "warning", "error"].at(-3-1)` → `"info"`
+ -  `-vvvv` → `["debug", "info", "warning", "error"].at(-4-1)` → `"debug"`
+
+The negative indexing with [`Array.at()`] creates an inverse relationship:
+more flags mean more verbose output (lower threshold). The [`Math.min()`]
+prevents going beyond the available levels.
+
+This pattern is elegant because it:
+
+ -  *Matches user expectations*: More `-v` flags = more output
+ -  *Has natural limits*: Caps at maximum verbosity level
+ -  *Fails gracefully*: Extra flags don't cause errors
+
+[`Array.at()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/at
+[`Math.min()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/min
+
+### Grouped mutually exclusive options
+
+When you have many mutually exclusive options, grouping them in help output
+improves usability while maintaining the same parsing logic.
+
+~~~~ typescript twoslash
+import { group, or } from "@optique/core/constructs";
+import { map, withDefault } from "@optique/core/modifiers";
+import { flag } from "@optique/core/primitives";
+import { message } from "@optique/core/message";
+import { print, run } from "@optique/run";
+// ---cut-before---
+const formatParser = withDefault(
+  group(
+    "Formatting options",
+    or(
+      map(flag("--json", { description: message`Use JSON format.` }),
+          () => "json" as const),
+      map(flag("--yaml", { description: message`Use YAML format.` }),
+          () => "yaml" as const),
+      map(flag("--toml", { description: message`Use TOML format.` }),
+          () => "toml" as const),
+      map(flag("--xml",  { description: message`Use XML format.`  }),
+          () => "xml" as const),
+    ),
+  ),
+  "json" as const,
+);
+
+const result = run(formatParser, { help: "option" });
+//    ^?
+
+
+print(message`Output format: ${result}.`);
+~~~~
+
+This pattern introduces the `group()` combinator to organize related options
+in help output. The parsing logic is identical to the basic mutually exclusive
+flags pattern, but the help text is better organized:
+
+~~~~ ansi
+Formatting options:
+  [3m--json[0m                      Use JSON format.
+  [3m--yaml[0m                      Use YAML format.
+  [3m--toml[0m                      Use TOML format.
+  [3m--xml[0m                       Use XML format.
+~~~~
+
+The `group()` combinator is purely cosmetic for help generation—it doesn't
+change parsing behavior. This separation of concerns allows you to optimize
+for both code clarity and user experience independently.
+
+### Negatable Boolean options
+
+Linux CLI tools commonly support positive and negative option pairs such as
+`--color` and `--no-color`. Use
+[`negatableFlag()`](./concepts/primitives.md#negatableflag-parser) when users
+should be able to override a Boolean setting in either direction.
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { withDefault } from "@optique/core/modifiers";
+import { negatableFlag, option } from "@optique/core/primitives";
+import { message } from "@optique/core/message";
+import { print, run } from "@optique/run";
+declare function detectColorSupport(): boolean;
+// ---cut-before---
+const configParser = object({
+  codeFence: withDefault(
+    negatableFlag({
+      positive: "--code-fence",
+      negative: "--no-code-fence",
+    }, {
+      description: message`Enable or disable Markdown code fences.`,
+    }),
+    true,
+  ),
+
+  lineNumbers: option("--line-numbers"),
+
+  colors: withDefault(
+    negatableFlag({
+      positive: "--colors",
+      negative: "--no-colors",
+    }, {
+      description: message`Enable or disable colored output.`,
+    }),
+    () => detectColorSupport(),
+    { message: message`auto` },
+  ),
+
+  syntax: withDefault(
+    negatableFlag({
+      positive: "--syntax",
+      negative: "--no-syntax",
+    }, {
+      description: message`Enable or disable syntax highlighting.`,
+    }),
+    true,
+  ),
+});
+
+const result = run(configParser);
+//    ^?
+
+
+
+
+
+
+
+
+console.debug(result);
+~~~~
+
+`negatableFlag()` returns `true` for the positive flag and `false` for the
+negative flag. By itself it requires one of the two flags, so the example wraps
+each parser with [`withDefault()`](./concepts/modifiers.md#withdefault-parser)
+to keep the defaults explicit.
+
+The `message` option on `withDefault()` only changes the displayed default
+label; `detectColorSupport()` still returns the Boolean fallback value.
+
+When `--code-fence` is provided
+:   `negatableFlag()` produces `true`
+
+When neither flag is provided
+:   `withDefault()` uses the default value `true`
+
+When `--no-code-fence` is provided
+:   `negatableFlag()` produces `false`
+
+If a CLI only supports a negative form, keep the simpler `option()` and `map()`
+pattern:
+
+~~~~ typescript twoslash
+import { map } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+
+const codeFence = map(option("--no-code-fence"), (provided) => !provided);
+~~~~
+
+### Usage examples
+
+~~~~ bash
+# All defaults: codeFence=true, lineNumbers=false,
+# colors follow auto-detection, syntax=true
+myapp
+
+# Disable colors and syntax, enable line numbers explicitly
+myapp --no-colors --no-syntax --line-numbers
+
+# Enable colors explicitly when auto-detection would disable them
+myapp --colors
+~~~~
+
+This pattern is particularly useful for configuration-heavy tools where users
+need fine-grained control over defaults that may come from configuration files,
+environment variables, or runtime detection.
+
+### Conditional defaults based on input consumption
+
+*This API is available since Optique 0.10.0.*
+
+Sometimes you need different behavior based on whether the user provided any
+options at all. For example, a CLI tool might show help when invoked with no
+arguments, but apply default values when at least one option is provided.
+
+The [`nonEmpty()`](./concepts/modifiers.md#nonempty-parser) modifier combined
+with [`longestMatch()`](./concepts/constructs.md#longestmatch-parser) enables
+this pattern:
+
+~~~~ typescript twoslash
+import { longestMatch, object } from "@optique/core/constructs";
+import { nonEmpty, optional, withDefault } from "@optique/core/modifiers";
+import { constant, option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+
+// Active mode: requires at least one option to be provided
+const activeParser = nonEmpty(object({
+  mode: constant("active" as const),
+  cwd: withDefault(option("--cwd", string()), "./"),
+  key: optional(option("--key", string())),
+}));
+
+// Help mode: fallback when no options are given
+const helpParser = object({
+  mode: constant("help" as const),
+});
+
+const parser = longestMatch(activeParser, helpParser);
+
+const result = run(parser);
+//    ^?
+
+
+
+
+
+
+
+
+if (result.mode === "help") {
+  console.log("No options provided. Showing help.");
+} else {
+  console.log(`Running with cwd=${result.cwd}, key=${result.key ?? "none"}`);
+}
+~~~~
+
+### How it works
+
+Without `nonEmpty()`, the `activeParser` would always succeed even with no
+input, because all its options have defaults or are optional. This means it
+would consume 0 tokens and still produce a valid result, preventing the
+`helpParser` from ever being selected.
+
+The `nonEmpty()` modifier changes this behavior:
+
+1.  When no options are provided, `activeParser` succeeds but consumes 0 tokens
+2.  `nonEmpty()` detects this and converts the success into a failure
+3.  `longestMatch()` then falls back to `helpParser`, which also consumes
+    0 tokens but succeeds
+4.  The result is the help mode
+
+When at least one option is provided:
+
+1.  `activeParser` succeeds and consumes at least one token
+2.  `nonEmpty()` allows this success to pass through
+3.  `longestMatch()` selects `activeParser` because it consumed more tokens
+4.  Default values are applied to unprovided options
+
+### Usage examples
+
+~~~~ bash
+# No options: help mode
+myapp
+# → "No options provided. Showing help."
+
+# With --key: active mode with defaults
+myapp --key mykey
+# → "Running with cwd=./, key=mykey"
+
+# With --cwd: active mode
+myapp --cwd /tmp
+# → "Running with cwd=/tmp, key=none"
+
+# With both options: active mode
+myapp --cwd /tmp --key mykey
+# → "Running with cwd=/tmp, key=mykey"
+~~~~
+
+This pattern is ideal for development tools, build systems, or any CLI where
+you want to guide users to provide at least some configuration while still
+supporting sensible defaults once they start configuring.
+
+### Pass-through options for wrapper CLIs
+
+*This API is available since Optique 0.8.0.*
+
+When building wrapper tools that need to forward unknown options to an
+underlying command, the
+[`passThrough()`](./concepts/primitives.md#passthrough-parser) parser captures
+unrecognized options without validation errors.
+
+> [!NOTE]
+> By default, `passThrough()` uses the `"equalsOnly"` format, which
+> only captures `--opt=val` style options. Options like `--foo bar` will fail.
+> See [Choosing the right format](#choosing-the-right-format) below for
+> alternatives.
+
+#### Basic wrapper pattern
+
+A common use case is wrapping another CLI tool while adding your own options:
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { argument, option, passThrough } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+
+const parser = object({
+  debug: option("--debug"),
+  config: option("-c", "--config", string({ metavar: "FILE" })),
+  // Default format is "equalsOnly", captures --opt=val only
+  extraOpts: passThrough(),
+});
+
+const result = run(parser);
+//    ^?
+
+
+
+
+// Use result.extraOpts to pass through to the underlying tool
+~~~~
+
+The key insight is that `passThrough()` has the *lowest priority* (−10), so
+your explicit options are always matched first. Only truly unrecognized options
+are captured in the pass-through array.
+
+#### Subcommand-specific pass-through
+
+For tools that delegate entire subcommands to other processes:
+
+~~~~ typescript twoslash
+import { object, or } from "@optique/core/constructs";
+import { argument, command, constant, option, passThrough } from "@optique/core/primitives";
+import { integer, string } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+
+const parser = or(
+  // Local command with known options
+  command("local", object({
+    action: constant("local"),
+    port: option("-p", "--port", integer()),
+    host: option("-h", "--host", string()),
+  })),
+  // Exec command passes everything through
+  command("exec", object({
+    action: constant("exec"),
+    container: argument(string({ metavar: "CONTAINER" })),
+    args: passThrough({ format: "greedy" }),
+  })),
+);
+
+const result = run(parser);
+
+if (result.action === "exec") {
+  // result.args contains all remaining tokens
+  // Pass them to the container: ["--verbose", "-it", "bash"]
+}
+~~~~
+
+The `"greedy"` format is crucial here: once the container name is captured, all
+remaining tokens (including those that look like options) go into `args`.
+
+#### Choosing the right format
+
+The `passThrough()` parser supports three capture formats:
+
+`"equalsOnly"` (default)
+:   Only captures `--opt=val` format. The safest choice when you need to
+    distinguish between options and positional arguments:
+
+    ~~~~ typescript twoslash
+    import { passThrough } from "@optique/core/primitives";
+    // ---cut-before---
+    const parser = passThrough({ format: "equalsOnly" });
+    // Captures: --foo=bar, --baz=123
+    // Rejects: --foo bar, --verbose
+    ~~~~
+
+`"nextToken"`
+:   Captures `--opt val` as two tokens when the value doesn't look like
+    an option. Good for wrapping tools that use space-separated values:
+
+    ~~~~ typescript twoslash
+    import { passThrough } from "@optique/core/primitives";
+    // ---cut-before---
+    const parser = passThrough({ format: "nextToken" });
+    // --foo bar → ["--foo", "bar"]
+    // --foo --bar → ["--foo", "--bar"] (--bar is a separate option)
+    ~~~~
+
+`"greedy"`
+:   Captures *all* remaining tokens. Use for proxy/wrapper tools where
+    everything after a certain point should pass through:
+
+    ~~~~ typescript twoslash
+    import { passThrough } from "@optique/core/primitives";
+    // ---cut-before---
+    const parser = passThrough({ format: "greedy" });
+    // git commit -m "message" → ["git", "commit", "-m", "message"]
+    ~~~~
+
+> [!CAUTION]
+> The `"greedy"` format can shadow explicit parsers. Place it carefully,
+> typically as the last field in a subcommand-specific `object()`.
+
+### “Did you mean?” for value typos
+
+*This feature is available since Optique 1.2.0.*
+
+When a user mistypes an option value—`--mode devo` instead of `dev`—the
+default error only lists valid choices.  The `suggest` option on `choice()`
+appends a “Did you mean?” hint using the existing Levenshtein distance
+machinery, without any extra dependencies.
+
+#### Basic usage with `suggest: "nearest"`
+
+~~~~ typescript twoslash
+import { choice } from "@optique/core/valueparser";
+// ---cut-before---
+const mode = choice(["dev", "staging", "prod"], { suggest: "nearest" });
+~~~~
+
+A typo now produces:
+
+~~~~ bash
+$ myapp --mode devo
+Error: Expected one of dev, staging, and prod, but got devo.
+
+Did you mean "dev"?
+~~~~
+
+#### Custom filtering with the function form
+
+The function form gives full control.  It receives the raw input and the full
+choices array, so you can apply domain-specific logic—for example, only
+suggest choices that share a prefix with the input:
+
+~~~~ typescript twoslash
+import { choice } from "@optique/core/valueparser";
+// ---cut-before---
+const env = choice(["development", "staging", "production"], {
+  suggest(input, choices) {
+    // Only suggest choices that start with the same first letter.
+    return choices.filter((c) => c[0] === input[0]);
+  },
+});
+~~~~
+
+Return `undefined` or an empty array to suppress the hint entirely.
+
+#### Custom value parsers using `appendValueHint`
+
+If you build a value parser with its own closed candidate set, you can add
+the same hint without re-implementing distance logic.  Import
+`appendValueHint` from `@optique/core/suggestion`:
+
+~~~~ typescript twoslash
+import type { ValueParser, ValueParserResult } from "@optique/core/valueparser";
+import { appendValueHint } from "@optique/core/suggestion";
+import { message } from "@optique/core/message";
+
+const PALETTE = ["crimson", "emerald", "sapphire", "amber"] as const;
+
+function paletteColor(): ValueParser<"sync", string> {
+  return {
+    mode: "sync",
+    metavar: "COLOR",
+    placeholder: "crimson",
+    parse(input: string): ValueParserResult<string> {
+      if ((PALETTE as readonly string[]).includes(input)) {
+        return { success: true, value: input };
+      }
+      const base = message`Unknown color: ${input}.`;
+      return {
+        success: false,
+        error: appendValueHint(base, input, PALETTE),
+      };
+    },
+    format(value: string): string {
+      return value;
+    },
+  };
+}
+~~~~
+
+`appendValueHint(base, input, candidates, options?)` returns `base` unchanged
+when no candidate is close enough, so there is no need for an extra
+conditional.
+
+#### When not to use suggestions
+
+Very large candidate sets can produce noisy suggestions.  If your enum has
+dozens or hundreds of entries, set tight thresholds to keep the output clean:
+
+~~~~ typescript twoslash
+import { choice } from "@optique/core/valueparser";
+// ---cut-before---
+// Only suggest when distance ≤ 1 and cap at 2 hints.
+const lang = choice(
+  ["en", "es", "fr", "de", "zh", "ja", "ko"],
+  { suggest: { maxDistance: 1, maxSuggestions: 2 } },
+);
+~~~~
+
+Or keep the default `suggest: "never"` and rely on the choices list in the
+error message instead.
+
+### Shell completion patterns
+
+*This API is available since Optique 0.6.0.*
+
+Modern CLI applications benefit from intelligent shell completion that helps
+users discover available options and reduces typing errors. Optique provides
+built-in completion support that integrates seamlessly with your parser
+definitions.
+
+#### Basic completion setup
+
+Enable completion for any CLI application by adding the `completion` option:
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { argument, option } from "@optique/core/primitives";
+import { string, choice } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+
+const parser = object({
+  format: option("-f", "--format", choice(["json", "yaml", "xml"])),
+  output: option("-o", "--output", string({ metavar: "FILE" })),
+  verbose: option("-v", "--verbose"),
+  input: argument(string({ metavar: "INPUT" })),
+});
+
+const config = run(parser, { completion: "both" });
+~~~~
+
+This automatically provides intelligent completion for:
+
+ -  Option names: `--format`, `--output`, `--verbose`
+ -  Choice values: `--format json`, `--format yaml`
+ -  Help integration: `--help` is included in completions
+
+#### Custom value parser suggestions
+
+Create value parsers with domain-specific completion suggestions:
+
+~~~~ typescript twoslash
+import type { ValueParser, ValueParserResult } from "@optique/core/valueparser";
+import type { Suggestion } from "@optique/core/parser";
+import { message } from "@optique/core/message";
+
+// Custom parser for log levels with intelligent completion
+function logLevel(): ValueParser<"sync", string> {
+  const levels = ["error", "warn", "info", "debug", "trace"];
+
+  return {
+    mode: "sync",
+    metavar: "LEVEL",
+    placeholder: "",
+    parse(input: string): ValueParserResult<string> {
+      if (levels.includes(input.toLowerCase())) {
+        return { success: true, value: input.toLowerCase() };
+      }
+      return {
+        success: false,
+        // Note: For proper formatting of choice lists, see the "Formatting choice lists"
+        // section in the Concepts guide on Messages
+        error: message`Invalid log level: ${input}. Valid levels: ${levels.join(", ")}.`,
+      };
+    },
+    format(value: string): string {
+      return value;
+    },
+    *suggest(prefix: string): Iterable<Suggestion> {
+      for (const level of levels) {
+        if (level.startsWith(prefix.toLowerCase())) {
+          yield {
+            kind: "literal",
+            text: level,
+            description: message`Set log level to ${level}`
+          };
+        }
+      }
+    },
+  };
+}
+~~~~
+
+#### Async completion sources
+
+When completion candidates must be fetched at runtime—Docker tags,
+Kubernetes resources, GitHub issues, or remote config values—implement
+`suggest()` as an async generator:
+
+~~~~ typescript twoslash
+import type { ValueParser, ValueParserResult } from "@optique/core/valueparser";
+import type { Suggestion } from "@optique/core/parser";
+import { message } from "@optique/core/message";
+// ---cut-before---
+function dockerTag(image: string): ValueParser<"async", string> {
+  return {
+    mode: "async",
+    metavar: "TAG",
+    placeholder: "latest",
+    async parse(input: string): Promise<ValueParserResult<string>> {
+      if (!/^[\w][\w.-]{0,127}$/.test(input)) {
+        return { success: false, error: message`Invalid tag: ${input}.` };
+      }
+      return { success: true, value: input };
+    },
+    format(value: string): string {
+      return value;
+    },
+    async *suggest(prefix: string): AsyncIterable<Suggestion> {
+      try {
+        // Guard against path-traversal: require exactly namespace/repository;
+        // encodeURIComponent does not encode dots so "." and ".." must be
+        // rejected explicitly.
+        const imageSegments = image.split("/");
+        if (
+          imageSegments.length !== 2 ||
+          imageSegments.some((s) => s === "" || s === "." || s === "..")
+        ) return;
+        const [ns, name] = imageSegments.map(encodeURIComponent);
+        const resp = await fetch(
+          `https://hub.docker.com/v2/repositories/${ns}/${name}/tags/`,
+        );
+        if (!resp.ok) return;
+        const { results } = await resp.json() as {
+          readonly results: { readonly name: string }[];
+        };
+        for (const { name } of results) {
+          if (name.startsWith(prefix)) {
+            yield { kind: "literal", text: name };
+          }
+        }
+      } catch {
+        // Swallow errors — completion is best-effort.
+      }
+    },
+  };
+}
+~~~~
+
+Key rules for async suggesters:
+
+ -  Wrap the entire body in `try`/`catch`.  Network failures must never
+    propagate as uncaught exceptions into the user's shell.
+ -  Only yield items whose `text.startsWith(prefix)`.
+ -  Add a `description` field for richer shells (zsh, fish, PowerShell,
+    Nushell).
+
+For a real-world reference, see the
+[Git integration](./integrations/git.md), which uses async suggestion for
+branches, tags, commits, and remotes.  The full contract—combining
+sources, bounding lookups, and enriching descriptions—is documented in
+the
+[completion concepts guide](./concepts/completion.md#async-completion-sources).
+
+#### Multi-command CLI with rich completion
+
+Complex CLI tools with subcommands benefit greatly from completion:
+
+~~~~ typescript twoslash
+import { object, or } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { argument, command, constant, option } from "@optique/core/primitives";
+import { string, choice } from "@optique/core/valueparser";
+import { run } from "@optique/run";
+
+const serverCommand = command("server", object({
+  action: constant("server"),
+  port: optional(option("-p", "--port", string())),
+  host: optional(option("-h", "--host", string())),
+  env: optional(option("--env", choice(["dev", "staging", "prod"]))),
+}));
+
+const buildCommand = command("build", object({
+  action: constant("build"),
+  target: argument(choice(["web", "mobile", "desktop"])),
+  mode: optional(option("--mode", choice(["debug", "release"]))),
+  output: optional(option("-o", "--output", string())),
+}));
+
+const parser = or(serverCommand, buildCommand);
+
+const config = run(parser, { completion: "both" });
+~~~~
+
+This provides completion for:
+
+ -  Command names: `server`, `build`
+ -  Command-specific options: `--port` only for server, `--mode` only for build
+ -  Enum values: `--env dev`, `--mode release`
+ -  Context-aware suggestions based on the current command
+
+#### File path completion integration
+
+For file and directory arguments, Optique delegates to native shell completion:
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { argument, option } from "@optique/core/primitives";
+import { path } from "@optique/run/valueparser";
+import { run } from "@optique/run";
+
+const parser = object({
+  config: option("-c", "--config", path({
+    extensions: [".json", ".yaml"],
+    type: "file"
+  })),
+  outputDir: option("-o", "--output", path({
+    type: "directory"
+  })),
+  input: argument(path({
+    extensions: [".md", ".txt"],
+    type: "file"
+  })),
+});
+
+const config = run(parser, { completion: "both" });
+~~~~
+
+The `path()` value parser automatically provides:
+
+ -  Native file system completion using shell built-ins
+ -  Extension filtering (*.json*, *.yaml* files only)
+ -  Type filtering (files vs directories)
+ -  Proper handling of spaces, special characters, and symlinks
+
+#### Installation and usage
+
+Once completion is enabled, users install it with simple commands:
+
+::: code-group
+
+~~~~ bash [Bash]
+# Generate and install Bash completion
+myapp completion bash > ~/.bashrc.d/myapp.bash
+source ~/.bashrc.d/myapp.bash
+~~~~
+
+~~~~ zsh [zsh]
+# Generate and install zsh completion
+myapp completion zsh > ~/.zsh/completions/_myapp
+~~~~
+
+~~~~ fish [fish]
+# Generate and install fish completion
+myapp completion fish > ~/.config/fish/completions/myapp.fish
+~~~~
+
+~~~~ powershell [PowerShell]
+# Generate and install PowerShell completion
+myapp completion pwsh > myapp-completion.ps1
+~~~~
+
+:::
+
+The completion system leverages the same parser structure used for argument
+validation, ensuring suggestions always stay synchronized with your CLI's
+actual behavior without requiring separate maintenance.
+
+Users then benefit from intelligent completion:
+
+~~~~ bash
+myapp <TAB>                    # Shows: server, build, help
+myapp server --<TAB>           # Shows: --port, --host, --env, --help
+myapp server --env <TAB>       # Shows: dev, staging, prod
+myapp build <TAB>              # Shows: web, mobile, desktop
+~~~~
+
+### Hidden and deprecated options
+
+As CLIs evolve, you may need to deprecate old options while maintaining
+backward compatibility, or add internal debugging options that shouldn't
+appear in user-facing documentation. The `hidden` option lets you keep
+parsers functional while controlling visibility. Hidden options still consume
+input normally, so they also still participate in duplicate option-name
+validation:
+
+ -  `hidden: true`: hide from usage, help entries, completions, and
+    “Did you mean?” suggestions
+ -  `hidden: "usage"`: hide from usage only
+ -  `hidden: "doc"`: hide from help entries only
+ -  `hidden: "help"`: hide from usage and help entries, but keep completions
+    and “Did you mean?” suggestions
+
+#### Deprecation pattern
+
+When renaming or replacing options, keep the old form working but hide it:
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { message } from "@optique/core/message";
+import { optional } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+
+const parser = object({
+  // The new, preferred option name
+  output: optional(option("-o", "--output", string(), {
+    description: message`Output file path`,
+  })),
+  // Legacy option name - still works but hidden from help
+  outputLegacy: optional(option("--out", string(), {
+    hidden: true,
+  })),
+});
+// Later, merge the values: output ?? outputLegacy
+~~~~
+
+This approach ensures existing scripts using `--out` continue to work
+while new users learn the preferred `--output` form.
+
+If you keep a hidden legacy option, it still reserves that option name inside
+the same combinator. A visible parser using the same name is still treated as a
+duplicate unless you explicitly opt out with `allowDuplicates: true`.
+
+#### Internal debugging options
+
+Add options for debugging or development that shouldn't clutter the help:
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { message } from "@optique/core/message";
+import { withDefault } from "@optique/core/modifiers";
+import { flag, option } from "@optique/core/primitives";
+import { integer } from "@optique/core/valueparser";
+
+const parser = object({
+  verbose: flag("-v", "--verbose", {
+    description: message`Enable verbose output`,
+  }),
+  // Developer-only options
+  traceRequests: flag("--trace-requests", { hidden: true }),
+  mockDelay: withDefault(option("--mock-delay", integer(), { hidden: true }), 0),
+});
+~~~~
+
+Developers who know about these options can use them, but they won't
+appear in `--help` output or shell completions.
+
+#### Undocumented but completion-discoverable flags
+
+Use `hidden: "help"` when you want to keep an option out of usage/help text
+without removing it from shell completion:
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+
+const parser = object({
+  profile: option("--profile", string()),
+  // Not shown in usage/help, but still suggested by completion
+  debugTransport: option("--debug-transport", string(), { hidden: "help" }),
+});
+~~~~
+
+#### Experimental features
+
+Hide features that aren't ready for general use:
+
+~~~~ typescript twoslash
+import { object, or } from "@optique/core/constructs";
+import { argument, command, constant, option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+
+const commands = or(
+  command("build", object({
+    type: constant("build"),
+    target: option("--target", string()),
+  })),
+  command("test", object({
+    type: constant("test"),
+    pattern: argument(string()),
+  })),
+  // Experimental - not yet documented
+  command("experimental-watch", object({
+    type: constant("watch"),
+    paths: argument(string()),
+  }), { hidden: true }),
+);
+~~~~
+
+Hidden commands work normally but don't appear in command listings or
+get suggested in “Did you mean?” errors.
+
+### Advanced patterns
+
+The cookbook patterns can be combined to create sophisticated CLI interfaces:
+
+~~~~ typescript twoslash
+import { merge, object } from "@optique/core/constructs";
+import { multiple, withDefault } from "@optique/core/modifiers";
+import { argument, command, constant, flag, option } from "@optique/core/primitives";
+import { keyValue, string } from "@optique/core/valueparser";
+// ---cut-before---
+// Combining subcommands with dependent options and key–value pairs
+const deployCommand = command("deploy", merge(
+  object({
+    action: constant("deploy"),
+    environment: argument(string()),
+  }),
+  withDefault(
+    object({
+      dryRun: flag("--dry-run"),
+      vars: multiple(option("--var", keyValue())),
+      confirm: option("--confirm"),
+    }),
+    { dryRun: false }
+  )
+));
+~~~~
+
+This creates a deploy command that:
+
+ -  Requires an environment argument
+ -  Supports key–value variables
+ -  Has optional dry-run mode
+ -  Uses dependent confirmation when not in dry-run mode
+
+### Custom value parser with `normalize()`
+
+*This API is available since Optique 1.0.0.*
+
+When a value has multiple valid representations, implement `normalize()` on
+your value parser so that `withDefault()` can canonicalize default values.
+This example creates a parser for hexadecimal color codes that normalizes
+case and optional `#` prefixes:
+
+~~~~ typescript twoslash
+import type { ValueParser, ValueParserResult } from "@optique/core/valueparser";
+import { message } from "@optique/core/message";
+
+function hexColor(): ValueParser<"sync", string> {
+  const pattern = /^#?([0-9a-f]{6})$/i;
+
+  return {
+    mode: "sync",
+    metavar: "COLOR",
+    placeholder: "#000000",
+    parse(input: string): ValueParserResult<string> {
+      const match = input.match(pattern);
+      if (match) {
+        return { success: true, value: `#${match[1].toLowerCase()}` };
+      }
+      return {
+        success: false,
+        error: message`Expected a hex color like #ff0000, but got ${input}.`,
+      };
+    },
+    format(value: string): string {
+      return value;
+    },
+    normalize(value: string): string {
+      const match = value.match(pattern);
+      return match ? `#${match[1].toLowerCase()}` : value;
+    },
+  };
+}
+~~~~
+
+With `normalize()` in place, `withDefault()` automatically canonicalizes the
+default value:
+
+~~~~ typescript twoslash
+import type { ValueParser, ValueParserResult } from "@optique/core/valueparser";
+import { message } from "@optique/core/message";
+function hexColor(): ValueParser<"sync", string> {
+  const pattern = /^#?([0-9a-f]{6})$/i;
+  return {
+    mode: "sync",
+    metavar: "COLOR",
+    placeholder: "#000000",
+    parse(input: string): ValueParserResult<string> {
+      const match = input.match(pattern);
+      if (match) return { success: true, value: `#${match[1].toLowerCase()}` };
+      return { success: false, error: message`Invalid.` };
+    },
+    format(v: string): string { return v; },
+    normalize(value: string): string {
+      const match = value.match(pattern);
+      return match ? `#${match[1].toLowerCase()}` : value;
+    },
+  };
+}
+// ---cut-before---
+import { withDefault } from "@optique/core/modifiers";
+import { parse } from "@optique/core/parser";
+import { option } from "@optique/core/primitives";
+
+const parser = withDefault(
+  option("--bg-color", hexColor()),
+  "FF8800",  // no "#" prefix, uppercase
+);
+
+const result = parse(parser, []);
+// result.value is "#ff8800", normalized from "FF8800"
+~~~~
+
+### Design principles
+
+These patterns demonstrate several key principles for designing CLI parsers:
+
+#### Composition over configuration
+
+Instead of complex configuration objects, combine simple parsers using
+combinators like [`or()`](./concepts/constructs.md#or-parser),
+[`merge()`](./concepts/constructs.md#merge-parser), and
+[`multiple()`](./concepts/modifiers.md#multiple-parser). Each combinator has
+a single, well-defined purpose.
+
+#### Type-driven design
+
+Use TypeScript's type system to enforce correct usage. Discriminated unions,
+conditional types, and literal types prevent runtime errors by catching
+mistakes at compile time.
+
+#### Separation of concerns
+
+Separate parsing logic from presentation logic.
+Use [`group()`](./concepts/constructs.md#group-parser) for help organization,
+[`withDefault()`](./concepts/modifiers.md#withdefault-parser) for fallback
+behavior, and [`map()`](./concepts/modifiers.md#map-parser) for data
+transformation.
+
+#### Progressive disclosure
+
+Start with simple parsers and add complexity through composition. A basic
+flag becomes a mutually exclusive choice, which becomes a grouped set of
+options, which becomes part of a larger command structure.
+
+#### Fail-safe defaults
+
+Always consider what happens when optional inputs are missing. Use
+[`withDefault()`](./concepts/modifiers.md#withdefault-parser) to provide
+sensible fallbacks and [`optional()`](./concepts/modifiers.md#optional-parser)
+when absence is meaningful.
+
+
+Default value patterns
+----------------------
+
+These recipes cover fallback values that are computed from parsed input or
+runtime state.
+
+### Derived defaults from parsed options
+
+*This API is available since Optique 1.2.0.*
+
+Sometimes one option has a natural fallback based on another option.  For
+example, a build tool might require a project root, then default its cache
+directory to a path inside that root unless the user overrides it explicitly.
+
+Use `createDerivedDefaults()` to compute those fallback values from the
+first-pass parse result, then wrap the option that should receive the fallback
+with `bindDerivedDefault()`:
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { message } from "@optique/core/message";
+import { optional } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import {
+  bindDerivedDefault,
+  createDerivedDefaults,
+} from "@optique/derived-defaults";
+import { runAsync } from "@optique/run";
+
+const derived = createDerivedDefaults({
+  cacheDir: (parsed: {
+    readonly projectRoot?: string;
+    readonly profile?: string;
+  }) => {
+    if (parsed.projectRoot == null) return undefined;
+    const profile = parsed.profile ?? "default";
+    return `${parsed.projectRoot}/.cache/${profile}`;
+  },
+});
+
+const parser = object({
+  projectRoot: option("--project-root", string({ metavar: "DIR" })),
+  profile: optional(option("--profile", string({ metavar: "NAME" }))),
+  cacheDir: bindDerivedDefault(
+    option("--cache-dir", string({ metavar: "DIR" })),
+    {
+      context: derived.context,
+      key: "cacheDir",
+      defaultDescription: message`derived from --project-root`,
+    },
+  ),
+});
+
+const result = await runAsync(parser, {
+  args: ["--project-root", "/work/api", "--profile", "ci"],
+  contexts: [derived.context],
+});
+
+console.log(result.cacheDir); // "/work/api/.cache/ci"
+~~~~
+
+The priority order is: CLI argument > derived default > static default >
+error.  In this example, `--cache-dir /tmp/cache` would win over the computed
+path.  The `defaultDescription` option only affects help text; the actual
+fallback value still comes from the resolver.
+
+For more details, see
+[derived defaults](./concepts/derived-defaults.md).
+
+### Deferred handler-time values
+
+*This API is available since Optique 1.2.0.*
+
+The fallbacks above run while parsing.  Some values should wait.  A token might
+come from an interactive prompt, or a lookup that only the deployment branch of
+a command ever reaches.
+[`deferredValue()`](./concepts/modifiers.md#deferredvalue-parser) keeps the
+value the wrapped parser produces, but leaves the fallback unresolved until the
+handler calls for it.
+
+The parsed field becomes a function.  Calling it returns the value the wrapped
+parser produced, or runs the fallback when it produced none.  Because the
+fallback runs at handler time, a failing prompt is a handler error rather than a
+parse error, and a branch that never asks for the value never pays for it.
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { deferredValue, withDefault } from "@optique/core/modifiers";
+import { message } from "@optique/core/message";
+import { flag, option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { print, run } from "@optique/run";
+declare function promptForApiToken(serviceName: string): Promise<string>;
+declare function deploy(serviceName: string, apiToken: string): Promise<void>;
+// ---cut-before---
+const parser = object({
+  deploy: withDefault(flag("--deploy"), false),
+  serviceName: option("--service-name", string({ metavar: "NAME" })),
+  apiToken: deferredValue(
+    option("--api-token", string({ metavar: "TOKEN" })),
+    ({ serviceName }: { readonly serviceName: string }) =>
+      promptForApiToken(serviceName),
+    { memoize: true },
+  ),
+});
+
+const result = run(parser);
+
+// Parsing never runs the fallback; apiToken is a function, not a string.
+if (result.deploy) {
+  // Resolve the token only on this branch and pass it on; never log a secret.
+  const apiToken = await result.apiToken({ serviceName: result.serviceName });
+  await deploy(result.serviceName, apiToken);
+  print(message`Deployed ${result.serviceName}.`);
+}
+~~~~
+
+A readonly `source` property on the field reports whether the value was
+`"specified"` or came from the `"fallback"`, without running the function.
+Pass `{ memoize: true }` to reuse the first resolved fallback value across
+calls; a rejected fallback is retried rather than cached.
+
+This differs from the derived defaults above: a derived default is computed
+during a second parse pass and the field stays a plain value, while a deferred
+value is resolved by the handler and the field is a function.  The repository
+includes a runnable version of this pattern in
+*examples/patterns/deferred-values.ts*.  For more details, see the
+[`deferredValue()`](./concepts/modifiers.md#deferredvalue-parser) modifier.
+
+
+Application structure patterns
+------------------------------
+
+These recipes use packages that sit above individual parsers and help shape a
+larger CLI application.
+
+### File-based command discovery
+
+When a command tree grows beyond a handful of branches, keeping every command
+inside one `or(command(...))` expression can make the entry point do too much.
+The *@optique/discover* package lets each command live in its own module with
+its parser, help metadata, and handler.
+
+> [!WARNING]
+> This pattern discovers and imports command modules at runtime.  It works best
+> when those command files are present beside the running CLI.  For CLIs that
+> rely on tree shaking, static bundling, or single-file executable packaging,
+> import command modules manually and pass them to `runProgram()` with
+> `commands`.
+
+Put command modules under a directory:
+
+~~~~ typescript twoslash
+// commands/build.ts
+import { object } from "@optique/core/constructs";
+import { message } from "@optique/core/message";
+import { withDefault } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { defineCommand } from "@optique/discover/command";
+
+export default defineCommand({
+  parser: object({
+    target: withDefault(option("--target", string()), "app"),
+  }),
+  metadata: {
+    brief: message`Build the project.`,
+  },
+  handler(value) {
+    console.log(`Building ${value.target}.`);
+  },
+});
+~~~~
+
+Then point `runProgram()` at the command directory:
+
+~~~~ typescript twoslash
+import { message } from "@optique/core/message";
+import { runProgram } from "@optique/discover";
+
+await runProgram({
+  dir: new URL("./commands/", import.meta.url),
+  metadata: {
+    name: "tasks",
+    version: "1.0.0",
+    brief: message`Project task runner.`,
+  },
+});
+~~~~
+
+For a bundled CLI, add a path to each command definition and import the command
+modules manually:
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { message } from "@optique/core/message";
+import { withDefault } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { defineCommand, runProgram } from "@optique/discover";
+
+const build = defineCommand({
+  path: ["build"],
+  parser: object({
+    target: withDefault(option("--target", string()), "app"),
+  }),
+  metadata: {
+    brief: message`Build the project.`,
+  },
+  handler(value) {
+    console.log(`Building ${value.target}.`);
+  },
+});
+
+await runProgram({
+  commands: [build],
+  metadata: {
+    name: "tasks",
+    version: "1.0.0",
+    brief: message`Project task runner.`,
+  },
+});
+~~~~
+
+With this layout:
+
+~~~~ text
+commands/
+  build.ts
+  deploy.ts
+  release/
+    notes.ts
+~~~~
+
+the file paths become command paths:
+
+~~~~ bash
+tasks build
+tasks deploy
+tasks release notes
+~~~~
+
+Use this pattern when the command module is the natural unit of ownership.
+It keeps the root file focused on program metadata and runner configuration,
+while each command file owns the parser and the code that acts on its parsed
+value.  The discovered program still gets the usual *@optique/run* help,
+version, and shell completion behavior.
+
+The repository also includes a runnable version of this pattern in
+*examples/patterns/command-discovery.ts*.  For the full API details, see
+[command discovery](./concepts/discover.md).
+
+### Program-level lifecycle hooks
+
+*This API is available since Optique 1.2.0.*
+
+`runProgram()` dispatches straight to the matched command's handler.  When a
+whole family of commands needs the same *around-handler* behavior—opening a
+log scope, starting a tracing span, lazily booting a resource, printing a
+“finished in *X*ms” line, reporting failures—that logic should not be copied
+into every handler or smuggled into a parser.  Pass a `hooks` object to
+`runProgram()` instead.  Hooks are opt-in: a `runProgram()` call without them
+behaves exactly as before.
+
+The `beforeEach` hook runs before each handler and returns a
+`ProgramHookContext`.  It receives the invocation, including the resolved
+command `path` (populated even when a discovered command omits an explicit
+`path`).  Whatever it stores in `resource` is threaded forward to `afterEach`,
+to `onError`, and to the handler's second parameter, so the resource never has
+to live in a module-level variable:
+
+~~~~ typescript twoslash
+import { getLogger } from "@logtape/logtape";
+import { runProgram } from "@optique/discover";
+
+// A minimal tracing span, standing in for an OpenTelemetry or Sentry span.
+interface Span {
+  end(): void;
+  recordException(error: unknown): void;
+}
+declare function startSpan(name: string): Span;
+
+interface Telemetry {
+  readonly logger: ReturnType<typeof getLogger>;
+  readonly span: Span;
+}
+// ---cut-before---
+await runProgram<Telemetry>({
+  dir: new URL("./commands/", import.meta.url),
+  metadata: { name: "tasks", version: "1.0.0" },
+  hooks: {
+    beforeEach({ path }) {
+      const name = path.length > 0 ? path.join(" ") : "tasks";
+      const logger = getLogger(["tasks", name]);
+      logger.info("Command started.");
+      const resource: Telemetry = { logger, span: startSpan(name) };
+      return { resource };
+    },
+    afterEach(context) {
+      const resource = context.resource;
+      if (resource == null) return;
+      const { logger, span } = resource;
+      logger.info("Command finished.");
+      span.end();
+    },
+    onError(context, error) {
+      const resource = context.resource;
+      if (resource == null) return;
+      const { logger, span } = resource;
+      logger.error("Command failed.", { error });
+      span.recordException(error);
+      span.end();
+    },
+  },
+});
+~~~~
+
+The `Telemetry` type argument checks what `beforeEach` returns and gives
+`afterEach` and `onError` the same resource type.  The property remains optional
+because `beforeEach` may fail or return no context.  When commands are passed
+directly, the type argument also checks handlers that fall back to the
+program-level context; a command with its own `beforeEach` keeps its separately
+inferred resource type.
+
+A handler reads the resource through its second parameter.  Existing
+single-argument handlers keep working unchanged; only the ones that need the
+resource declare it:
+
+~~~~ typescript twoslash
+import { getLogger } from "@logtape/logtape";
+import { object } from "@optique/core/constructs";
+import { message } from "@optique/core/message";
+import { withDefault } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import {
+  defineCommand,
+  type ProgramHookContext,
+} from "@optique/discover/command";
+
+interface Telemetry {
+  readonly logger: ReturnType<typeof getLogger>;
+}
+// ---cut-before---
+export default defineCommand({
+  parser: object({
+    target: withDefault(option("--target", string()), "app"),
+  }),
+  metadata: { brief: message`Build the project.` },
+  handler(value, context?: ProgramHookContext<Telemetry>) {
+    context?.resource?.logger.info("Building {target}.", {
+      target: value.target,
+    });
+  },
+});
+~~~~
+
+#### Per-command preflight
+
+When only one command needs its own setup—for example, a `deploy` command that
+always refreshes an auth token—put the hooks on the command definition instead
+of the program.  Command-level hooks nest inside the program-level ones, so the
+program hook still wraps every command:
+
+~~~~ typescript twoslash
+import { object } from "@optique/core/constructs";
+import { message } from "@optique/core/message";
+import { option } from "@optique/core/primitives";
+import { choice } from "@optique/core/valueparser";
+import { defineCommand } from "@optique/discover/command";
+
+interface TokenRefresher {
+  release(): void;
+}
+declare function refreshAuthToken(): TokenRefresher;
+// ---cut-before---
+export default defineCommand({
+  parser: object({
+    environment: option("--env", choice(["staging", "production"])),
+  }),
+  metadata: { brief: message`Deploy the project.` },
+  hooks: {
+    beforeEach() {
+      return { resource: refreshAuthToken() };
+    },
+    afterEach(context) {
+      context.resource?.release();
+    },
+  },
+  handler(value) {
+    console.log(`Deploying to ${value.environment}.`);
+  },
+});
+~~~~
+
+Because this command defines its own `beforeEach`, its handler receives the
+command-level resource; a command without command-level hooks receives the
+program-level one.  The execution order when both levels are present is:
+
+~~~~ mermaid
+flowchart TB
+  pb["program.beforeEach"] --> cb["command.beforeEach"] --> h["handler"]
+  h -- success --> ca["command.afterEach"] --> pa["program.afterEach"]
+  h -- failure --> ce["command.onError"] --> pe["program.onError"]
+~~~~
+
+#### Parser errors versus handler errors
+
+Hooks wrap the *handler*, not the parser.  A *parser error*—a missing option
+or a bad value—is detected before any handler runs and is printed by
+*@optique/run*'s error display; `beforeEach` never fires for it.  A *handler
+error*—anything the handler, `beforeEach`, or `afterEach` throws or rejects—
+is passed to `onError`.  `onError` is for observation and cleanup only:
+`runProgram()` re-throws the original error after it resolves, so the process
+still exits with the same non-zero code it would without hooks.  Command-level
+hooks run before program-level hooks on the way out, so the most specific
+cleanup happens first.
+
+The repository includes a runnable version of this pattern in
+*examples/patterns/program-hooks.ts*.  For the hook contract and ordering, see
+[lifecycle hooks](./concepts/discover.md#lifecycle-hooks).
+
+
+Integration patterns
+--------------------
+
+These recipes use integration packages like *@optique/env*, *@optique/config*,
+and *@optique/inquirer*.
+
+### Environment variable fallbacks
+
+*This API is available since Optique 1.0.0.*
+
+When a CLI argument is not provided, `bindEnv()` from *@optique/env* checks
+the corresponding environment variable before falling back to a default.
+
+~~~~ typescript twoslash
+import { bindEnv, bool, createEnvContext } from "@optique/env";
+import { object } from "@optique/core/constructs";
+import { option } from "@optique/core/primitives";
+import { integer, string } from "@optique/core/valueparser";
+import { runAsync } from "@optique/run";
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+
+const parser = object({
+  host: bindEnv(
+    option("-h", "--host", string()),
+    { context: envContext, key: "HOST", parser: string(), default: "localhost" },
+  ),
+  port: bindEnv(
+    option("-p", "--port", integer()),
+    { context: envContext, key: "PORT", parser: integer(), default: 3000 },
+  ),
+  debug: bindEnv(
+    option("-d", "--debug", bool()),
+    { context: envContext, key: "DEBUG", parser: bool(), default: false },
+  ),
+});
+
+const result = await runAsync(parser, {
+  contexts: [envContext],
+});
+~~~~
+
+The priority order is: CLI argument > environment variable > default value.
+With the `MYAPP_` prefix, the parser reads `MYAPP_HOST`, `MYAPP_PORT`, and
+`MYAPP_DEBUG`.
+
+For more details, see the
+[environment variable guide](./integrations/env.md).
+
+### Config file integration
+
+*This API is available since Optique 0.10.0.*
+
+Many CLI tools support configuration files that provide default values for
+options. The *@optique/config* package provides type-safe config file
+integration with automatic fallback handling.
+
+### Basic setup with schema validation
+
+Use a Standard Schema-compatible library (Zod, Valibot, ArkType, etc.) to
+define your config structure:
+
+~~~~ typescript twoslash
+import { z } from "zod";
+import { createConfigContext, bindConfig } from "@optique/config";
+import { object } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { integer, string } from "@optique/core/valueparser";
+import { runAsync } from "@optique/run";
+
+// Define the config schema
+const configSchema = z.object({
+  host: z.string().optional(),
+  port: z.number().int().min(1).max(65535).optional(),
+  debug: z.boolean().optional(),
+});
+
+// Create a config context
+const configContext = createConfigContext({ schema: configSchema });
+
+// Build the parser with config bindings
+const parser = object({
+  config: optional(option("-c", "--config", string())),
+  host: bindConfig(option("-h", "--host", string()), {
+    context: configContext,
+    key: "host",
+    default: "localhost",
+  }),
+  port: bindConfig(option("-p", "--port", integer()), {
+    context: configContext,
+    key: "port",
+    default: 3000,
+  }),
+  debug: bindConfig(option("-d", "--debug"), {
+    context: configContext,
+    key: "debug",
+    default: false,
+  }),
+});
+
+// Run with config file support via contexts
+const result = await runAsync(parser, {
+  contexts: [configContext],
+  contextOptions: {
+    getConfigPath: (parsed) => parsed.config,
+  },
+});
+
+// result.host: CLI > config.json > "localhost"
+// result.port: CLI > config.json > 3000
+~~~~
+
+The `bindConfig()` function wraps a parser to provide fallback behavior:
+
+1.  *CLI argument* (highest priority): User-provided command-line value
+2.  *Config file value*: Loaded from config file if path was specified
+3.  *Default value*: Specified in `bindConfig()` options
+4.  *Error*: If none of the above and no default
+
+### Type-safe config path extraction
+
+The `getConfigPath` option is type-checked against your parser's result type.
+TypeScript ensures you're accessing a field that actually exists:
+
+~~~~ typescript twoslash
+import { z } from "zod";
+import { createConfigContext } from "@optique/config";
+import { object } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { string } from "@optique/core/valueparser";
+import { runAsync } from "@optique/run";
+
+const configSchema = z.object({ host: z.string().optional() });
+const configContext = createConfigContext({ schema: configSchema });
+
+const parser = object({
+  configFile: optional(option("--config-file", string())),
+  host: option("--host", string()),
+});
+
+const result = await runAsync(parser, {
+  contexts: [configContext],
+  contextOptions: {
+    // `parsed` is typed as { configFile?: string; host: string }
+    getConfigPath: (parsed) => parsed.configFile,
+  },
+});
+~~~~
+
+### Nested config values
+
+For nested config structures, use a function instead of a key:
+
+~~~~ typescript twoslash
+import { z } from "zod";
+import { createConfigContext, bindConfig } from "@optique/config";
+import { option } from "@optique/core/primitives";
+import { integer, string } from "@optique/core/valueparser";
+
+const configSchema = z.object({
+  server: z.object({
+    host: z.string(),
+    port: z.number(),
+  }).optional(),
+  database: z.object({
+    connectionString: z.string(),
+  }).optional(),
+});
+
+const configContext = createConfigContext({ schema: configSchema });
+
+// Access nested values with a function
+const hostParser = bindConfig(option("--host", string()), {
+  context: configContext,
+  key: (config) => config.server?.host,
+  default: "localhost",
+});
+
+const dbParser = bindConfig(option("--db", string()), {
+  context: configContext,
+  key: (config) => config.database?.connectionString,
+});
+~~~~
+
+### Custom config file formats
+
+By default, config files are parsed as JSON. For YAML, TOML, or other formats,
+provide a custom file parser to `createConfigContext()`:
+
+~~~~ typescript twoslash
+import { z } from "zod";
+import { createConfigContext, bindConfig } from "@optique/config";
+import { object } from "@optique/core/constructs";
+import { option } from "@optique/core/primitives";
+import { string, integer } from "@optique/core/valueparser";
+import { runAsync } from "@optique/run";
+import { parse as parseYaml } from "yaml";
+
+const configSchema = z.object({
+  host: z.string(),
+  port: z.number(),
+});
+
+// Pass fileParser when creating the context
+const configContext = createConfigContext({
+  schema: configSchema,
+  fileParser: (contents) => parseYaml(new TextDecoder().decode(contents)),
+});
+
+const parser = object({
+  config: option("--config", string()),
+  host: bindConfig(option("--host", string()), {
+    context: configContext,
+    key: "host",
+    default: "localhost",
+  }),
+  port: bindConfig(option("--port", integer()), {
+    context: configContext,
+    key: "port",
+    default: 3000,
+  }),
+});
+
+const result = await runAsync(parser, {
+  contexts: [configContext],
+  contextOptions: {
+    getConfigPath: (parsed) => parsed.config,
+  },
+});
+~~~~
+
+### Combining with environment variables
+
+Use `bindEnv()` from *@optique/env* together with `bindConfig()` to create
+a four-level fallback chain. The nesting order determines priority:
+`bindEnv(bindConfig(option(...)))` gives CLI > env > config > default.
+
+~~~~ typescript twoslash
+import { z } from "zod";
+import { createConfigContext, bindConfig } from "@optique/config";
+import { bindEnv, createEnvContext } from "@optique/env";
+import { object } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { integer, string } from "@optique/core/valueparser";
+import { runAsync } from "@optique/run";
+
+const configSchema = z.object({
+  host: z.string().optional(),
+  port: z.number().int().min(1).max(65535).optional(),
+});
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+const configContext = createConfigContext({ schema: configSchema });
+
+const parser = object({
+  config: optional(option("-c", "--config", string())),
+  // Priority: CLI > env var > config file > default
+  host: bindEnv(
+    bindConfig(option("-h", "--host", string()), {
+      context: configContext,
+      key: "host",
+      default: "localhost",
+    }),
+    { context: envContext, key: "HOST", parser: string() },
+  ),
+  port: bindEnv(
+    bindConfig(option("-p", "--port", integer()), {
+      context: configContext,
+      key: "port",
+      default: 3000,
+    }),
+    { context: envContext, key: "PORT", parser: integer() },
+  ),
+});
+
+const result = await runAsync(parser, {
+  contexts: [envContext, configContext],
+  contextOptions: {
+    getConfigPath: (parsed) => parsed.config,
+  },
+});
+~~~~
+
+### Combining with interactive prompts
+
+Use `prompt()` from *@optique/inquirer* as the outermost wrapper when you want
+an interactive fallback *after* checking CLI arguments, environment variables,
+and config files.
+
+A practical approach is to preload config annotations once and expose them via
+a single-pass context. This keeps the fallback order predictable while still
+using `bindEnv()` and `bindConfig()` together:
+
+~~~~ typescript twoslash
+import { z } from "zod";
+import { bindConfig, createConfigContext } from "@optique/config";
+import { object } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { option } from "@optique/core/primitives";
+import { integer, string } from "@optique/core/valueparser";
+import { bindEnv, createEnvContext } from "@optique/env";
+import { prompt } from "@optique/inquirer";
+import { runAsync } from "@optique/run";
+
+function getConfigPathFromArgs(args: readonly string[]): string | undefined {
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === "-c" || arg === "--config") {
+      return args[index + 1];
+    }
+    if (arg.startsWith("--config=")) {
+      return arg.slice("--config=".length);
+    }
+  }
+  return undefined;
+}
+
+const configSchema = z.object({
+  host: z.string().optional(),
+  port: z.number().int().min(1).max(65535).optional(),
+});
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+const configContext = createConfigContext({ schema: configSchema });
+const args = ["--config", "./config.json"] as const;
+
+const configAnnotations = await configContext.getAnnotations(
+  {
+    phase: "phase2",
+    parsed: { config: getConfigPathFromArgs(args) },
+  },
+  { getConfigPath: (parsed: { readonly config?: string }) => parsed.config },
+);
+
+const staticConfigContext = {
+  id: configContext.id,
+  phase: "single-pass" as const,
+  getAnnotations() {
+    return configAnnotations;
+  },
+};
+
+const parser = object({
+  config: optional(option("-c", "--config", string())),
+  host: prompt(
+    bindEnv(
+      bindConfig(option("--host", string()), {
+        context: configContext,
+        key: "host",
+      }),
+      { context: envContext, key: "HOST", parser: string() },
+    ),
+    { type: "input", message: "Host:", default: "localhost" },
+  ),
+  port: prompt(
+    bindEnv(
+      bindConfig(option("--port", integer()), {
+        context: configContext,
+        key: "port",
+      }),
+      {
+        context: envContext,
+        key: "PORT",
+        parser: integer({ min: 1, max: 65535 }),
+      },
+    ),
+    { type: "number", message: "Port:", default: 3000, min: 1, max: 65535 },
+  ),
+});
+
+const result = await runAsync(parser, {
+  args,
+  contexts: [envContext, staticConfigContext],
+});
+~~~~
+
+When you preload annotations manually like this, you still need to thread
+them back into parsing explicitly, either by wrapping them in a static
+context as shown here or by passing them directly to low-level APIs such
+as `parse()`, `parseAsync()`, or `parser.complete()`. The
+`getAnnotations()` call itself does not change later parses.
+
+This preserves the priority chain:
+
+CLI argument > environment variable > config file > interactive prompt
+
+For more details, see the
+[environment variable guide](./integrations/env.md),
+[config file integration guide](./integrations/config.md), and
+[Inquirer.js prompt guide](./integrations/inquirer.md).
+
+### Config-only and env-only values with `fail()`
+
+Some configuration values should never be exposed as CLI flags. For example,
+an API secret might come only from an environment variable or config file.
+The [`fail()`](./concepts/primitives.md#fail-parser) parser always fails
+without consuming input, so wrapping it with `bindConfig()` or `bindEnv()`
+forces the value to come from the external source:
+
+~~~~ typescript twoslash
+import { z } from "zod";
+import { bindConfig, createConfigContext } from "@optique/config";
+import { object } from "@optique/core/constructs";
+import { option } from "@optique/core/primitives";
+import { integer, string } from "@optique/core/valueparser";
+import { bindEnv, createEnvContext } from "@optique/env";
+import { fail } from "@optique/core/primitives";
+import { runAsync } from "@optique/run";
+import { withDefault } from "@optique/core/modifiers";
+
+const configSchema = z.object({
+  timeout: z.number().optional(),
+  apiSecret: z.string().optional(),
+});
+
+const envContext = createEnvContext({ prefix: "MYAPP_" });
+const configContext = createConfigContext({ schema: configSchema });
+
+const parser = object({
+  config: withDefault(option("--config", string()), "config.json"),
+  // Visible CLI option
+  host: option("--host", string()),
+  // Config-only: no CLI flag, falls back to config or default
+  timeout: bindConfig(fail<number>(), {
+    context: configContext,
+    key: "timeout",
+    default: 30,
+  }),
+  // Env-only: no CLI flag, falls back to env or default
+  apiSecret: bindEnv(fail<string>(), {
+    context: envContext,
+    key: "API_SECRET",
+    parser: string(),
+    default: "",
+  }),
+});
+
+const result = await runAsync(parser, {
+  contexts: [envContext, configContext],
+  contextOptions: {
+    getConfigPath: (parsed) => parsed.config,
+  },
+});
+~~~~
+
+Because `fail()` never succeeds on its own, `bindConfig()` and `bindEnv()`
+always use the external source (or fall back to the configured default).
+This keeps the help output clean while still allowing values to flow in
+from configuration files and environment variables.
+
+<!-- cSpell: ignore myapp -->
