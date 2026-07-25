@@ -1,0 +1,17 @@
+{
+  "fixture": "ambiguous-prose",
+  "expects_document": true,
+  "expects_arguments": false,
+  "preferred_solver": "grounded",
+  "min_statements": 3,
+  "max_statements": 12,
+  "max_relations": 0,
+  "max_arguments": 0,
+  "allowed_relation_kinds": ["support", "attack", "contradiction"],
+  "forbidden_relation_kinds": ["undercut"],
+  "provenance_required": true,
+  "every_quote_must_be_substring": true,
+  "grounded_arguments_only": true,
+  "mcp_only": true,
+  "notes": "Silence is valid: lists three cryptographic families without arguing a conclusion. Statements only; no relations or arguments."
+}

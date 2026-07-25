@@ -152,7 +152,7 @@ Fourteen tools, stdio transport, single binary `argdown-2-mcp`. Every mutating t
 
 ### Claude Code plugin (one-click install)
 
-This repo is a Claude Code marketplace. Installing the `argdown-2` plugin registers the MCP server and ships skills for build / validate / solve.
+This repo is a Claude Code marketplace. Installing the `argdown-2` plugin registers the MCP server and ships skills for prose extraction / interactive argument building / build / validate / solve (`prose-to-argdown-2`, `interactive-argument`, `build-graph`, `validate-debug`, `interpret-solve`).
 
 1. In Claude Code: `/plugin marketplace add kellenff/argdown-2` (or add a local checkout path).
 2. `/plugin install argdown-2@argdown-2`

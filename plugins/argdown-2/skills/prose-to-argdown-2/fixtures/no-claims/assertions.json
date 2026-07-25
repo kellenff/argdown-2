@@ -1,0 +1,8 @@
+{
+  "fixture": "no-claims",
+  "expects_document": false,
+  "expects_arguments": false,
+  "refuse_extraction": true,
+  "mcp_only": true,
+  "notes": "Recipe prose. Skill must refuse in plain language and must not call create_document."
+}

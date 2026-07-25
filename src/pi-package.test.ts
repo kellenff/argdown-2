@@ -20,7 +20,13 @@ function readText(relativePath: string): string {
   return Deno.readTextFileSync(join(root, relativePath));
 }
 
-const SKILLS = ["build-graph", "validate-debug", "interpret-solve"] as const;
+const SKILLS = [
+  "build-graph",
+  "validate-debug",
+  "interpret-solve",
+  "prose-to-argdown-2",
+  "interactive-argument",
+] as const;
 
 const TOOL_NAMES = [
   "add_argument",

@@ -14,7 +14,13 @@ function readText(relativePath: string): string {
   return readFileSync(join(root, relativePath), "utf8");
 }
 
-const SKILLS = ["build-graph", "validate-debug", "interpret-solve"] as const;
+const SKILLS = [
+  "build-graph",
+  "validate-debug",
+  "interpret-solve",
+  "prose-to-argdown-2",
+  "interactive-argument",
+] as const;
 
 describe("Claude Code plugin MCP config", () => {
   it("has a valid marketplace manifest for local install", () => {

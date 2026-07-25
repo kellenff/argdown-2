@@ -4,13 +4,13 @@
     "name": "kellenff"
   },
   "metadata": {
-    "description": "One-click MCP server for loading, validating, and solving EDN argument graphs with grounded Dung semantics. Prefer builder MCP tools; never hand-edit EDN."
+    "description": "One-click MCP server for prose-to-graph extraction, interactive argument building, loading, validating, and solving EDN argument graphs with grounded Dung semantics. Prefer builder MCP tools; never hand-edit EDN."
   },
   "plugins": [
     {
       "name": "argdown-2",
       "source": "./plugins/argdown-2",
-      "description": "One-click MCP server for loading, validating, and solving EDN argument graphs with grounded Dung semantics. Prefer builder MCP tools; never hand-edit EDN."
+      "description": "One-click MCP server for prose-to-graph extraction, interactive argument building, loading, validating, and solving EDN argument graphs with grounded Dung semantics. Prefer builder MCP tools; never hand-edit EDN."
     }
   ]
 }

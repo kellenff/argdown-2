@@ -1,0 +1,15 @@
+# Section 1: The Problem
+
+Modern software systems routinely accumulate technical debt. A 2024 Stripe study found that developers spend 42% of their time dealing with legacy code rather than building new features. This is not sustainable. The cost of deferred refactoring compounds: a function that takes three days to understand today will take five next year and ten the year after.
+
+Therefore, every team should allocate at least 20% of sprint capacity to debt reduction. The evidence is overwhelming. The alternative — letting debt accumulate — produces systems that nobody wants to touch and nobody can extend.
+
+# Section 2: Counter-Argument and Response
+
+Some will object that 20% is too much. Customer features ship faster when developers spend all their time on new code. However, this view ignores the compounding cost of debt. A team that ships features today but cannot ship them next year has not actually moved forward.
+
+Others will argue that refactoring is risky and breaks production. This is true in the short term and false in the long term. The risk of breaking production during a refactor is much smaller than the risk of being unable to ship anything at all once the system becomes unmaintainable.
+
+# Section 3: Conclusion
+
+The conclusion is straightforward: pay down debt continuously, or pay it down later with interest. The math favors the former. Teams that adopt this discipline ship faster over the long run, not slower.
