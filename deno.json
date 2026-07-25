@@ -51,7 +51,11 @@
     "sloppy-imports",
     "node-globals"
   ],
+  "fmt": {
+    "exclude": ["vendor/**"]
+  },
   "lint": {
+    "exclude": ["vendor/**"],
     "rules": {
       "exclude": [
         "no-sloppy-imports",
