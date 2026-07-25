@@ -1,0 +1,62 @@
+{
+  "name": "@optique/core",
+  "version": "1.2.0",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./annotations": "./src/annotations.ts",
+    "./completion": "./src/completion.ts",
+    "./context": "./src/context.ts",
+    "./constructs": "./src/constructs.ts",
+    "./dependency": "./src/dependency.ts",
+    "./dependency-runtime": "./src/dependency-runtime.ts",
+    "./doc": "./src/doc.ts",
+    "./extension": "./src/extension.ts",
+    "./facade": "./src/facade.ts",
+    "./fluent": "./src/fluent.ts",
+    "./message": "./src/message.ts",
+    "./modifiers": "./src/modifiers.ts",
+    "./nonempty": "./src/nonempty.ts",
+    "./parser": "./src/parser.ts",
+    "./primitives": "./src/primitives.ts",
+    "./program": "./src/program.ts",
+    "./suggestion": "./src/suggestion.ts",
+    "./usage": "./src/usage.ts",
+    "./valueparser": "./src/valueparser.ts"
+  },
+  "imports": {
+    "#src/": "./src/"
+  },
+  "exclude": [
+    "dist/",
+    "tsdown.config.ts"
+  ],
+  "publish": {
+    "exclude": [
+      "skills/optique/SKILL.test.ts"
+    ]
+  },
+  "tasks": {
+    "build": "pnpm build",
+    "test": "deno test --allow-read --allow-env",
+    "test:node": {
+      "dependencies": [
+        "build"
+      ],
+      "command": "node --test"
+    },
+    "test:bun": {
+      "dependencies": [
+        "build"
+      ],
+      "command": "bun test"
+    },
+    "test-all": {
+      "dependencies": [
+        "test",
+        "test:node",
+        "test:bun"
+      ]
+    }
+  }
+}

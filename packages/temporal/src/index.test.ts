@@ -1,0 +1,1725 @@
+import {
+  duration,
+  instant,
+  plainDate,
+  plainDateTime,
+  plainMonthDay,
+  plainTime,
+  plainYearMonth,
+  type TimeZone,
+  timeZone,
+  zonedDateTime,
+} from "@optique/temporal";
+import { object } from "@optique/core/constructs";
+import { message } from "@optique/core/message";
+import { parseAsync, parseSync } from "@optique/core/parser";
+import { argument, option } from "@optique/core/primitives";
+import type {
+  NonEmptyString,
+  ValueParser,
+  ValueParserResult,
+} from "@optique/core/valueparser";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+
+const runtime = globalThis as {
+  readonly Bun?: unknown;
+  readonly Deno?: unknown;
+  readonly process?: {
+    readonly release?: {
+      readonly name?: string;
+    };
+  };
+};
+const isBun = runtime.Bun !== undefined;
+const isNode = runtime.process?.release?.name === "node" &&
+  runtime.Deno === undefined &&
+  !isBun;
+const usesBuiltOutput = isNode || isBun;
+const usingPolyfill = usesBuiltOutput || !globalThis.Temporal;
+if (usingPolyfill) {
+  const polyfill = await import("@js-temporal/polyfill");
+  Object.assign(globalThis, { Temporal: polyfill.Temporal });
+}
+
+function throwingTemporalType<
+  T extends { readonly from: (...args: never[]) => unknown },
+>(
+  originalType: T,
+): T {
+  const clone = Object.create(originalType) as T;
+  Object.defineProperty(clone, "from", {
+    value() {
+      throw new RangeError("placeholder unavailable.");
+    },
+    configurable: true,
+  });
+  return clone;
+}
+
+function canShadowTemporalConstructors(): boolean {
+  const originalTemporal = globalThis.Temporal;
+  if (originalTemporal == null) return false;
+  try {
+    Object.defineProperty(globalThis, "Temporal", {
+      value: {
+        ...originalTemporal,
+        Instant: throwingTemporalType(originalTemporal.Instant),
+      },
+      configurable: true,
+    });
+    return instant().placeholder === undefined;
+  } catch {
+    return false;
+  } finally {
+    Object.defineProperty(globalThis, "Temporal", {
+      value: originalTemporal,
+      configurable: true,
+    });
+  }
+}
+
+describe("instant", () => {
+  const parser = instant();
+
+  it("should have correct metavar", () => {
+    assert.equal(parser.metavar, "TIMESTAMP");
+  });
+
+  it("should parse valid instant strings", () => {
+    const validInputs = [
+      "2020-01-23T17:04:36.491865121Z",
+      "2020-01-23T17:04:36Z",
+      "2020-01-23T17:04:36.123Z",
+      "1970-01-01T00:00:00Z",
+    ];
+
+    for (const input of validInputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.Instant);
+      assert.equal(result.value.toString(), input);
+    }
+  });
+
+  it("should reject invalid instant strings", () => {
+    const invalidInputs = [
+      "2020-01-23T17:04:36",
+      "2020-01-23",
+      "invalid",
+      "",
+      "2020-01-23T25:04:36Z",
+      "2020-13-23T17:04:36Z",
+    ];
+
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should format instant values correctly", () => {
+    const instant = Temporal.Instant.from("2020-01-23T17:04:36Z");
+    const formatted = parser.format(instant);
+    assert.equal(formatted, "2020-01-23T17:04:36Z");
+  });
+
+  it("should support custom metavar", () => {
+    const customParser = instant({ metavar: "CUSTOM_INSTANT" });
+    assert.equal(customParser.metavar, "CUSTOM_INSTANT");
+  });
+});
+
+describe("duration", () => {
+  const parser = duration();
+
+  it("should have correct metavar", () => {
+    assert.equal(parser.metavar, "DURATION");
+  });
+
+  it("should parse valid duration strings", () => {
+    const validInputs = [
+      "PT1H30M",
+      "P1DT12H",
+      "PT30S",
+      "P1Y2M3DT4H5M6S",
+      "PT0S",
+    ];
+
+    for (const input of validInputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.Duration);
+    }
+  });
+
+  it("should reject invalid duration strings", () => {
+    const invalidInputs = [
+      "1H30M",
+      "P1D12H",
+      "invalid",
+      "",
+      "PT",
+      "P",
+    ];
+
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should format duration values correctly", () => {
+    const duration = Temporal.Duration.from("PT1H30M");
+    const formatted = parser.format(duration);
+    assert.equal(formatted, "PT1H30M");
+  });
+
+  it("should support custom metavar", () => {
+    const customParser = duration({ metavar: "TIME_SPAN" });
+    assert.equal(customParser.metavar, "TIME_SPAN");
+  });
+});
+
+describe("zonedDateTime", () => {
+  const parser = zonedDateTime();
+
+  it("should have correct metavar", () => {
+    assert.equal(parser.metavar, "ZONED_DATETIME");
+  });
+
+  it("should parse valid zoned datetime strings", () => {
+    const validInputs = [
+      "2020-01-23T17:04:36.491865121+01:00[Europe/Paris]",
+      "2020-01-23T17:04:36Z[UTC]",
+      "2020-01-23T17:04:36+09:00[Asia/Seoul]",
+    ];
+
+    for (const input of validInputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.ZonedDateTime);
+    }
+  });
+
+  it("should reject invalid zoned datetime strings", () => {
+    const invalidInputs = [
+      "2020-01-23T17:04:36",
+      "2020-01-23T17:04:36Z",
+      "2020-01-23",
+      "invalid",
+      "",
+    ];
+
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should format zoned datetime values correctly", () => {
+    const zdt = Temporal.ZonedDateTime.from(
+      "2020-01-23T17:04:36+01:00[Europe/Paris]",
+    );
+    const formatted = parser.format(zdt);
+    assert.ok(formatted.includes("Europe/Paris"));
+    assert.ok(formatted.includes("2020-01-23"));
+  });
+});
+
+describe("plainDate", () => {
+  const parser = plainDate();
+
+  it("should have correct metavar", () => {
+    assert.equal(parser.metavar, "DATE");
+  });
+
+  it("should parse valid date strings", () => {
+    const validInputs = [
+      "2020-01-23",
+      "2020-12-31",
+      "1970-01-01",
+      "2000-02-29",
+      "+010000-01-23",
+      "-000001-12-31",
+      "2020-01-23[u-ca=gregory]",
+      "2020-01-23[u-ca=GREGORY]",
+      "20200123", // basic (compact) ISO 8601
+      "+0100000123", // basic expanded year
+      "20200123[u-ca=gregory]", // basic with calendar
+    ];
+
+    for (const input of validInputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.PlainDate);
+    }
+  });
+
+  it("should reject wider ISO forms", () => {
+    const widerInputs = [
+      "2020-01-23T17:04:36",
+      "2020-01-23T17:04:36.491865121",
+      "2020-01-23T00:00:00",
+      "20200123T170436", // compact datetime
+    ];
+
+    for (const input of widerInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should reject invalid date strings", () => {
+    const invalidInputs = [
+      "2020-13-01",
+      "2020-01-32",
+      "2020-01",
+      "invalid",
+      "",
+      "2020/01/23",
+    ];
+
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should format date values correctly", () => {
+    const date = Temporal.PlainDate.from("2020-01-23");
+    const formatted = parser.format(date);
+    assert.equal(formatted, "2020-01-23");
+  });
+});
+
+describe("plainTime", () => {
+  const parser = plainTime();
+
+  it("should have correct metavar", () => {
+    assert.equal(parser.metavar, "TIME");
+  });
+
+  it("should parse valid time strings", () => {
+    const validInputs = [
+      "17:04:36",
+      "17:04:36.491865121",
+      "00:00:00",
+      "23:59:59",
+      "12:30:45.123",
+      "17:04", // Temporal accepts this format
+      "17:04:36,123", // ISO 8601 allows comma as fractional separator
+      "170436", // basic (compact) ISO 8601
+      "1704", // compact HH:MM
+      "17", // reduced-precision hour-only
+      "T17:04", // T-prefixed extended
+      "T1704", // T-prefixed basic
+    ];
+
+    for (const input of validInputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.PlainTime);
+    }
+  });
+
+  it("should parse time strings with calendar annotations", {
+    // Deno's native Temporal rejects calendar annotations on PlainTime
+    skip: !usingPolyfill,
+  }, () => {
+    if (!usingPolyfill) return;
+    const inputs = [
+      "17:04:36[u-ca=gregory]",
+      "17:04:36[!u-ca=iso8601]",
+    ];
+    for (const input of inputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.PlainTime);
+    }
+  });
+
+  it("should reject wider ISO forms", () => {
+    const widerInputs = [
+      "2020-01-23T17:04:36",
+      "2020-01-23T17:04:36.491865121",
+      "20200123T170436", // compact datetime
+    ];
+
+    for (const input of widerInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should reject invalid time strings", () => {
+    const invalidInputs = [
+      "25:04:36",
+      "17:60:36",
+      "invalid",
+      "",
+    ];
+
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should format time values correctly", () => {
+    const time = Temporal.PlainTime.from("17:04:36");
+    const formatted = parser.format(time);
+    assert.equal(formatted, "17:04:36");
+  });
+});
+
+describe("plainDateTime", () => {
+  const parser = plainDateTime();
+
+  it("should have correct metavar", () => {
+    assert.equal(parser.metavar, "DATETIME");
+  });
+
+  it("should parse valid datetime strings", () => {
+    const validInputs = [
+      "2020-01-23T17:04:36",
+      "2020-01-23T17:04:36.491865121",
+      "2020-01-23T00:00:00",
+      "2020-12-31T23:59:59",
+      "+010000-01-23T17:04:36",
+      "-000001-12-31T00:00:00",
+      "2020-01-23T17:04:36[u-ca=gregory]",
+      "2020-01-23T17:04:36,123", // ISO 8601 allows comma as fractional separator
+      "2020-01-23t17:04:36", // lowercase t separator
+      "2020-01-23 17:04:36", // space separator
+      "2020-01-23T17:04:36[u-ca=GREGORY]", // uppercase calendar
+      "20200123T170436", // basic (compact) ISO 8601
+      "2020-01-23T170436", // mixed extended date + basic time
+      "+0100000123T170436", // basic expanded year
+      "20200123T170436[u-ca=gregory]", // basic with calendar
+      "2020-01-23T17", // reduced-precision hour-only time
+      "20200123T17", // basic date + hour-only time
+    ];
+
+    for (const input of validInputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.PlainDateTime);
+    }
+  });
+
+  it("should reject narrower ISO forms", () => {
+    const narrowerInputs = [
+      "2020-01-23",
+      "20200123", // compact date without time
+      "17:04:36",
+      "170436", // compact time without date
+    ];
+
+    for (const input of narrowerInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should reject invalid datetime strings", () => {
+    const invalidInputs = [
+      "2020-01-23T25:04:36",
+      "2020-13-23T17:04:36",
+      "invalid",
+      "",
+    ];
+
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should format datetime values correctly", () => {
+    const dateTime = Temporal.PlainDateTime.from("2020-01-23T17:04:36");
+    const formatted = parser.format(dateTime);
+    assert.equal(formatted, "2020-01-23T17:04:36");
+  });
+});
+
+describe("plainYearMonth", () => {
+  const parser = plainYearMonth();
+
+  it("should have correct metavar", () => {
+    assert.equal(parser.metavar, "YEAR-MONTH");
+  });
+
+  it("should parse valid year-month strings", () => {
+    const validInputs = [
+      "2020-01",
+      "2020-12",
+      "1970-01",
+      "2000-02",
+      "+010000-01",
+      "-000001-12",
+      "202001", // basic (compact) ISO 8601
+      "+01000001", // basic expanded year
+    ];
+
+    for (const input of validInputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.PlainYearMonth);
+    }
+  });
+
+  it("should parse non-ISO calendar year-month strings", {
+    // Deno's native Temporal panics on non-ISO calendars for PlainYearMonth
+    skip: !usingPolyfill,
+  }, () => {
+    if (!usingPolyfill) return;
+    const inputs = [
+      "2020-01-01[u-ca=gregory]",
+      "20200123[u-ca=gregory]", // basic with calendar
+    ];
+    for (const input of inputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.PlainYearMonth);
+    }
+  });
+
+  it("should reject wider ISO forms", () => {
+    const widerInputs = [
+      "2020-01-23",
+      "2020-01-23T17:04:36",
+    ];
+
+    for (const input of widerInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should reject invalid year-month strings", () => {
+    const invalidInputs = [
+      "2020-13",
+      "2020-00",
+      "2020",
+      "invalid",
+      "",
+      "2020/01",
+    ];
+
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should format year-month values correctly", () => {
+    const yearMonth = Temporal.PlainYearMonth.from("2020-01");
+    const formatted = parser.format(yearMonth);
+    assert.equal(formatted, "2020-01");
+  });
+});
+
+describe("plainMonthDay", () => {
+  const parser = plainMonthDay();
+
+  it("should have correct metavar", () => {
+    assert.equal(parser.metavar, "MONTH-DAY");
+  });
+
+  it("should parse valid month-day strings", () => {
+    const validInputs = [
+      "--01-23",
+      "--12-31",
+      "--02-29",
+      "--06-15",
+      "01-23",
+      "12-31",
+      "--0123", // basic (compact) ISO 8601
+      "0123", // compact without --
+    ];
+
+    for (const input of validInputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.PlainMonthDay);
+    }
+  });
+
+  it("should parse non-ISO calendar month-day strings", {
+    // Deno's native Temporal panics on non-ISO calendars for PlainMonthDay
+    skip: !usingPolyfill,
+  }, () => {
+    if (!usingPolyfill) return;
+    const inputs = [
+      "1972-01-23[u-ca=gregory]",
+      "20200123[u-ca=gregory]", // basic with calendar
+      "+0100000123[u-ca=gregory]", // basic expanded year with calendar
+    ];
+    for (const input of inputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.ok(result.value instanceof Temporal.PlainMonthDay);
+    }
+  });
+
+  it("should reject wider ISO forms", () => {
+    const widerInputs = [
+      "2020-01-23",
+      "2020-01-23T17:04:36",
+    ];
+
+    for (const input of widerInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should reject invalid month-day strings", () => {
+    const invalidInputs = [
+      "--13-01",
+      "--01-32",
+      "--00-15",
+      "invalid",
+      "",
+    ];
+
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should format month-day values correctly", () => {
+    const monthDay = Temporal.PlainMonthDay.from("--01-23");
+    const formatted = parser.format(monthDay);
+    assert.equal(formatted, "01-23");
+  });
+});
+
+describe("timeZone", () => {
+  const parser = timeZone();
+
+  it("should have correct metavar", () => {
+    assert.equal(parser.metavar, "TIMEZONE");
+  });
+
+  it("should parse valid timezone identifiers", () => {
+    const validInputs: TimeZone[] = [
+      "Asia/Seoul",
+      "America/New_York",
+      "Europe/London",
+      "UTC",
+      "Etc/GMT+5",
+      "America/Argentina/Buenos_Aires",
+      "America/Kentucky/Louisville",
+    ];
+
+    for (const input of validInputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.equal(result.value, input);
+    }
+  });
+
+  it("should parse single-segment timezone identifiers", () => {
+    const validInputs: TimeZone[] = [
+      "GMT",
+      "GMT0",
+      "GMT+0",
+      "GMT-0",
+      "UCT",
+      "Universal",
+      "Greenwich",
+      "Zulu",
+      "EST",
+      "MST",
+      "HST",
+      "Cuba",
+      "Egypt",
+      "Eire",
+      "GB",
+      "GB-Eire",
+      "Hongkong",
+      "Iceland",
+      "Iran",
+      "Israel",
+      "Jamaica",
+      "Japan",
+      "Kwajalein",
+      "Libya",
+      "Navajo",
+      "NZ",
+      "NZ-CHAT",
+      "Poland",
+      "Portugal",
+      "PRC",
+      "ROC",
+      "ROK",
+      "Singapore",
+      "Turkey",
+      "W-SU",
+    ];
+
+    for (const input of validInputs) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.equal(result.value, input);
+    }
+  });
+
+  it("should reject invalid timezone identifiers", () => {
+    const invalidInputs = [
+      "seoul",
+      "Asia",
+      "Asia/",
+      "/Seoul",
+      "invalid",
+      "",
+      "Asia Seoul",
+      "123/456",
+    ];
+
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should reject single-segment IDs not in the allowlist", () => {
+    // These may be accepted by some Temporal implementations but are not
+    // in the cross-runtime TimeZone allowlist.
+    const nonAllowlisted = [
+      "Factory",
+      "CST",
+      "PST",
+      "AST",
+      "SST",
+      "CET",
+      "MET",
+      "WET",
+      "EET",
+      "EST5EDT",
+      "CST6CDT",
+      "MST7MDT",
+      "PST8PDT",
+    ];
+
+    for (const input of nonAllowlisted) {
+      const result = parser.parse(input);
+      assert.ok(!result.success, `Should not parse: ${input}`);
+    }
+  });
+
+  it("should normalize case-insensitive single-segment inputs", () => {
+    const cases: [string, TimeZone][] = [
+      ["gmt", "GMT"],
+      ["utc", "UTC"],
+      ["est", "EST"],
+      ["japan", "Japan"],
+      ["cuba", "Cuba"],
+      ["zulu", "Zulu"],
+    ];
+
+    for (const [input, expected] of cases) {
+      const result = parser.parse(input);
+      assert.ok(result.success, `Failed to parse: ${input}`);
+      assert.equal(result.value, expected, `${input} -> ${expected}`);
+    }
+  });
+
+  it("should format timezone values correctly", () => {
+    const timezone: TimeZone = "Asia/Seoul";
+    const formatted = parser.format(timezone);
+    assert.equal(formatted, "Asia/Seoul");
+  });
+
+  it("should support custom metavar", () => {
+    const customParser = timeZone({ metavar: "TZ" });
+    assert.equal(customParser.metavar, "TZ");
+  });
+
+  it("should fall back to UTC/GMT suggestions when Intl API throws", () => {
+    const original = Intl.supportedValuesOf;
+    Intl.supportedValuesOf = ((_: "timeZone") => {
+      throw new Error("not supported");
+    }) as typeof Intl.supportedValuesOf;
+    try {
+      const parser = timeZone();
+      const suggestions = Array.from(parser.suggest!("g"));
+      assert.ok(
+        suggestions.some((s) => s.kind === "literal" && s.text === "GMT"),
+      );
+    } finally {
+      Intl.supportedValuesOf = original;
+    }
+  });
+
+  it("should include UTC and GMT when missing from Intl results", () => {
+    const original = Intl.supportedValuesOf;
+    Intl.supportedValuesOf =
+      (() => ["Asia/Seoul"]) as typeof Intl.supportedValuesOf;
+    try {
+      const parser = timeZone();
+      const suggestions = Array.from(parser.suggest!(""));
+      const literals = suggestions.filter((s) => s.kind === "literal");
+      assert.ok(literals.some((s) => s.text === "UTC"));
+      assert.ok(literals.some((s) => s.text === "GMT"));
+      assert.ok(literals.some((s) => s.text === "Asia/Seoul"));
+    } finally {
+      Intl.supportedValuesOf = original;
+    }
+  });
+});
+
+describe("error customization", () => {
+  describe("instant parser", () => {
+    it("should use custom invalidFormat error message", () => {
+      const parser = instant({
+        errors: {
+          invalidFormat: message`Please provide a valid timestamp.`,
+        },
+      });
+
+      const result = parser.parse("invalid-instant");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Please provide a valid timestamp." },
+      ]);
+    });
+
+    it("should use function-based invalidFormat error message", () => {
+      const parser = instant({
+        errors: {
+          invalidFormat: (input) =>
+            message`${input} is not a valid ISO 8601 instant.`,
+        },
+      });
+
+      const result = parser.parse("bad-timestamp");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "bad-timestamp" },
+        { type: "text", text: " is not a valid ISO 8601 instant." },
+      ]);
+    });
+  });
+
+  describe("duration parser", () => {
+    it("should use custom invalidFormat error message", () => {
+      const parser = duration({
+        errors: {
+          invalidFormat: message`Duration must be in ISO 8601 format.`,
+        },
+      });
+
+      const result = parser.parse("not-a-duration");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Duration must be in ISO 8601 format." },
+      ]);
+    });
+
+    it("should use function-based invalidFormat error message", () => {
+      const parser = duration({
+        errors: {
+          invalidFormat: (input) =>
+            message`${input} is not a valid duration format like PT1H30M.`,
+        },
+      });
+
+      const result = parser.parse("invalid");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "invalid" },
+        { type: "text", text: " is not a valid duration format like PT1H30M." },
+      ]);
+    });
+  });
+
+  describe("zonedDateTime parser", () => {
+    it("should use custom invalidFormat error message", () => {
+      const parser = zonedDateTime({
+        errors: {
+          invalidFormat: message`Invalid zoned datetime format.`,
+        },
+      });
+
+      const result = parser.parse("bad-datetime");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Invalid zoned datetime format." },
+      ]);
+    });
+
+    it("should use function-based invalidFormat error message", () => {
+      const parser = zonedDateTime({
+        errors: {
+          invalidFormat: (input) => message`${input} is not a zoned datetime.`,
+        },
+      });
+      const result = parser.parse("bad-zdt");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "bad-zdt" },
+        { type: "text", text: " is not a zoned datetime." },
+      ]);
+    });
+  });
+
+  describe("plainDate parser", () => {
+    it("should use custom invalidFormat error message", () => {
+      const parser = plainDate({
+        errors: {
+          invalidFormat: message`Date must be in YYYY-MM-DD format.`,
+        },
+      });
+
+      const result = parser.parse("invalid-date");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Date must be in YYYY-MM-DD format." },
+      ]);
+    });
+
+    it("should use function-based invalidFormat error message", () => {
+      const parser = plainDate({
+        errors: {
+          invalidFormat: (input) => message`${input} is not a plain date.`,
+        },
+      });
+      const result = parser.parse("bad-date");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "bad-date" },
+        { type: "text", text: " is not a plain date." },
+      ]);
+    });
+  });
+
+  describe("plainTime parser", () => {
+    it("should use custom invalidFormat error message", () => {
+      const parser = plainTime({
+        errors: {
+          invalidFormat: message`Time must be in HH:MM:SS format.`,
+        },
+      });
+
+      const result = parser.parse("bad-time");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Time must be in HH:MM:SS format." },
+      ]);
+    });
+
+    it("should use function-based invalidFormat error message", () => {
+      const parser = plainTime({
+        errors: {
+          invalidFormat: (input) => message`${input} is not a plain time.`,
+        },
+      });
+      const result = parser.parse("bad-time");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "bad-time" },
+        { type: "text", text: " is not a plain time." },
+      ]);
+    });
+  });
+
+  describe("plainDateTime parser", () => {
+    it("should use custom invalidFormat error message", () => {
+      const parser = plainDateTime({
+        errors: {
+          invalidFormat: message`DateTime must be in ISO format.`,
+        },
+      });
+
+      const result = parser.parse("invalid-datetime");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "DateTime must be in ISO format." },
+      ]);
+    });
+
+    it("should use function-based invalidFormat error message", () => {
+      const parser = plainDateTime({
+        errors: {
+          invalidFormat: (input) => message`${input} is not a datetime.`,
+        },
+      });
+      const result = parser.parse("bad-datetime");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "bad-datetime" },
+        { type: "text", text: " is not a datetime." },
+      ]);
+    });
+  });
+
+  describe("plainYearMonth parser", () => {
+    it("should use custom invalidFormat error message", () => {
+      const parser = plainYearMonth({
+        errors: {
+          invalidFormat: message`Year-month must be in YYYY-MM format.`,
+        },
+      });
+
+      const result = parser.parse("invalid-ym");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Year-month must be in YYYY-MM format." },
+      ]);
+    });
+
+    it("should use function-based invalidFormat error message", () => {
+      const parser = plainYearMonth({
+        errors: {
+          invalidFormat: (input) => message`${input} is not a year-month.`,
+        },
+      });
+      const result = parser.parse("bad-ym");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "bad-ym" },
+        { type: "text", text: " is not a year-month." },
+      ]);
+    });
+  });
+
+  describe("plainMonthDay parser", () => {
+    it("should use custom invalidFormat error message", () => {
+      const parser = plainMonthDay({
+        errors: {
+          invalidFormat: message`Month-day must be in --MM-DD format.`,
+        },
+      });
+
+      const result = parser.parse("invalid-md");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Month-day must be in --MM-DD format." },
+      ]);
+    });
+
+    it("should use function-based invalidFormat error message", () => {
+      const parser = plainMonthDay({
+        errors: {
+          invalidFormat: (input) => message`${input} is not a month-day.`,
+        },
+      });
+      const result = parser.parse("bad-md");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "bad-md" },
+        { type: "text", text: " is not a month-day." },
+      ]);
+    });
+  });
+
+  describe("timeZone parser", () => {
+    it("should use custom invalidFormat error message", () => {
+      const parser = timeZone({
+        errors: {
+          invalidFormat: message`Invalid timezone identifier.`,
+        },
+      });
+
+      const result = parser.parse("Invalid/Timezone");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Invalid timezone identifier." },
+      ]);
+    });
+
+    it("should use function-based invalidFormat error message", () => {
+      const parser = timeZone({
+        errors: {
+          invalidFormat: (input) =>
+            message`${input} is not a valid IANA timezone identifier.`,
+        },
+      });
+
+      const result = parser.parse("Bad/Zone");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "Bad/Zone" },
+        { type: "text", text: " is not a valid IANA timezone identifier." },
+      ]);
+    });
+  });
+
+  describe("error fallback behavior", () => {
+    it("should fall back to default error when custom error is not provided", () => {
+      const parser = instant(); // No errors customization
+
+      const result = parser.parse("invalid-instant");
+      assert.ok(!result.success);
+      // Should use default error message
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "text" && term.text.includes("Invalid instant")
+        ),
+      );
+    });
+
+    it("should work correctly when errors option is provided but specific error is not", () => {
+      const parser = instant({
+        errors: {
+          // No invalidFormat specified, should use default
+        },
+      });
+
+      const result = parser.parse("bad-instant");
+      assert.ok(!result.success);
+      // Should use default error message
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "text" && term.text.includes("Invalid instant")
+        ),
+      );
+    });
+  });
+});
+
+describe("metavar validation", () => {
+  it("should throw TypeError when instant() receives empty metavar", () => {
+    assert.throws(
+      () => instant({ metavar: "" as unknown as NonEmptyString }),
+      {
+        name: "TypeError",
+        message: "Expected a non-empty string.",
+      },
+    );
+  });
+
+  it("should throw TypeError when duration() receives empty metavar", () => {
+    assert.throws(
+      () => duration({ metavar: "" as unknown as NonEmptyString }),
+      {
+        name: "TypeError",
+        message: "Expected a non-empty string.",
+      },
+    );
+  });
+
+  it("should throw TypeError when zonedDateTime() receives empty metavar", () => {
+    assert.throws(
+      () => zonedDateTime({ metavar: "" as unknown as NonEmptyString }),
+      {
+        name: "TypeError",
+        message: "Expected a non-empty string.",
+      },
+    );
+  });
+
+  it("should throw TypeError when plainDate() receives empty metavar", () => {
+    assert.throws(
+      () => plainDate({ metavar: "" as unknown as NonEmptyString }),
+      {
+        name: "TypeError",
+        message: "Expected a non-empty string.",
+      },
+    );
+  });
+
+  it("should throw TypeError when plainTime() receives empty metavar", () => {
+    assert.throws(
+      () => plainTime({ metavar: "" as unknown as NonEmptyString }),
+      {
+        name: "TypeError",
+        message: "Expected a non-empty string.",
+      },
+    );
+  });
+
+  it("should throw TypeError when plainDateTime() receives empty metavar", () => {
+    assert.throws(
+      () => plainDateTime({ metavar: "" as unknown as NonEmptyString }),
+      {
+        name: "TypeError",
+        message: "Expected a non-empty string.",
+      },
+    );
+  });
+
+  it("should throw TypeError when plainYearMonth() receives empty metavar", () => {
+    assert.throws(
+      () => plainYearMonth({ metavar: "" as unknown as NonEmptyString }),
+      {
+        name: "TypeError",
+        message: "Expected a non-empty string.",
+      },
+    );
+  });
+
+  it("should throw TypeError when plainMonthDay() receives empty metavar", () => {
+    assert.throws(
+      () => plainMonthDay({ metavar: "" as unknown as NonEmptyString }),
+      {
+        name: "TypeError",
+        message: "Expected a non-empty string.",
+      },
+    );
+  });
+
+  it("should throw TypeError when timeZone() receives empty metavar", () => {
+    assert.throws(
+      () => timeZone({ metavar: "" as unknown as NonEmptyString }),
+      {
+        name: "TypeError",
+        message: "Expected a non-empty string.",
+      },
+    );
+  });
+});
+
+describe("ValueParser suggest() methods", () => {
+  describe("timeZone parser", () => {
+    it("should suggest common timezones with matching prefix", () => {
+      const parser = timeZone();
+
+      const suggestions = Array.from(parser.suggest!("Asia/"));
+      const texts = suggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+
+      assert.ok(texts.includes("Asia/Tokyo"));
+      assert.ok(texts.includes("Asia/Seoul"));
+      assert.ok(texts.includes("Asia/Shanghai"));
+      assert.ok(!texts.includes("Europe/London"));
+    });
+
+    it("should suggest UTC and GMT", () => {
+      const parser = timeZone();
+
+      const utcSuggestions = Array.from(parser.suggest!("UTC"));
+      const utcTexts = utcSuggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+      assert.ok(utcTexts.includes("UTC"));
+
+      const gmtSuggestions = Array.from(parser.suggest!("GMT"));
+      const gmtTexts = gmtSuggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+      assert.ok(gmtTexts.includes("GMT"));
+    });
+
+    it("should handle case insensitive matching", () => {
+      const parser = timeZone();
+
+      const suggestions = Array.from(parser.suggest!("america/"));
+      const texts = suggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+
+      assert.ok(texts.length > 0);
+      assert.ok(texts.some((t) => t.startsWith("America/")));
+    });
+
+    it("should suggest European timezones", () => {
+      const parser = timeZone();
+
+      const suggestions = Array.from(parser.suggest!("Europe/"));
+      const texts = suggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+
+      assert.ok(texts.includes("Europe/London"));
+      assert.ok(texts.includes("Europe/Paris"));
+      assert.ok(texts.includes("Europe/Berlin"));
+    });
+
+    it("should return empty for non-matching prefix", () => {
+      const parser = timeZone();
+
+      const suggestions = Array.from(parser.suggest!("Invalid/"));
+      assert.equal(suggestions.length, 0);
+    });
+  });
+});
+
+// =============================================================================
+// Async Mode Integration Tests
+// =============================================================================
+
+describe("async mode integration", () => {
+  // Helper: Create an async value parser for testing
+  function asyncString(): ValueParser<"async", string> {
+    return {
+      mode: "async",
+      metavar: "ASYNC_STRING" as NonEmptyString,
+      placeholder: "",
+      async parse(input: string): Promise<ValueParserResult<string>> {
+        // Simulate async operation
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        return { success: true, value: input.toUpperCase() };
+      },
+      format(value: string): string {
+        return value;
+      },
+    };
+  }
+
+  describe("temporal parsers with async parsers", () => {
+    it("should have sync mode on all temporal parsers", () => {
+      assert.equal(instant().mode, "sync");
+      assert.equal(duration().mode, "sync");
+      assert.equal(zonedDateTime().mode, "sync");
+      assert.equal(plainDate().mode, "sync");
+      assert.equal(plainTime().mode, "sync");
+      assert.equal(plainDateTime().mode, "sync");
+      assert.equal(plainYearMonth().mode, "sync");
+      assert.equal(plainMonthDay().mode, "sync");
+      assert.equal(timeZone().mode, "sync");
+    });
+
+    it("should propagate async mode when combined with async parser", () => {
+      const parser = object({
+        date: option("--date", plainDate()),
+        name: argument(asyncString()),
+      });
+
+      assert.equal(parser.mode, "async");
+    });
+
+    it("should remain sync when all parsers are temporal", () => {
+      const parser = object({
+        date: option("--date", plainDate()),
+        time: option("--time", plainTime()),
+        timezone: option("--tz", timeZone()),
+      });
+
+      assert.equal(parser.mode, "sync");
+    });
+
+    it("should parse temporal with sync when no async parsers", () => {
+      const parser = object({
+        start: option("--start", plainDate()),
+        end: option("--end", plainDate()),
+      });
+
+      const result = parseSync(parser, [
+        "--start",
+        "2024-01-15",
+        "--end",
+        "2024-12-31",
+      ]);
+
+      assert.ok(result.success, `Expected success: ${JSON.stringify(result)}`);
+      if (result.success) {
+        assert.ok(result.value.start instanceof Temporal.PlainDate);
+        assert.ok(result.value.end instanceof Temporal.PlainDate);
+        assert.equal(result.value.start.toString(), "2024-01-15");
+        assert.equal(result.value.end.toString(), "2024-12-31");
+      }
+    });
+
+    it("should parse mixed temporal/async with parseAsync", async () => {
+      const parser = object({
+        date: option("--date", plainDate()),
+        name: argument(asyncString()),
+      });
+
+      const result = await parseAsync(parser, [
+        "--date",
+        "2024-06-15",
+        "test-user",
+      ]);
+
+      assert.ok(result.success, `Expected success: ${JSON.stringify(result)}`);
+      if (result.success) {
+        assert.ok(result.value.date instanceof Temporal.PlainDate);
+        assert.equal(result.value.date.toString(), "2024-06-15");
+        assert.equal(result.value.name, "TEST-USER"); // Uppercased by asyncString
+      }
+    });
+
+    it("should parse multiple temporal types with async", async () => {
+      const parser = object({
+        date: option("--date", plainDate()),
+        time: option("--time", plainTime()),
+        timezone: option("--tz", timeZone()),
+        label: argument(asyncString()),
+      });
+
+      const result = await parseAsync(parser, [
+        "--date",
+        "2024-06-15",
+        "--time",
+        "14:30:00",
+        "--tz",
+        "America/New_York",
+        "event-label",
+      ]);
+
+      assert.ok(result.success, `Expected success: ${JSON.stringify(result)}`);
+      if (result.success) {
+        assert.ok(result.value.date instanceof Temporal.PlainDate);
+        assert.ok(result.value.time instanceof Temporal.PlainTime);
+        assert.equal(result.value.timezone, "America/New_York");
+        assert.equal(result.value.label, "EVENT-LABEL");
+      }
+    });
+
+    it("should handle temporal parsing errors with async", async () => {
+      const parser = object({
+        date: option("--date", plainDate()),
+        name: argument(asyncString()),
+      });
+
+      const result = await parseAsync(parser, [
+        "--date",
+        "invalid-date",
+        "test-user",
+      ]);
+
+      assert.ok(!result.success, "Expected failure for invalid date");
+    });
+
+    it("should work with instant and duration", async () => {
+      const parser = object({
+        timestamp: option("--at", instant()),
+        timeout: option("--timeout", duration()),
+        name: argument(asyncString()),
+      });
+
+      const result = await parseAsync(parser, [
+        "--at",
+        "2024-06-15T12:00:00Z",
+        "--timeout",
+        "PT1H30M",
+        "task-name",
+      ]);
+
+      assert.ok(result.success, `Expected success: ${JSON.stringify(result)}`);
+      if (result.success) {
+        assert.ok(result.value.timestamp instanceof Temporal.Instant);
+        assert.ok(result.value.timeout instanceof Temporal.Duration);
+        assert.equal(result.value.name, "TASK-NAME");
+      }
+    });
+
+    it("should work with zonedDateTime", async () => {
+      const parser = object({
+        event: option("--event", zonedDateTime()),
+        organizer: argument(asyncString()),
+      });
+
+      const result = await parseAsync(parser, [
+        "--event",
+        "2024-06-15T12:00:00[America/New_York]",
+        "john-doe",
+      ]);
+
+      assert.ok(result.success, `Expected success: ${JSON.stringify(result)}`);
+      if (result.success) {
+        assert.ok(result.value.event instanceof Temporal.ZonedDateTime);
+        assert.equal(result.value.organizer, "JOHN-DOE");
+      }
+    });
+  });
+});
+
+describe("Temporal API unavailability", () => {
+  for (
+    const [name, factory, sample] of [
+      ["instant", instant, "2020-01-23T17:04:36Z"],
+      ["duration", duration, "PT1H"],
+      [
+        "zonedDateTime",
+        zonedDateTime,
+        "2020-01-23T17:04:36+01:00[Europe/Paris]",
+      ],
+      ["plainDate", plainDate, "2020-01-23"],
+      ["plainTime", plainTime, "17:04:36"],
+      ["plainDateTime", plainDateTime, "2020-01-23T17:04:36"],
+      ["plainYearMonth", plainYearMonth, "2020-01"],
+      ["plainMonthDay", plainMonthDay, "--01-23"],
+      ["timeZone", timeZone, "UTC"],
+    ] as const
+  ) {
+    it(`${name}().parse() should throw TypeError when Temporal is unavailable`, () => {
+      const saved = globalThis.Temporal;
+      (globalThis as Record<string, unknown>).Temporal = undefined;
+      try {
+        const parser = factory();
+        assert.throws(
+          () => parser.parse(sample),
+          {
+            name: "TypeError",
+            message: /Temporal API is not available/,
+          },
+        );
+      } finally {
+        globalThis.Temporal = saved;
+      }
+    });
+  }
+});
+
+describe("default error messages include the input value", () => {
+  const invalidInputs = [
+    "not-valid",
+    "2020/01/23",
+    "garbage",
+    "123abc",
+    "2020-01-23T",
+  ] as const;
+
+  it("instant default error message references the invalid input as a value term", () => {
+    const parser = instant();
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success);
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "value" && term.value === input
+        ),
+        `Expected input ${
+          JSON.stringify(input)
+        } to appear as a value term in error: ${JSON.stringify(result.error)}`,
+      );
+    }
+  });
+
+  it("duration default error message references the invalid input as a value term", () => {
+    const parser = duration();
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success);
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "value" && term.value === input
+        ),
+        `Expected input ${
+          JSON.stringify(input)
+        } to appear as a value term in error: ${JSON.stringify(result.error)}`,
+      );
+    }
+  });
+
+  it("zonedDateTime default error message references the invalid input as a value term", () => {
+    const parser = zonedDateTime();
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success);
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "value" && term.value === input
+        ),
+        `Expected input ${
+          JSON.stringify(input)
+        } to appear as a value term in error: ${JSON.stringify(result.error)}`,
+      );
+    }
+  });
+
+  it("plainDate default error message references the invalid input as a value term", () => {
+    const parser = plainDate();
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success);
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "value" && term.value === input
+        ),
+        `Expected input ${
+          JSON.stringify(input)
+        } to appear as a value term in error: ${JSON.stringify(result.error)}`,
+      );
+    }
+  });
+
+  it("plainTime default error message references the invalid input as a value term", () => {
+    const parser = plainTime();
+    const timeInvalidInputs = [
+      "not-valid",
+      "garbage",
+      "99:99:99",
+      "2020-01-23",
+    ];
+    for (const input of timeInvalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success);
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "value" && term.value === input
+        ),
+        `Expected input ${
+          JSON.stringify(input)
+        } to appear as a value term in error: ${JSON.stringify(result.error)}`,
+      );
+    }
+  });
+
+  it("plainDateTime default error message references the invalid input as a value term", () => {
+    const parser = plainDateTime();
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success);
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "value" && term.value === input
+        ),
+        `Expected input ${
+          JSON.stringify(input)
+        } to appear as a value term in error: ${JSON.stringify(result.error)}`,
+      );
+    }
+  });
+
+  it("plainYearMonth default error message references the invalid input as a value term", () => {
+    const parser = plainYearMonth();
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success);
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "value" && term.value === input
+        ),
+        `Expected input ${
+          JSON.stringify(input)
+        } to appear as a value term in error: ${JSON.stringify(result.error)}`,
+      );
+    }
+  });
+
+  it("plainMonthDay default error message references the invalid input as a value term", () => {
+    const parser = plainMonthDay();
+    for (const input of invalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success);
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "value" && term.value === input
+        ),
+        `Expected input ${
+          JSON.stringify(input)
+        } to appear as a value term in error: ${JSON.stringify(result.error)}`,
+      );
+    }
+  });
+
+  it("timeZone default error message references the invalid input as a value term", () => {
+    const parser = timeZone();
+    const tzInvalidInputs = ["not-valid", "garbage", "Fake/Zone", "123/456"];
+    for (const input of tzInvalidInputs) {
+      const result = parser.parse(input);
+      assert.ok(!result.success);
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "value" && term.value === input
+        ),
+        `Expected input ${
+          JSON.stringify(input)
+        } to appear as a value term in error: ${JSON.stringify(result.error)}`,
+      );
+    }
+  });
+});
+
+describe("placeholder values", () => {
+  it("instant() returns a valid Temporal.Instant placeholder", () => {
+    const parser = instant();
+    const p = parser.placeholder;
+    assert.ok(p instanceof Temporal.Instant);
+    assert.equal(p.epochMilliseconds, 0);
+  });
+
+  it("duration() returns a valid Temporal.Duration placeholder", () => {
+    const parser = duration();
+    const p = parser.placeholder;
+    assert.ok(p instanceof Temporal.Duration);
+    assert.equal(p.total("seconds"), 0);
+  });
+
+  it("zonedDateTime() returns a valid Temporal.ZonedDateTime placeholder", () => {
+    const parser = zonedDateTime();
+    const p = parser.placeholder;
+    assert.ok(p instanceof Temporal.ZonedDateTime);
+    assert.equal(p.timeZoneId, "UTC");
+  });
+
+  it("plainDate() returns a valid Temporal.PlainDate placeholder", () => {
+    const parser = plainDate();
+    const p = parser.placeholder;
+    assert.ok(p instanceof Temporal.PlainDate);
+    assert.equal(p.year, 1970);
+    assert.equal(p.month, 1);
+    assert.equal(p.day, 1);
+  });
+
+  it("plainTime() returns a valid Temporal.PlainTime placeholder", () => {
+    const parser = plainTime();
+    const p = parser.placeholder;
+    assert.ok(p instanceof Temporal.PlainTime);
+    assert.equal(p.hour, 0);
+    assert.equal(p.minute, 0);
+  });
+
+  it("plainDateTime() returns a valid Temporal.PlainDateTime placeholder", () => {
+    const parser = plainDateTime();
+    const p = parser.placeholder;
+    assert.ok(p instanceof Temporal.PlainDateTime);
+    assert.equal(p.year, 1970);
+    assert.equal(p.hour, 0);
+  });
+
+  it("plainYearMonth() returns a valid Temporal.PlainYearMonth placeholder", () => {
+    const parser = plainYearMonth();
+    const p = parser.placeholder;
+    assert.ok(p instanceof Temporal.PlainYearMonth);
+    assert.equal(p.year, 1970);
+    assert.equal(p.month, 1);
+  });
+
+  it("plainMonthDay() returns a valid Temporal.PlainMonthDay placeholder", () => {
+    const parser = plainMonthDay();
+    const p = parser.placeholder;
+    assert.ok(p instanceof Temporal.PlainMonthDay);
+    assert.equal(p.monthCode, "M01");
+    assert.equal(p.day, 1);
+  });
+
+  const canShadowTemporal = canShadowTemporalConstructors();
+  it("placeholder getters fall back to undefined when Temporal.from throws", {
+    skip: !canShadowTemporal,
+  }, () => {
+    if (!canShadowTemporal) return;
+
+    const originalTemporal = globalThis.Temporal;
+
+    try {
+      Object.defineProperty(globalThis, "Temporal", {
+        value: {
+          ...originalTemporal,
+          Instant: throwingTemporalType(originalTemporal.Instant),
+          Duration: throwingTemporalType(originalTemporal.Duration),
+          ZonedDateTime: throwingTemporalType(originalTemporal.ZonedDateTime),
+          PlainDate: throwingTemporalType(originalTemporal.PlainDate),
+          PlainTime: throwingTemporalType(originalTemporal.PlainTime),
+          PlainDateTime: throwingTemporalType(originalTemporal.PlainDateTime),
+          PlainYearMonth: throwingTemporalType(originalTemporal.PlainYearMonth),
+          PlainMonthDay: throwingTemporalType(originalTemporal.PlainMonthDay),
+        },
+        configurable: true,
+      });
+
+      assert.equal(instant().placeholder, undefined);
+      assert.equal(duration().placeholder, undefined);
+      assert.equal(zonedDateTime().placeholder, undefined);
+      assert.equal(plainDate().placeholder, undefined);
+      assert.equal(plainTime().placeholder, undefined);
+      assert.equal(plainDateTime().placeholder, undefined);
+      assert.equal(plainYearMonth().placeholder, undefined);
+      assert.equal(plainMonthDay().placeholder, undefined);
+    } finally {
+      Object.defineProperty(globalThis, "Temporal", {
+        value: originalTemporal,
+        configurable: true,
+      });
+    }
+  });
+});

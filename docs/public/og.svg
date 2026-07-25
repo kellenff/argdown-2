@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Open Graph card (1280x640), mirroring the landing hero:
+  the Space Grotesk headline leads with the thesis, and the signature
+  dispersion prism (ported from OptiquePrism.vue) refracts one beam into a
+  purple / indigo / teal / amber fan. CSS custom properties are resolved to
+  their light-theme hex values so the file renders without the site stylesheet.
+  Regenerate the PNG with:  rsvg-convert -w 1280 -h 640 og.svg -o og.png
+-->
+<svg width="1280" height="640" viewBox="0 0 1280 640"
+     xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Prism gradients (OptiquePrism.vue, vars resolved to hex). -->
+    <linearGradient id="og-beam" x1="0" y1="180" x2="300" y2="180"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c9b3e0" stop-opacity="0"/>
+      <stop offset="1" stop-color="#ad95c5" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="og-ray1" x1="360" y1="180" x2="720" y2="70"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c3aed" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#7c3aed" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="og-ray2" x1="360" y1="180" x2="720" y2="140"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f46e5" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#4f46e5" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="og-ray3" x1="360" y1="180" x2="720" y2="220"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0d9488" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#0d9488" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="og-ray4" x1="360" y1="180" x2="720" y2="290"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d97706" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#d97706" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="og-facel" x1="300" y1="120" x2="360" y2="240"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8364a7"/>
+      <stop offset="1" stop-color="#5e3b8c"/>
+    </linearGradient>
+    <linearGradient id="og-facer" x1="360" y1="110" x2="420" y2="250"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#744f9e"/>
+      <stop offset="1" stop-color="#48286e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Canvas -->
+  <rect width="1280" height="640" fill="#fbfafd"/>
+
+  <!-- Signature dispersion prism, placed on the right. -->
+  <g transform="translate(652 158) scale(0.9)">
+    <path d="M0 180 H318" stroke="url(#og-beam)" stroke-width="4"
+          stroke-linecap="round"/>
+    <path d="M372 168 L720 64" stroke="url(#og-ray1)" stroke-width="3"
+          stroke-linecap="round"/>
+    <path d="M384 176 L720 138" stroke="url(#og-ray2)" stroke-width="3"
+          stroke-linecap="round"/>
+    <path d="M384 196 L720 222" stroke="url(#og-ray3)" stroke-width="3"
+          stroke-linecap="round"/>
+    <path d="M372 204 L720 296" stroke="url(#og-ray4)" stroke-width="3"
+          stroke-linecap="round"/>
+    <path d="M360 96 L318 240 L360 240 Z" fill="url(#og-facel)"/>
+    <path d="M360 96 L360 240 L408 228 Z" fill="url(#og-facer)"/>
+    <path d="M360 96 L318 240 L408 228 Z" fill="none" stroke="#ad95c5"
+          stroke-opacity="0.5" stroke-width="1.25" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="80" y="158" font-family="'Space Grotesk',sans-serif"
+        font-weight="700" font-size="58" letter-spacing="-1"
+        fill="#5e3b8c">Optique</text>
+
+  <!-- Headline: the landing hero thesis, Space Grotesk SemiBold. -->
+  <text font-family="'Space Grotesk SemiBold','Space Grotesk',sans-serif"
+        font-size="70" letter-spacing="-1.6" fill="#28233a">
+    <tspan x="80" y="280">Make impossible</tspan>
+    <tspan x="80" y="358">CLI states</tspan>
+    <tspan x="80" y="436">unrepresentable.</tspan>
+  </text>
+
+  <!-- Descriptor -->
+  <text font-family="'Inter','Inter Display',sans-serif" font-weight="400"
+        font-size="28" fill="#5b556b">
+    <tspan x="80" y="506">Type-safe combinatorial CLI</tspan>
+    <tspan x="80" y="544">parser for TypeScript</tspan>
+  </text>
+</svg>

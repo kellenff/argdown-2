@@ -1,0 +1,37 @@
+export {
+  type Annotations,
+  getAnnotations,
+  type ParseOptions,
+} from "./annotations.ts";
+export * from "./completion.ts";
+export * from "./constructs.ts";
+export * from "./dependency.ts";
+export * from "./doc.ts";
+export * from "./facade.ts";
+export * from "./fluent.ts";
+export {
+  commandLine,
+  envVar,
+  formatMessage,
+  lineBreak,
+  link,
+  type Message,
+  message,
+  type MessageFormatOptions,
+  type MessageTerm,
+  metavar,
+  optionName,
+  optionNames,
+  text,
+  // url is NOT re-exported here to avoid conflict with valueparser.ts url()
+  // Import from "@optique/core/message" directly to use url(), or use link()
+  value,
+  values,
+  valueSet,
+  type ValueSetOptions,
+} from "./message.ts";
+export * from "./modifiers.ts";
+export * from "./parser.ts";
+export * from "./primitives.ts";
+export * from "./usage.ts";
+export * from "./valueparser.ts";

@@ -1,0 +1,22288 @@
+import {
+  biject,
+  checkBooleanOption,
+  checkEnumOption,
+  choice,
+  cidr,
+  type Color,
+  color,
+  cron,
+  type CronExpression,
+  domain,
+  email,
+  fileSize,
+  type FileSizeOptionsBigInt,
+  firstOf,
+  float,
+  hostname,
+  integer,
+  ip,
+  ipv4,
+  ipv6,
+  isValueParser,
+  type Json,
+  json,
+  type JsonOptions,
+  keyValue,
+  type KeyValueOptions,
+  locale,
+  macAddress,
+  type NonEmptyString,
+  port,
+  portRange,
+  type SemVer,
+  semVer,
+  type SemVerString,
+  socketAddress,
+  string,
+  transform,
+  url,
+  uuid,
+  type ValueParser,
+  type ValueParserResult,
+} from "@optique/core/valueparser";
+import {
+  formatMessage,
+  type Message,
+  message,
+  type MessageTerm,
+  text,
+  values,
+} from "@optique/core/message";
+import { object } from "#src/constructs.ts";
+import { dependency } from "#src/dependency.ts";
+import {
+  dependencyId,
+  type DerivedValueParser,
+  derivedValueParserMarker,
+  getSnapshottedDefaultDependencyValues,
+  parseWithDependency,
+  suggestWithDependency,
+} from "#src/internal/dependency.ts";
+import { argument, option } from "#src/primitives.ts";
+import { withDefault } from "#src/modifiers.ts";
+import { parse, suggestSync } from "#src/parser.ts";
+import assert from "node:assert/strict";
+import * as fc from "fast-check";
+import { describe, it } from "node:test";
+
+const propertyParameters = { numRuns: 200 } as const;
+const safeIntegerArbitrary = fc.integer({
+  min: Number.MIN_SAFE_INTEGER,
+  max: Number.MAX_SAFE_INTEGER,
+});
+const nonEmptyChoiceStringArbitrary = fc.string({ minLength: 1 });
+const stringChoicesArbitrary = fc.uniqueArray(nonEmptyChoiceStringArbitrary, {
+  minLength: 1,
+  selector: (value) => value.toLowerCase(),
+});
+const numberChoicesArbitrary = fc.uniqueArray(safeIntegerArbitrary, {
+  minLength: 1,
+});
+const lowercaseWordArbitrary = fc.string({
+  unit: fc.integer({ min: 0x61, max: 0x7a }).map((codePoint) =>
+    String.fromCharCode(codePoint)
+  ),
+  minLength: 1,
+});
+
+describe("isValueParser", () => {
+  it("should return true for valid ValueParser objects", () => {
+    const parser = integer({});
+    assert.ok(isValueParser(parser));
+  });
+
+  it("should return true for different types of value parsers", () => {
+    const stringParser = {
+      mode: "sync" as const,
+      metavar: "STRING",
+      placeholder: "test",
+      parse: () => ({ success: true as const, value: "test" }),
+      format: (v: string) => v,
+    };
+    const numberParser = {
+      mode: "sync" as const,
+      metavar: "NUMBER",
+      placeholder: 0,
+      parse: () => ({ success: true as const, value: 42 }),
+      format: (v: number) => v.toString(),
+    };
+
+    assert.ok(isValueParser(stringParser));
+    assert.ok(isValueParser(numberParser));
+  });
+
+  it("should throw TypeError for parser-like objects missing placeholder", () => {
+    const invalidParser = {
+      mode: "sync" as const,
+      metavar: "STRING",
+      parse: () => ({ success: true as const, value: "test" }),
+      format: (v: string) => v,
+    };
+    assert.throws(
+      () => isValueParser(invalidParser),
+      {
+        name: "TypeError",
+        message: "Value parser is missing the required placeholder property. " +
+          "All value parsers must define a placeholder value.",
+      },
+    );
+  });
+
+  it("should return false for objects missing metavar property", () => {
+    const invalidParser = {
+      parse: () => ({ success: true, value: "test" }),
+      format: (v: string) => v,
+    };
+    assert.ok(!isValueParser(invalidParser));
+  });
+
+  it("should return false for objects missing parse property", () => {
+    const invalidParser = { metavar: "STRING", format: (v: string) => v };
+    assert.ok(!isValueParser(invalidParser));
+  });
+
+  it("should return false for objects missing format property", () => {
+    const invalidParser = {
+      metavar: "STRING",
+      parse: () => ({ success: true, value: "test" }),
+    };
+    assert.ok(!isValueParser(invalidParser));
+  });
+
+  it("should return false for objects with wrong property types", () => {
+    const invalidParser1 = {
+      metavar: 123,
+      parse: () => ({ success: true, value: "test" }),
+      format: (v: string) => v,
+    };
+    const invalidParser2 = {
+      metavar: "STRING",
+      parse: "not-a-function",
+      format: (v: string) => v,
+    };
+    const invalidParser3 = {
+      metavar: "STRING",
+      parse: () => ({ success: true, value: "test" }),
+      format: "not-a-function",
+    };
+
+    assert.ok(!isValueParser(invalidParser1));
+    assert.ok(!isValueParser(invalidParser2));
+    assert.ok(!isValueParser(invalidParser3));
+  });
+
+  it("should return false for primitive values", () => {
+    assert.ok(!isValueParser(null));
+    assert.ok(!isValueParser(undefined));
+    assert.ok(!isValueParser("string"));
+    assert.ok(!isValueParser(42));
+    assert.ok(!isValueParser(true));
+    assert.ok(!isValueParser([]));
+  });
+
+  it("should return false for empty objects", () => {
+    assert.ok(!isValueParser({}));
+  });
+
+  it("should work with built-in value parsers", () => {
+    const integerParser = integer({});
+    const choiceParser = choice(["a", "b"]);
+    const floatParser = float({});
+    const urlParser = url({});
+    const localeParser = locale({});
+    const uuidParser = uuid({});
+
+    assert.ok(isValueParser(integerParser));
+    assert.ok(isValueParser(choiceParser));
+    assert.ok(isValueParser(floatParser));
+    assert.ok(isValueParser(urlParser));
+    assert.ok(isValueParser(localeParser));
+    assert.ok(isValueParser(uuidParser));
+  });
+});
+
+describe("property-based parser laws", () => {
+  it("string() should parse and format arbitrary strings unchanged", () => {
+    const parser = string();
+
+    fc.assert(
+      fc.property(fc.string(), (value) => {
+        const result = parser.parse(value);
+        assert.ok(result.success);
+        assert.equal(result.value, value);
+        assert.equal(parser.format(result.value), value);
+      }),
+      propertyParameters,
+    );
+  });
+
+  it("string() should accept every generated value matching its pattern", () => {
+    const parser = string({ pattern: /^[a-z]+$/ });
+
+    fc.assert(
+      fc.property(lowercaseWordArbitrary, (value) => {
+        const result = parser.parse(value);
+        assert.ok(result.success);
+        assert.equal(result.value, value);
+      }),
+      propertyParameters,
+    );
+  });
+
+  it("integer() should round-trip safe integers through format and parse", () => {
+    const parser = integer({});
+
+    fc.assert(
+      fc.property(safeIntegerArbitrary, (value) => {
+        const formatted = parser.format(value);
+        const result = parser.parse(formatted);
+        assert.ok(result.success);
+        assert.equal(result.value, value);
+      }),
+      propertyParameters,
+    );
+  });
+
+  it("integer() should enforce generated min and max bounds", () => {
+    fc.assert(
+      fc.property(
+        safeIntegerArbitrary,
+        safeIntegerArbitrary,
+        safeIntegerArbitrary,
+        (a, b, value) => {
+          const min = Math.min(a, b);
+          const max = Math.max(a, b);
+          const parser = integer({ min, max });
+          const result = parser.parse(String(value));
+
+          if (value >= min && value <= max) {
+            assert.ok(result.success);
+            assert.equal(result.value, value);
+          } else {
+            assert.ok(!result.success);
+          }
+        },
+      ),
+      propertyParameters,
+    );
+  });
+
+  it('integer({ type: "bigint" }) should round-trip generated bigints', () => {
+    const parser = integer({ type: "bigint" });
+
+    fc.assert(
+      fc.property(fc.bigInt(), (value) => {
+        const formatted = parser.format(value);
+        const result = parser.parse(formatted);
+        assert.ok(result.success);
+        assert.equal(result.value, value);
+      }),
+      propertyParameters,
+    );
+  });
+
+  it("float() should round-trip finite numbers through format and parse", () => {
+    const parser = float();
+
+    fc.assert(
+      fc.property(
+        fc.double({ noNaN: true, noDefaultInfinity: true }),
+        (value) => {
+          const formatted = parser.format(value);
+          const result = parser.parse(formatted);
+          assert.ok(result.success);
+          if (Object.is(value, -0)) {
+            assert.ok(Object.is(result.value, 0));
+          } else {
+            assert.equal(result.value, value);
+          }
+        },
+      ),
+      propertyParameters,
+    );
+  });
+
+  it("choice() should parse and suggest generated string choices", () => {
+    fc.assert(
+      fc.property(stringChoicesArbitrary, (choices) => {
+        const parser = choice(choices);
+        const selected = choices[0];
+        const selectedChars = Array.from(selected);
+        const prefix = selectedChars
+          .slice(0, Math.max(1, Math.floor(selectedChars.length / 2)))
+          .join("");
+
+        for (const value of choices) {
+          const result = parser.parse(value);
+          assert.ok(result.success);
+          assert.equal(result.value, value);
+          assert.equal(parser.format(result.value), value);
+        }
+
+        const suggestions = [...parser.suggest!(prefix)].filter((
+          suggestion,
+        ) => suggestion.kind === "literal");
+        assert.ok(
+          suggestions.some((suggestion) => suggestion.text === selected),
+        );
+        assert.ok(
+          suggestions.every((suggestion) =>
+            choices.includes(suggestion.text) &&
+            suggestion.text.startsWith(prefix)
+          ),
+        );
+      }),
+      propertyParameters,
+    );
+  });
+
+  it("choice() should parse and format generated number choices", () => {
+    fc.assert(
+      fc.property(numberChoicesArbitrary, (choices) => {
+        const parser = choice(choices);
+
+        for (const value of choices) {
+          const formatted = parser.format(value);
+          const result = parser.parse(formatted);
+          assert.ok(result.success);
+          assert.equal(result.value, value);
+        }
+      }),
+      propertyParameters,
+    );
+  });
+
+  it("case-insensitive choice() should return canonical generated choices", () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(lowercaseWordArbitrary, {
+          minLength: 1,
+        }),
+        (words) => {
+          const choices = words.map((word) => word.toUpperCase());
+          const parser = choice(choices, { caseInsensitive: true });
+
+          for (let i = 0; i < words.length; i++) {
+            const result = parser.parse(words[i]);
+            assert.ok(result.success);
+            assert.equal(result.value, choices[i]);
+          }
+        },
+      ),
+      propertyParameters,
+    );
+  });
+});
+
+describe("integer", () => {
+  describe("number parser", () => {
+    it("should parse valid integers", () => {
+      const parser = integer({});
+
+      const result1 = parser.parse("42");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 42);
+        assert.equal(typeof result1.value, "number");
+      }
+
+      const result2 = parser.parse("0");
+      assert.equal(result2.success, true);
+      if (result2.success) {
+        assert.equal(result2.value, 0);
+      }
+
+      const result3 = parser.parse("999");
+      assert.equal(result3.success, true);
+      if (result3.success) {
+        assert.equal(result3.value, 999);
+      }
+    });
+
+    it("should reject invalid integers", () => {
+      const parser = integer({});
+
+      const result1 = parser.parse("abc");
+      assert.ok(!result1.success);
+      if (!result1.success) {
+        assert.equal(typeof result1.error, "object");
+      }
+
+      const result2 = parser.parse("12.34");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("42.0");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("1e5");
+      assert.ok(!result4.success);
+
+      const result5 = parser.parse("");
+      assert.ok(!result5.success);
+
+      const result6 = parser.parse("  42  ");
+      assert.ok(!result6.success);
+    });
+
+    it("should enforce minimum constraint", () => {
+      const parser = integer({ min: 10 });
+
+      const result1 = parser.parse("15");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 15);
+      }
+
+      const result2 = parser.parse("10");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 10);
+      }
+
+      const result3 = parser.parse("5");
+      assert.ok(!result3.success);
+      if (!result3.success) {
+        assert.equal(typeof result3.error, "object");
+      }
+    });
+
+    it("should enforce maximum constraint", () => {
+      const parser = integer({ max: 100 });
+
+      const result1 = parser.parse("50");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 50);
+      }
+
+      const result2 = parser.parse("100");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 100);
+      }
+
+      const result3 = parser.parse("150");
+      assert.ok(!result3.success);
+      if (!result3.success) {
+        assert.equal(typeof result3.error, "object");
+      }
+    });
+
+    it("should enforce both min and max constraints", () => {
+      const parser = integer({ min: 1, max: 0xffff });
+
+      const result1 = parser.parse("8080");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 8080);
+      }
+
+      const result2 = parser.parse("1");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("65535");
+      assert.ok(result3.success);
+
+      const result4 = parser.parse("0");
+      assert.ok(!result4.success);
+
+      const result5 = parser.parse("65536");
+      assert.ok(!result5.success);
+    });
+
+    it("should work with explicit number type", () => {
+      const parser = integer({ type: "number", min: 0, max: 1000 });
+
+      const result = parser.parse("500");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, 500);
+        assert.equal(typeof result.value, "number");
+      }
+    });
+  });
+
+  describe("bigint parser", () => {
+    it("should parse valid integers as BigInt", () => {
+      const parser = integer({ type: "bigint" });
+
+      const result1 = parser.parse("42");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 42n);
+        assert.equal(typeof result1.value, "bigint");
+      }
+
+      const result2 = parser.parse("0");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 0n);
+      }
+
+      const result3 = parser.parse("9007199254740992"); // Number.MAX_SAFE_INTEGER + 1
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, 9007199254740992n);
+      }
+
+      const result4 = parser.parse("-42");
+      assert.ok(result4.success);
+      if (result4.success) {
+        assert.equal(result4.value, -42n);
+      }
+    });
+
+    it("should reject invalid integers for BigInt", () => {
+      const parser = integer({ type: "bigint" });
+
+      const result1 = parser.parse("abc");
+      assert.ok(!result1.success);
+      if (!result1.success) {
+        assert.equal(typeof result1.error, "object");
+      }
+
+      const result2 = parser.parse("12.34");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("1e5");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("0x");
+      assert.ok(!result4.success);
+
+      const result5 = parser.parse("Infinity");
+      assert.ok(!result5.success);
+    });
+
+    it("should reject non-decimal literals and whitespace", () => {
+      const parser = integer({ type: "bigint" });
+
+      // Empty string
+      assert.ok(!parser.parse("").success);
+
+      // Whitespace-only
+      assert.ok(!parser.parse("   ").success);
+
+      // Signed-plus
+      assert.ok(!parser.parse("+1").success);
+
+      // Hex literal
+      assert.ok(!parser.parse("0x10").success);
+
+      // Binary literal
+      assert.ok(!parser.parse("0b10").success);
+
+      // Octal literal
+      assert.ok(!parser.parse("0o10").success);
+
+      // Whitespace-padded
+      assert.ok(!parser.parse(" 42 ").success);
+    });
+
+    it("should enforce minimum constraint for BigInt", () => {
+      const parser = integer({ type: "bigint", min: 10n });
+
+      const result1 = parser.parse("15");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 15n);
+      }
+
+      const result2 = parser.parse("10");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 10n);
+      }
+
+      const result3 = parser.parse("5");
+      assert.ok(!result3.success);
+      if (!result3.success) {
+        assert.equal(typeof result3.error, "object");
+      }
+    });
+
+    it("should enforce maximum constraint for BigInt", () => {
+      const parser = integer({ type: "bigint", max: 100n });
+
+      const result1 = parser.parse("50");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 50n);
+      }
+
+      const result2 = parser.parse("100");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 100n);
+      }
+
+      const result3 = parser.parse("150");
+      assert.ok(!result3.success);
+      if (!result3.success) {
+        assert.equal(typeof result3.error, "object");
+      }
+    });
+
+    it("should enforce both min and max constraints for BigInt", () => {
+      const parser = integer({ type: "bigint", min: -1000n, max: 1000n });
+
+      const result1 = parser.parse("0");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 0n);
+      }
+
+      const result2 = parser.parse("-1000");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("1000");
+      assert.ok(result3.success);
+
+      const result4 = parser.parse("-1001");
+      assert.ok(!result4.success);
+
+      const result5 = parser.parse("1001");
+      assert.ok(!result5.success);
+    });
+
+    it("should handle very large BigInt values", () => {
+      const parser = integer({ type: "bigint" });
+      const veryLargeNumber = "12345678901234567890123456789";
+
+      const result = parser.parse(veryLargeNumber);
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, BigInt(veryLargeNumber));
+        assert.equal(typeof result.value, "bigint");
+      }
+    });
+
+    it("should use min as default placeholder when min > 0n", () => {
+      const parser = integer({ type: "bigint", min: 5n });
+      assert.equal(parser.placeholder, 5n);
+    });
+
+    it("should use max as default placeholder when max < 0n", () => {
+      const parser = integer({ type: "bigint", max: -3n });
+      assert.equal(parser.placeholder, -3n);
+    });
+
+    it("should use 0n as default placeholder when range includes 0", () => {
+      const parser = integer({ type: "bigint", min: -5n, max: 10n });
+      assert.equal(parser.placeholder, 0n);
+    });
+  });
+
+  describe("error messages", () => {
+    it("should provide structured error messages for invalid input", () => {
+      const parser = integer({});
+      const result = parser.parse("invalid");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected a valid integer, but got " },
+            { type: "value", value: "invalid" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for min constraint violation", () => {
+      const parser = integer({ min: 10 });
+      const result = parser.parse("5");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            {
+              type: "text",
+              text: "Expected a value greater than or equal to ",
+            },
+            { type: "text", text: "10" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "5" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for max constraint violation", () => {
+      const parser = integer({ max: 100 });
+      const result = parser.parse("150");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected a value less than or equal to " },
+            { type: "text", text: "100" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "150" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for BigInt invalid input", () => {
+      const parser = integer({ type: "bigint" });
+      const result = parser.parse("invalid");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected a valid integer, but got " },
+            { type: "value", value: "invalid" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for BigInt constraint violations", () => {
+      const parser = integer({ type: "bigint", min: 0n, max: 100n });
+
+      const result1 = parser.parse("-5");
+      assert.ok(!result1.success);
+      if (!result1.success) {
+        assert.deepEqual(
+          result1.error,
+          [
+            {
+              type: "text",
+              text: "Expected a value greater than or equal to ",
+            },
+            { type: "text", text: "0" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "-5" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+
+      const result2 = parser.parse("150");
+      assert.ok(!result2.success);
+      if (!result2.success) {
+        assert.deepEqual(
+          result2.error,
+          [
+            { type: "text", text: "Expected a value less than or equal to " },
+            { type: "text", text: "100" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "150" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+  });
+
+  describe("function overloads", () => {
+    it("should return correct type based on options", () => {
+      // Type checking is handled by TypeScript, but we can verify runtime behavior
+      const numberParser = integer({ type: "number" });
+      const bigintParser = integer({ type: "bigint" });
+
+      const numberResult = numberParser.parse("42");
+      const bigintResult = bigintParser.parse("42");
+
+      assert.ok(numberResult.success);
+      assert.ok(bigintResult.success);
+
+      if (numberResult.success && bigintResult.success) {
+        assert.equal(typeof numberResult.value, "number");
+        assert.equal(typeof bigintResult.value, "bigint");
+        assert.equal(numberResult.value, 42);
+        assert.equal(bigintResult.value, 42n);
+      }
+    });
+
+    it("should default to number type when type is not specified", () => {
+      const parser = integer({});
+      const result = parser.parse("42");
+
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(typeof result.value, "number");
+        assert.equal(result.value, 42);
+      }
+    });
+
+    it("should handle edge cases correctly", () => {
+      const numberParser = integer({});
+      const bigintParser = integer({ type: "bigint" });
+
+      // Test leading zeros
+      const result1 = numberParser.parse("007");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 7);
+      }
+
+      const result2 = bigintParser.parse("0000042");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 42n);
+      }
+
+      // Test single digit zero
+      const result3 = numberParser.parse("0");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, 0);
+      }
+
+      const result4 = bigintParser.parse("0");
+      assert.ok(result4.success);
+      if (result4.success) {
+        assert.equal(result4.value, 0n);
+      }
+
+      // Test empty string for BigInt (should fail)
+      const result5 = bigintParser.parse("");
+      assert.ok(!result5.success);
+
+      // Test whitespace-only string for BigInt (should fail)
+      const result6 = bigintParser.parse("   ");
+      assert.ok(!result6.success);
+    });
+
+    it("should handle boundary values correctly", () => {
+      // Test with Number.MAX_SAFE_INTEGER
+      const numberParser = integer({ max: Number.MAX_SAFE_INTEGER });
+      const result1 = numberParser.parse(String(Number.MAX_SAFE_INTEGER));
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, Number.MAX_SAFE_INTEGER);
+      }
+
+      // Test BigInt with very large values
+      const bigintParser = integer({ type: "bigint" });
+      const veryLargePositive = "999999999999999999999999999999999";
+      const veryLargeNegative = "-999999999999999999999999999999999";
+
+      const result2 = bigintParser.parse(veryLargePositive);
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, BigInt(veryLargePositive));
+      }
+
+      const result3 = bigintParser.parse(veryLargeNegative);
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, BigInt(veryLargeNegative));
+      }
+    });
+
+    it("should validate constraints at boundary values", () => {
+      // Test exact boundary values
+      const parser1 = integer({ min: 0, max: 100 });
+
+      const result1 = parser1.parse("0");
+      assert.ok(result1.success);
+
+      const result2 = parser1.parse("100");
+      assert.ok(result2.success);
+
+      // Test BigInt boundaries
+      const parser2 = integer({ type: "bigint", min: -5n, max: 5n });
+
+      const result3 = parser2.parse("-5");
+      assert.ok(result3.success);
+
+      const result4 = parser2.parse("5");
+      assert.ok(result4.success);
+
+      const result5 = parser2.parse("-6");
+      assert.ok(!result5.success);
+
+      const result6 = parser2.parse("6");
+      assert.ok(!result6.success);
+    });
+  });
+
+  describe("contradictory min > max", () => {
+    it("should throw RangeError for number mode when min > max", () => {
+      assert.throws(
+        () => integer({ min: 10, max: 5 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError for bigint mode when min > max", () => {
+      assert.throws(
+        () => integer({ type: "bigint", min: 10n, max: 5n }),
+        RangeError,
+      );
+    });
+
+    it("should not throw when min equals max (number mode)", () => {
+      assert.doesNotThrow(() => integer({ min: 5, max: 5 }));
+    });
+
+    it("should not throw when min equals max (bigint mode)", () => {
+      assert.doesNotThrow(() => integer({ type: "bigint", min: 5n, max: 5n }));
+    });
+
+    it("should throw RangeError when fractional bounds leave no integer in range", () => {
+      // 1.5 <= 1.9 so the earlier min>max check passes, but Math.ceil(1.5)=2
+      // and Math.floor(1.9)=1, leaving no safe integer in [1.5, 1.9].
+      assert.throws(
+        () => integer({ min: 1.5, max: 1.9 }),
+        {
+          name: "RangeError",
+          message: /contains no safe integers/u,
+        },
+      );
+    });
+  });
+
+  describe("non-finite bounds", () => {
+    it("should throw RangeError when min is NaN", () => {
+      assert.throws(
+        () => integer({ min: NaN as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is NaN", () => {
+      assert.throws(
+        () => integer({ max: NaN as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when min is Infinity", () => {
+      assert.throws(
+        () => integer({ min: Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when min is -Infinity", () => {
+      assert.throws(
+        () => integer({ min: -Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is Infinity", () => {
+      assert.throws(
+        () => integer({ max: Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is -Infinity", () => {
+      assert.throws(
+        () => integer({ max: -Infinity as never }),
+        RangeError,
+      );
+    });
+  });
+
+  describe("type discriminant validation", () => {
+    it("should reject invalid type discriminant", () => {
+      assert.throws(
+        () => integer({ type: "num" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => integer({ type: 123 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => integer({ type: null as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => integer({ type: "" as never }),
+        TypeError,
+      );
+    });
+
+    it("should accept valid type discriminant", () => {
+      assert.ok(integer({ type: "number" }));
+      assert.ok(integer({ type: "bigint" }));
+      assert.ok(integer());
+    });
+  });
+});
+
+describe("choice", () => {
+  describe("basic parsing", () => {
+    it("should parse valid values from the choice list", () => {
+      const parser = choice(["red", "green", "blue"]);
+
+      const result1 = parser.parse("red");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "red");
+        assert.equal(typeof result1.value, "string");
+      }
+
+      const result2 = parser.parse("green");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "green");
+      }
+
+      const result3 = parser.parse("blue");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, "blue");
+      }
+    });
+
+    it("should reject values not in the choice list", () => {
+      const parser = choice(["yes", "no"]);
+
+      const result1 = parser.parse("maybe");
+      assert.ok(!result1.success);
+      if (!result1.success) {
+        assert.deepEqual(
+          result1.error,
+          [
+            { type: "text", text: "Expected one of " },
+            { type: "value", value: "yes" },
+            { type: "text", text: " and " },
+            { type: "value", value: "no" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "maybe" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+
+      const result2 = parser.parse("YES");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("true");
+      assert.ok(!result4.success);
+    });
+
+    it("should work with single value choice", () => {
+      const parser = choice(["only"]);
+
+      const result1 = parser.parse("only");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "only");
+      }
+
+      const result2 = parser.parse("other");
+      assert.ok(!result2.success);
+    });
+
+    it("should work with numeric string choices", () => {
+      const parser = choice(["1", "2", "3"]);
+
+      const result1 = parser.parse("1");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "1");
+        assert.equal(typeof result1.value, "string");
+      }
+
+      const result2 = parser.parse("2");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("4");
+      assert.ok(!result3.success);
+
+      // Should not parse numbers, only exact string matches
+      const result4 = parser.parse("01");
+      assert.ok(!result4.success);
+    });
+
+    it("should throw TypeError for empty choice list", () => {
+      assert.throws(
+        () => choice([]),
+        TypeError,
+      );
+    });
+
+    it("should handle choices with special characters", () => {
+      const parser = choice(["--verbose", "-v", "debug:trace", "key=value"]);
+
+      const result1 = parser.parse("--verbose");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "--verbose");
+      }
+
+      const result2 = parser.parse("-v");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("debug:trace");
+      assert.ok(result3.success);
+
+      const result4 = parser.parse("key=value");
+      assert.ok(result4.success);
+
+      const result5 = parser.parse("--other");
+      assert.ok(!result5.success);
+    });
+
+    it("should preserve exact string values with whitespace", () => {
+      const parser = choice(["  spaced  ", "tab\there", "new\nline"]);
+
+      const result1 = parser.parse("  spaced  ");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "  spaced  ");
+      }
+
+      const result2 = parser.parse("tab\there");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("new\nline");
+      assert.ok(result3.success);
+
+      // Should not match trimmed versions
+      const result4 = parser.parse("spaced");
+      assert.ok(!result4.success);
+    });
+  });
+
+  describe("case sensitivity", () => {
+    it("should be case sensitive by default", () => {
+      const parser = choice(["Red", "Green", "Blue"]);
+
+      const result1 = parser.parse("Red");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "Red");
+      }
+
+      const result2 = parser.parse("red");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("RED");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("rEd");
+      assert.ok(!result4.success);
+    });
+
+    it("should support case insensitive matching when enabled", () => {
+      const parser = choice(["Red", "Green", "Blue"], {
+        caseInsensitive: true,
+      });
+
+      const result1 = parser.parse("Red");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "Red"); // Should return original casing
+      }
+
+      const result2 = parser.parse("red");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "Red"); // Should return original casing
+      }
+
+      const result3 = parser.parse("RED");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, "Red"); // Should return original casing
+      }
+
+      const result4 = parser.parse("rEd");
+      assert.ok(result4.success);
+      if (result4.success) {
+        assert.equal(result4.value, "Red"); // Should return original casing
+      }
+
+      const result5 = parser.parse("yellow");
+      assert.ok(!result5.success);
+    });
+
+    it("should handle case insensitive matching with mixed case choices", () => {
+      const parser = choice(["CamelCase", "snake_case", "kebab-case"], {
+        caseInsensitive: true,
+      });
+
+      const result1 = parser.parse("camelcase");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "CamelCase");
+      }
+
+      const result2 = parser.parse("SNAKE_CASE");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "snake_case");
+      }
+
+      const result3 = parser.parse("Kebab-Case");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, "kebab-case");
+      }
+    });
+
+    it("should explicitly reject case insensitive when disabled", () => {
+      const parser = choice(["True", "False"], { caseInsensitive: false });
+
+      const result1 = parser.parse("True");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("true");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("FALSE");
+      assert.ok(!result3.success);
+    });
+
+    it("should handle case insensitive matching with accented characters", () => {
+      const parser = choice(["Café", "Naïve", "Résumé"], {
+        caseInsensitive: true,
+      });
+
+      const result1 = parser.parse("café");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "Café");
+      }
+
+      const result2 = parser.parse("NAÏVE");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "Naïve");
+      }
+
+      const result3 = parser.parse("résumé");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, "Résumé");
+      }
+    });
+  });
+
+  describe("custom metavar", () => {
+    it("should use custom metavar when provided", () => {
+      const parser = choice(["on", "off"], { metavar: "SWITCH" });
+      assert.equal(parser.metavar, "SWITCH");
+    });
+
+    it("should use default metavar when not provided", () => {
+      const parser = choice(["yes", "no"]);
+      assert.equal(parser.metavar, "TYPE");
+    });
+
+    it("should use custom metavar with case insensitive option", () => {
+      const parser = choice(["enabled", "disabled"], {
+        metavar: "STATE",
+        caseInsensitive: true,
+      });
+      assert.equal(parser.metavar, "STATE");
+    });
+  });
+
+  describe("error messages", () => {
+    it("should provide structured error messages for invalid input", () => {
+      const parser = choice(["alpha", "beta", "gamma"]);
+      const result = parser.parse("delta");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected one of " },
+            { type: "value", value: "alpha" },
+            { type: "text", text: ", " },
+            { type: "value", value: "beta" },
+            { type: "text", text: ", and " },
+            { type: "value", value: "gamma" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "delta" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages with single choice", () => {
+      const parser = choice(["only"]);
+      const result = parser.parse("other");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected one of " },
+            { type: "value", value: "only" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "other" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should throw TypeError for empty choice list", () => {
+      assert.throws(
+        () => choice([] as string[]),
+        TypeError,
+      );
+    });
+
+    it("should provide structured error messages for case insensitive parser", () => {
+      const parser = choice(["YES", "NO"], { caseInsensitive: true });
+      const result = parser.parse("maybe");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected one of " },
+            { type: "value", value: "YES" },
+            { type: "text", text: " and " },
+            { type: "value", value: "NO" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "maybe" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should show original choices in error message, not normalized ones", () => {
+      const parser = choice(["High", "Medium", "Low"], {
+        caseInsensitive: true,
+      });
+      const result = parser.parse("none");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected one of " },
+            { type: "value", value: "High" },
+            { type: "text", text: ", " },
+            { type: "value", value: "Medium" },
+            { type: "text", text: ", and " },
+            { type: "value", value: "Low" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "none" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle choices with duplicate values", () => {
+      const parser = choice(["duplicate", "duplicate", "unique"]);
+
+      const result1 = parser.parse("duplicate");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "duplicate");
+      }
+
+      const result2 = parser.parse("unique");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("other");
+      assert.ok(!result3.success);
+    });
+
+    it("should reject empty string in choices", () => {
+      assert.throws(
+        () => choice(["", "value"]),
+        TypeError,
+      );
+    });
+
+    it("should reject a single empty string choice", () => {
+      assert.throws(
+        () => choice([""]),
+        TypeError,
+      );
+    });
+
+    it("should reject all-empty-string choices", () => {
+      assert.throws(
+        () => choice(["", ""]),
+        TypeError,
+      );
+    });
+
+    it("should reject unsupported types like boolean", () => {
+      assert.throws(
+        () => choice([true] as never),
+        TypeError,
+      );
+    });
+
+    it("should reject unsupported types like object", () => {
+      assert.throws(
+        () => choice([{}] as never),
+        TypeError,
+      );
+    });
+
+    it("should reject mixed string and number choices (number first)", () => {
+      assert.throws(
+        () => choice([1, "2"] as never),
+        TypeError,
+      );
+    });
+
+    it("should reject mixed string and number choices (string first)", () => {
+      assert.throws(
+        () => choice(["a", 1] as never),
+        TypeError,
+      );
+    });
+
+    it("should handle choices with unicode characters", () => {
+      const parser = choice(["🔴", "🟢", "🔵", "α", "β", "γ"]);
+
+      const result1 = parser.parse("🔴");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "🔴");
+      }
+
+      const result2 = parser.parse("α");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "α");
+      }
+
+      const result3 = parser.parse("🟡");
+      assert.ok(!result3.success);
+    });
+
+    it("should handle very long choice lists", () => {
+      const longChoices = Array.from({ length: 100 }, (_, i) => `option${i}`);
+      const parser = choice(longChoices);
+
+      const result1 = parser.parse("option0");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "option0");
+      }
+
+      const result2 = parser.parse("option99");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "option99");
+      }
+
+      const result3 = parser.parse("option100");
+      assert.ok(!result3.success);
+    });
+
+    it("should handle choices with only whitespace differences", () => {
+      const parser = choice([" ", "  ", "\t", "\n"]);
+
+      const result1 = parser.parse(" ");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, " ");
+      }
+
+      const result2 = parser.parse("  ");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "  ");
+      }
+
+      const result3 = parser.parse("\t");
+      assert.ok(result3.success);
+
+      const result4 = parser.parse("\n");
+      assert.ok(result4.success);
+
+      const result5 = parser.parse("   ");
+      assert.ok(!result5.success);
+    });
+
+    it("should maintain type safety with const assertion", () => {
+      // This test verifies TypeScript compile-time behavior
+      const modes = ["development", "production", "test"] as const;
+      const parser = choice(modes);
+
+      const result = parser.parse("development");
+      assert.ok(result.success);
+      if (result.success) {
+        // The type should be "development" | "production" | "test"
+        assert.equal(result.value, "development");
+        assert.ok(["development", "production", "test"].includes(result.value));
+      }
+    });
+
+    it("should throw TypeError for case-insensitive choices with normalized duplicates", () => {
+      assert.throws(
+        () => choice(["JSON", "json", "Yaml"], { caseInsensitive: true }),
+        {
+          name: "TypeError",
+          message:
+            /Ambiguous choices for case-insensitive matching:.*"JSON".*"json".*normalize to.*"json"/,
+        },
+      );
+    });
+
+    it("should throw TypeError for case-insensitive choices like ['a', 'A']", () => {
+      assert.throws(
+        () => choice(["a", "A"], { caseInsensitive: true }),
+        {
+          name: "TypeError",
+          message:
+            /Ambiguous choices for case-insensitive matching:.*"a".*"A".*normalize to.*"a"/,
+        },
+      );
+    });
+
+    it("should allow ['a', 'A'] without caseInsensitive", () => {
+      const parser = choice(["a", "A"]);
+
+      const result1 = parser.parse("a");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "a");
+      }
+
+      const result2 = parser.parse("A");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "A");
+      }
+    });
+
+    it("should allow non-colliding choices with caseInsensitive", () => {
+      const parser = choice(["json", "yaml"], { caseInsensitive: true });
+
+      const result = parser.parse("JSON");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "json");
+      }
+    });
+
+    it("should accept equivalent scientific notation for numeric choices", () => {
+      const parser = choice([1e21]);
+
+      const result = parser.parse("1.0e+21");
+
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, 1e21);
+      }
+    });
+
+    it("should allow exact duplicate choices with caseInsensitive", () => {
+      const parser = choice(["json", "json", "yaml"], {
+        caseInsensitive: true,
+      });
+
+      const result = parser.parse("JSON");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "json");
+      }
+    });
+
+    it("should reject non-boolean caseInsensitive option", () => {
+      assert.throws(
+        () => choice(["JSON", "YAML"], { caseInsensitive: "no" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => choice(["JSON", "YAML"], { caseInsensitive: 1 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => choice(["JSON", "YAML"], { caseInsensitive: "true" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => choice(["JSON", "YAML"], { caseInsensitive: 0 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => choice(["JSON", "YAML"], { caseInsensitive: null as never }),
+        TypeError,
+      );
+    });
+
+    it("should handle null-like string values", () => {
+      const parser = choice(["null", "undefined", "NaN", "false"]);
+
+      const result1 = parser.parse("null");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "null");
+        assert.equal(typeof result1.value, "string");
+      }
+
+      const result2 = parser.parse("undefined");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("NaN");
+      assert.ok(result3.success);
+
+      const result4 = parser.parse("false");
+      assert.ok(result4.success);
+
+      const result5 = parser.parse("true");
+      assert.ok(!result5.success);
+    });
+  });
+
+  describe("real-world usage examples", () => {
+    it("should handle common boolean-like choices", () => {
+      const parser = choice(["true", "false"], { caseInsensitive: true });
+
+      const result1 = parser.parse("true");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "true");
+      }
+
+      const result2 = parser.parse("FALSE");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "false");
+      }
+
+      const result3 = parser.parse("1");
+      assert.ok(!result3.success);
+    });
+
+    it("should handle log level choices", () => {
+      const parser = choice(["error", "warn", "info", "debug", "trace"]);
+
+      const result1 = parser.parse("error");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("debug");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("verbose");
+      assert.ok(!result3.success);
+    });
+
+    it("should handle environment choices", () => {
+      const parser = choice(["development", "staging", "production"], {
+        metavar: "ENV",
+        caseInsensitive: true,
+      });
+
+      assert.equal(parser.metavar, "ENV");
+
+      const result1 = parser.parse("development");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("PRODUCTION");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "production");
+      }
+
+      const result3 = parser.parse("testing");
+      assert.ok(!result3.success);
+    });
+
+    it("should handle format choices", () => {
+      const parser = choice(["json", "yaml", "xml", "csv"]);
+
+      const result1 = parser.parse("json");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("yaml");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("txt");
+      assert.ok(!result3.success);
+    });
+
+    it("should handle HTTP method choices", () => {
+      const parser = choice(["GET", "POST", "PUT", "DELETE", "PATCH"], {
+        metavar: "METHOD",
+      });
+
+      const result1 = parser.parse("GET");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("POST");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("get");
+      assert.ok(!result3.success); // Case sensitive by default
+
+      const result4 = parser.parse("OPTIONS");
+      assert.ok(!result4.success);
+    });
+  });
+
+  describe("suggest option", () => {
+    it("should parse valid choice successfully even with suggest: nearest", () => {
+      const parser = choice(["dev", "prod"], { suggest: "nearest" });
+      const result = parser.parse("dev");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "dev");
+      }
+    });
+
+    it("should append Did you mean hint with suggest: nearest", () => {
+      const parser = choice(["dev", "prod"], { suggest: "nearest" });
+      const result = parser.parse("devo");
+      assert.ok(!result.success);
+      if (!result.success) {
+        const errorStr = result.error.map((t) => {
+          if (t.type === "text") return t.text;
+          if (t.type === "value") return t.value;
+          if (t.type === "optionName") return t.optionName;
+          if (t.type === "lineBreak") return "\n";
+          return "";
+        }).join("");
+        assert.ok(
+          errorStr.includes("Did you mean"),
+          `Expected "Did you mean" in error: ${errorStr}`,
+        );
+        assert.ok(
+          errorStr.includes("dev"),
+          `Expected "dev" suggestion in error: ${errorStr}`,
+        );
+      }
+    });
+
+    it("should not append hint with default (no suggest option)", () => {
+      const parser = choice(["dev", "prod"]);
+      const result = parser.parse("devo");
+      assert.ok(!result.success);
+      if (!result.success) {
+        const errorStr = result.error.map((t) => {
+          if (t.type === "text") return t.text;
+          if (t.type === "value") return t.value;
+          if (t.type === "optionName") return t.optionName;
+          if (t.type === "lineBreak") return "\n";
+          return "";
+        }).join("");
+        assert.ok(
+          !errorStr.includes("Did you mean"),
+          `Should not contain "Did you mean": ${errorStr}`,
+        );
+      }
+    });
+
+    it("should not append hint with suggest: never", () => {
+      const parser = choice(["dev", "prod"], { suggest: "never" });
+      const result = parser.parse("devo");
+      assert.ok(!result.success);
+      if (!result.success) {
+        const errorStr = result.error.map((t) => {
+          if (t.type === "text") return t.text;
+          if (t.type === "value") return t.value;
+          if (t.type === "optionName") return t.optionName;
+          if (t.type === "lineBreak") return "\n";
+          return "";
+        }).join("");
+        assert.ok(
+          !errorStr.includes("Did you mean"),
+          `Should not contain "Did you mean": ${errorStr}`,
+        );
+      }
+    });
+
+    it("should suppress hint with suggest object when distance is too large", () => {
+      const parser = choice(["dev", "prod"], { suggest: { maxDistance: 1 } });
+      const result = parser.parse("devoxxx");
+      assert.ok(!result.success);
+      if (!result.success) {
+        const errorStr = result.error.map((t) => {
+          if (t.type === "text") return t.text;
+          if (t.type === "value") return t.value;
+          if (t.type === "optionName") return t.optionName;
+          if (t.type === "lineBreak") return "\n";
+          return "";
+        }).join("");
+        assert.ok(
+          !errorStr.includes("Did you mean"),
+          `Should not contain "Did you mean" for distant input: ${errorStr}`,
+        );
+      }
+    });
+
+    it("should use custom hint list with function form", () => {
+      const parser = choice(["dev", "prod", "staging"], {
+        suggest: (_input, _choices) => ["customHint"],
+      });
+      const result = parser.parse("devo");
+      assert.ok(!result.success);
+      if (!result.success) {
+        const errorStr = result.error.map((t) => {
+          if (t.type === "text") return t.text;
+          if (t.type === "value") return t.value;
+          if (t.type === "optionName") return t.optionName;
+          if (t.type === "lineBreak") return "\n";
+          return "";
+        }).join("");
+        assert.ok(
+          errorStr.includes("customHint"),
+          `Expected "customHint" in error: ${errorStr}`,
+        );
+      }
+    });
+
+    it("should suppress hint when function form returns undefined", () => {
+      const parser = choice(["dev", "prod"], {
+        suggest: () => undefined,
+      });
+      const result = parser.parse("devo");
+      assert.ok(!result.success);
+      if (!result.success) {
+        const errorStr = result.error.map((t) => {
+          if (t.type === "text") return t.text;
+          if (t.type === "value") return t.value;
+          if (t.type === "optionName") return t.optionName;
+          if (t.type === "lineBreak") return "\n";
+          return "";
+        }).join("");
+        assert.ok(
+          !errorStr.includes("Did you mean"),
+          `Should not contain "Did you mean": ${errorStr}`,
+        );
+      }
+    });
+
+    it("should throw TypeError for invalid suggest value like true", () => {
+      assert.throws(
+        () => choice(["dev", "prod"], { suggest: true as never }),
+        { name: "TypeError", message: /Expected suggest to be/i },
+      );
+    });
+
+    it("should throw TypeError for suggest string typo like nearset", () => {
+      assert.throws(
+        () => choice(["dev", "prod"], { suggest: "nearset" as never }),
+        { name: "TypeError", message: /Expected suggest to be/i },
+      );
+    });
+
+    it("should throw TypeError for suggest: 0", () => {
+      assert.throws(
+        () => choice(["dev", "prod"], { suggest: 0 as never }),
+        { name: "TypeError", message: /Expected suggest to be/i },
+      );
+    });
+
+    it("should throw TypeError for negative maxDistance", () => {
+      assert.throws(
+        () => choice(["dev", "prod"], { suggest: { maxDistance: -1 } }),
+        {
+          name: "TypeError",
+          message: /suggest\.maxDistance.*non-negative integer/i,
+        },
+      );
+    });
+
+    it("should throw TypeError for fractional maxDistance", () => {
+      assert.throws(
+        () => choice(["dev", "prod"], { suggest: { maxDistance: 1.5 } }),
+        {
+          name: "TypeError",
+          message: /suggest\.maxDistance.*non-negative integer/i,
+        },
+      );
+    });
+
+    it("should throw TypeError for zero maxSuggestions", () => {
+      assert.throws(
+        () => choice(["dev", "prod"], { suggest: { maxSuggestions: 0 } }),
+        {
+          name: "TypeError",
+          message: /suggest\.maxSuggestions.*positive integer/i,
+        },
+      );
+    });
+
+    it("should throw TypeError for fractional maxSuggestions", () => {
+      assert.throws(
+        () => choice(["dev", "prod"], { suggest: { maxSuggestions: 1.5 } }),
+        {
+          name: "TypeError",
+          message: /suggest\.maxSuggestions.*positive integer/i,
+        },
+      );
+    });
+
+    it("should snapshot suggest object so later mutations are ignored", () => {
+      const suggestObj = { maxDistance: 3 };
+      const parser = choice(["dev", "prod"], { suggest: suggestObj });
+      (suggestObj as Record<string, unknown>).maxDistance = 0;
+      const result = parser.parse("devo");
+      assert.ok(!result.success);
+      if (!result.success) {
+        const str = formatMessage(result.error);
+        assert.ok(
+          str.includes("Did you mean"),
+          `Hint should appear with original maxDistance: ${str}`,
+        );
+      }
+    });
+  });
+
+  describe("number choices", () => {
+    it("should parse valid number values from the choice list", () => {
+      const parser = choice([8, 10, 12]);
+
+      const result1 = parser.parse("8");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 8);
+        assert.equal(typeof result1.value, "number");
+      }
+
+      const result2 = parser.parse("10");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 10);
+      }
+
+      const result3 = parser.parse("12");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, 12);
+      }
+    });
+
+    it("should reject values not in the number choice list", () => {
+      const parser = choice([8, 10]);
+
+      const result1 = parser.parse("9");
+      assert.ok(!result1.success);
+      if (!result1.success) {
+        assert.deepEqual(
+          result1.error,
+          [
+            { type: "text", text: "Expected one of " },
+            { type: "value", value: "8" },
+            { type: "text", text: " and " },
+            { type: "value", value: "10" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "9" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+
+      const result2 = parser.parse("abc");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("");
+      assert.ok(!result3.success);
+
+      // "8.0" is an alternate decimal spelling of 8, which is in the list
+      const result4 = parser.parse("8.0");
+      assert.ok(result4.success);
+      if (result4.success) {
+        assert.equal(result4.value, 8);
+      }
+    });
+
+    it("should work with single number choice", () => {
+      const parser = choice([42]);
+
+      const result1 = parser.parse("42");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 42);
+      }
+
+      const result2 = parser.parse("43");
+      assert.ok(!result2.success);
+    });
+
+    it("should work with negative number choices", () => {
+      const parser = choice([-1, 0, 1]);
+
+      const result1 = parser.parse("-1");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, -1);
+      }
+
+      const result2 = parser.parse("0");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 0);
+      }
+
+      const result3 = parser.parse("1");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, 1);
+      }
+
+      const result4 = parser.parse("-2");
+      assert.ok(!result4.success);
+    });
+
+    it("should work with floating point number choices", () => {
+      const parser = choice([0.5, 1.0, 1.5]);
+
+      const result1 = parser.parse("0.5");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 0.5);
+      }
+
+      const result2 = parser.parse("1");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 1.0);
+      }
+
+      const result3 = parser.parse("1.5");
+      assert.ok(result3.success);
+
+      const result4 = parser.parse("2.0");
+      assert.ok(!result4.success);
+    });
+
+    it("should use custom metavar for number choices", () => {
+      const parser = choice([8, 10, 12], { metavar: "BIT_DEPTH" });
+      assert.equal(parser.metavar, "BIT_DEPTH");
+    });
+
+    it("should use default metavar when not provided for number choices", () => {
+      const parser = choice([1, 2, 3]);
+      assert.equal(parser.metavar, "TYPE");
+    });
+
+    it("should format number values back to strings", () => {
+      const parser = choice([8, 10, 12]);
+      assert.equal(parser.format(8), "8");
+      assert.equal(parser.format(10), "10");
+      assert.equal(parser.format(12), "12");
+    });
+
+    it('should format -0 as "-0" not "0"', () => {
+      const parser = choice([0, -0, 1]);
+      assert.equal(parser.format(0), "0");
+      assert.equal(parser.format(-0), "-0");
+      assert.equal(parser.format(1), "1");
+    });
+
+    it("should provide suggestions for number choices", () => {
+      const parser = choice([8, 10, 12]);
+
+      // All suggestions when prefix is empty
+      const allSuggestions = [...parser.suggest!("")];
+      assert.deepEqual(allSuggestions, [
+        { kind: "literal", text: "8" },
+        { kind: "literal", text: "10" },
+        { kind: "literal", text: "12" },
+      ]);
+
+      // Filtered suggestions
+      const filteredSuggestions = [...parser.suggest!("1")];
+      assert.deepEqual(filteredSuggestions, [
+        { kind: "literal", text: "10" },
+        { kind: "literal", text: "12" },
+      ]);
+
+      // No matches
+      const noMatches = [...parser.suggest!("9")];
+      assert.deepEqual(noMatches, []);
+    });
+
+    it("should maintain type safety with const assertion for numbers", () => {
+      const bitDepths = [8, 10, 12] as const;
+      const parser = choice(bitDepths);
+
+      const result = parser.parse("8");
+      assert.ok(result.success);
+      if (result.success) {
+        // The type should be 8 | 10 | 12
+        assert.equal(result.value, 8);
+        assert.ok([8, 10, 12].includes(result.value));
+      }
+    });
+
+    it("should handle custom error messages for number choices", () => {
+      const parser = choice([8, 10], {
+        errors: {
+          invalidChoice: (
+            input,
+            _choices,
+          ) => [{ type: "text", text: `Invalid bit depth: ${input}` }],
+        },
+      });
+
+      const result = parser.parse("9");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Invalid bit depth: 9" },
+        ]);
+      }
+    });
+
+    it("should throw TypeError for empty number choice list", () => {
+      assert.throws(
+        () => choice([] as number[]),
+        TypeError,
+      );
+    });
+
+    it("should throw TypeError when any choice is NaN", () => {
+      // NaN in number choices is caught at construction time, not at parse time.
+      assert.throws(
+        () => choice([NaN]),
+        { name: "TypeError", message: "NaN is not allowed in number choices." },
+      );
+    });
+
+    it("should reject hex, binary, octal, and scientific notation", () => {
+      const parser = choice([0, 2, 8, 16]);
+
+      // Hex notation "0x10" should not be accepted as 16
+      const hex = parser.parse("0x10");
+      assert.ok(!hex.success);
+
+      // Binary notation "0b10" should not be accepted as 2
+      const bin = parser.parse("0b10");
+      assert.ok(!bin.success);
+
+      // Octal notation "0o10" should not be accepted as 8
+      const oct = parser.parse("0o10");
+      assert.ok(!oct.success);
+
+      // Scientific notation "2e0" should not be accepted as 2
+      const sci = parser.parse("2e0");
+      assert.ok(!sci.success);
+    });
+
+    it("should reject empty and whitespace-only strings", () => {
+      const parser = choice([0, 1, 2]);
+
+      // Empty string should not be accepted as 0
+      const empty = parser.parse("");
+      assert.ok(!empty.success);
+
+      // Whitespace-only should not be accepted as 0
+      const space = parser.parse("   ");
+      assert.ok(!space.success);
+    });
+
+    it("should accept alternate decimal and scientific spellings for large/small numbers", () => {
+      const parser = choice([1e21, 1e-7, 42]);
+
+      // Decimal spelling of 1e21
+      const big = parser.parse("1000000000000000000000");
+      assert.ok(big.success);
+      if (big.success) {
+        assert.equal(big.value, 1e21);
+      }
+
+      // Canonical form should also work
+      const bigCanon = parser.parse("1e+21");
+      assert.ok(bigCanon.success);
+      if (bigCanon.success) {
+        assert.equal(bigCanon.value, 1e21);
+      }
+
+      // Decimal spelling of 1e-7
+      const small = parser.parse("0.0000001");
+      assert.ok(small.success);
+      if (small.success) {
+        assert.equal(small.value, 1e-7);
+      }
+
+      // Canonical form should also work
+      const smallCanon = parser.parse("1e-7");
+      assert.ok(smallCanon.success);
+      if (smallCanon.success) {
+        assert.equal(smallCanon.value, 1e-7);
+      }
+
+      // Alternate scientific notation spellings should work for
+      // values whose canonical form uses scientific notation
+      const altSci1 = parser.parse("1e21");
+      assert.ok(altSci1.success);
+      if (altSci1.success) {
+        assert.equal(altSci1.value, 1e21);
+      }
+
+      const altSci2 = parser.parse("1.0e-7");
+      assert.ok(altSci2.success);
+      if (altSci2.success) {
+        assert.equal(altSci2.value, 1e-7);
+      }
+
+      const altSci3 = parser.parse("10e20");
+      assert.ok(altSci3.success);
+      if (altSci3.success) {
+        assert.equal(altSci3.value, 1e21);
+      }
+
+      // Leading + sign should work
+      const altSci4 = parser.parse("+1e21");
+      assert.ok(altSci4.success);
+      if (altSci4.success) {
+        assert.equal(altSci4.value, 1e21);
+      }
+
+      // Leading-dot mantissa should work
+      const altSci5 = parser.parse(".1e-6");
+      assert.ok(altSci5.success);
+      if (altSci5.success) {
+        assert.equal(altSci5.value, 1e-7);
+      }
+
+      // But scientific notation for a value whose canonical form is plain
+      // decimal should still be rejected
+      const sci = parser.parse("4.2e1");
+      assert.ok(!sci.success);
+    });
+
+    it("should reject decimals that only round to a choice value", () => {
+      // "1000000000000000000001" rounds to 1e21 in IEEE-754 but is
+      // mathematically different
+      const parser1 = choice([1e21]);
+      const rounded = parser1.parse("1000000000000000000001");
+      assert.ok(!rounded.success);
+
+      // "0.10000000000000001" rounds to 0.1 in IEEE-754 but is
+      // mathematically different
+      const parser2 = choice([0.1]);
+      const rounded2 = parser2.parse("0.10000000000000001");
+      assert.ok(!rounded2.success);
+
+      // But exact alternate spellings should still work
+      const exact = parser1.parse("1000000000000000000000");
+      assert.ok(exact.success);
+    });
+
+    it("should reject overflowed and underflowed decimal inputs", () => {
+      const parser = choice([Infinity, -Infinity, 0]);
+
+      // A 400-digit decimal should not overflow to Infinity
+      const bigOverflow = parser.parse("9".repeat(400));
+      assert.ok(!bigOverflow.success);
+
+      // A negative 400-digit decimal should not overflow to -Infinity
+      const negOverflow = parser.parse("-" + "9".repeat(400));
+      assert.ok(!negOverflow.success);
+
+      // An extremely small decimal should not underflow to 0
+      const tinyUnderflow = parser.parse("0." + "0".repeat(400) + "1");
+      assert.ok(!tinyUnderflow.success);
+
+      // But legitimate alternate zero spellings should still work
+      const zeroAlt = parser.parse("0.0");
+      assert.ok(zeroAlt.success);
+      if (zeroAlt.success) {
+        assert.equal(zeroAlt.value, 0);
+      }
+
+      const zeroAlt2 = parser.parse("0.00");
+      assert.ok(zeroAlt2.success);
+
+      const zeroAlt3 = parser.parse(".0");
+      assert.ok(zeroAlt3.success);
+    });
+
+    it("should accept Infinity and -Infinity when in the choice list", () => {
+      const parser = choice([Infinity, -Infinity, 0]);
+
+      const inf = parser.parse("Infinity");
+      assert.ok(inf.success);
+      if (inf.success) {
+        assert.equal(inf.value, Infinity);
+      }
+
+      const negInf = parser.parse("-Infinity");
+      assert.ok(negInf.success);
+      if (negInf.success) {
+        assert.equal(negInf.value, -Infinity);
+      }
+
+      // Alternate forms like "+Infinity" should not work
+      const plusInf = parser.parse("+Infinity");
+      assert.ok(!plusInf.success);
+    });
+
+    it("should preserve negative zero as a valid choice", () => {
+      const parser = choice([-0, 1]);
+
+      const result = parser.parse("-0");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.ok(Object.is(result.value, -0));
+      }
+
+      // "0" should not match -0, and the error should show "-0" not "0"
+      const result2 = parser.parse("0");
+      assert.ok(!result2.success);
+      if (!result2.success) {
+        assert.deepEqual(
+          result2.error,
+          [
+            { type: "text", text: "Expected one of " },
+            { type: "value", value: "-0" },
+            { type: "text", text: " and " },
+            { type: "value", value: "1" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "0" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should distinguish 0 and -0 when both are in choices", () => {
+      const parser = choice([0, -0]);
+
+      const pos = parser.parse("0");
+      assert.ok(pos.success);
+      if (pos.success) {
+        assert.ok(Object.is(pos.value, 0));
+      }
+
+      const neg = parser.parse("-0");
+      assert.ok(neg.success);
+      if (neg.success) {
+        assert.ok(Object.is(neg.value, -0));
+      }
+    });
+
+    it("should accept -0 spellings when only 0 is in the choice list", () => {
+      const parser = choice([0, 1, 2]);
+
+      // "-0" should match 0 when -0 is not explicitly in the list
+      const neg = parser.parse("-0");
+      assert.ok(neg.success);
+      if (neg.success) {
+        assert.equal(neg.value, 0);
+      }
+
+      // "-0.0" should also match 0
+      const negAlt = parser.parse("-0.0");
+      assert.ok(negAlt.success);
+      if (negAlt.success) {
+        assert.equal(negAlt.value, 0);
+      }
+
+      // "-000" should also match 0
+      const negZeros = parser.parse("-000");
+      assert.ok(negZeros.success);
+      if (negZeros.success) {
+        assert.equal(negZeros.value, 0);
+      }
+    });
+
+    it("should reject NaN at construction time", () => {
+      assert.throws(() => choice([NaN]), TypeError);
+      assert.throws(() => choice([NaN, 1, 2]), TypeError);
+      assert.throws(() => choice([1, NaN, 2]), TypeError);
+    });
+
+    it("should handle duplicate number values", () => {
+      const parser = choice([1, 1, 2]);
+
+      const result1 = parser.parse("1");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 1);
+      }
+
+      const result2 = parser.parse("2");
+      assert.ok(result2.success);
+    });
+
+    it("should deduplicate repeated 0 and -0 in number choices", () => {
+      // Providing [0, -0, 0, -0, 1] should produce exactly [0, -0, 1]
+      // after deduplication. The second 0 and second -0 hit the `continue`
+      // branches for hasPositiveZero and hasNegativeZero respectively.
+      const parser = choice([0, -0, 0, -0, 1]);
+      assert.deepEqual(parser.choices, [0, -0, 1]);
+
+      const posResult = parser.parse("0");
+      assert.ok(posResult.success);
+      if (posResult.success) assert.ok(Object.is(posResult.value, 0));
+
+      const negResult = parser.parse("-0");
+      assert.ok(negResult.success);
+      if (negResult.success) assert.ok(Object.is(negResult.value, -0));
+
+      const oneResult = parser.parse("1");
+      assert.ok(oneResult.success);
+      if (oneResult.success) assert.equal(oneResult.value, 1);
+    });
+  });
+
+  describe("choices metadata", () => {
+    it("should expose choices array for string choices", () => {
+      const parser = choice(["red", "green", "blue"]);
+      assert.deepEqual(parser.choices, ["red", "green", "blue"]);
+    });
+
+    it("should expose choices array for number choices", () => {
+      const parser = choice([8, 10, 12]);
+      assert.deepEqual(parser.choices, [8, 10, 12]);
+    });
+
+    it("should preserve original case for case-insensitive string choices", () => {
+      const parser = choice(["JSON", "YAML"], { caseInsensitive: true });
+      assert.deepEqual(parser.choices, ["JSON", "YAML"]);
+    });
+
+    it("should throw TypeError for empty choices", () => {
+      assert.throws(
+        () => choice([] as string[]),
+        TypeError,
+      );
+    });
+
+    it("should expose single-element array for single choice", () => {
+      const parser = choice(["only"]);
+      assert.deepEqual(parser.choices, ["only"]);
+    });
+
+    it("should deduplicate string choices in metadata", () => {
+      const parser = choice(["json", "json", "yaml"]);
+      assert.deepEqual(parser.choices, ["json", "yaml"]);
+    });
+
+    it("should deduplicate number choices in metadata", () => {
+      const parser = choice([1, 1, 2]);
+      assert.deepEqual(parser.choices, [1, 2]);
+    });
+  });
+
+  describe("deduplication", () => {
+    it("should not produce duplicate string suggestions", () => {
+      const parser = choice(["json", "json", "yaml"]);
+      const suggestions = [...parser.suggest!("j")];
+      assert.deepEqual(suggestions, [
+        { kind: "literal", text: "json" },
+      ]);
+    });
+
+    it("should not produce duplicate number suggestions", () => {
+      const parser = choice([1, 1, 2]);
+      const suggestions = [...parser.suggest!("1")];
+      assert.deepEqual(suggestions, [
+        { kind: "literal", text: "1" },
+      ]);
+    });
+
+    it("should not include duplicates in string error messages", () => {
+      const parser = choice(["json", "json", "yaml"]);
+      const result = parser.parse("xml");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected one of " },
+            { type: "value", value: "json" },
+            { type: "text", text: " and " },
+            { type: "value", value: "yaml" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "xml" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should not include duplicates in number error messages", () => {
+      const parser = choice([1, 1, 2]);
+      const result = parser.parse("3");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected one of " },
+            { type: "value", value: "1" },
+            { type: "text", text: " and " },
+            { type: "value", value: "2" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "3" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should deduplicate case-insensitive string choices", () => {
+      const parser = choice(["JSON", "JSON", "yaml"], {
+        caseInsensitive: true,
+      });
+      assert.deepEqual(parser.choices, ["JSON", "yaml"]);
+      const suggestions = [...parser.suggest!("")];
+      assert.deepEqual(suggestions, [
+        { kind: "literal", text: "JSON" },
+        { kind: "literal", text: "yaml" },
+      ]);
+    });
+
+    it("should not change behavior after post-construction caseInsensitive mutation", () => {
+      const options: { caseInsensitive: boolean } = {
+        caseInsensitive: false,
+      };
+      const parser = choice(["Foo", "Bar"], options);
+
+      // Before mutation: case-sensitive, "foo" doesn't match "Foo"
+      assert.ok(!parser.parse("foo").success);
+      assert.deepEqual([...parser.suggest!("f")], []);
+
+      // Mutate options after construction
+      options.caseInsensitive = true;
+
+      // After mutation: behavior should NOT change (still case-sensitive)
+      assert.ok(!parser.parse("foo").success);
+      assert.deepEqual([...parser.suggest!("f")], []);
+    });
+
+    it("should snapshot choices array at construction time", () => {
+      const choices = ["a", "b", "c"];
+      const parser = choice(choices);
+      choices[0] = "z";
+      // Parser should still accept "a" (original value), not "z"
+      assert.ok(parser.parse("a").success);
+      assert.ok(!parser.parse("z").success);
+    });
+
+    it("should not allow mutation through the public choices property", () => {
+      const parser = choice(["a", "b", "c"]);
+      // The choices property should be frozen
+      assert.throws(() => {
+        (parser.choices as string[])[0] = "z";
+      }, TypeError);
+      // Parser should still work correctly
+      assert.ok(parser.parse("a").success);
+    });
+
+    it("should snapshot number choices array at construction time", () => {
+      const choices: number[] = [1, 2, 3];
+      const parser = choice(choices);
+      choices[0] = 99;
+      // Parser should still accept "1" (original value), not "99"
+      assert.ok(parser.parse("1").success);
+      assert.ok(!parser.parse("99").success);
+    });
+
+    it("should not allow mutation through the public number choices property", () => {
+      const parser = choice([1, 2, 3]);
+      assert.throws(() => {
+        (parser.choices as number[])[0] = 99;
+      }, TypeError);
+      assert.ok(parser.parse("1").success);
+    });
+
+    it("should snapshot errors.invalidChoice at construction time", () => {
+      const errors: { invalidChoice: string } = {
+        invalidChoice: "original error",
+      };
+      const parser = choice(["a", "b"], { errors: errors as never });
+      const result = parser.parse("z");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      // Mutate errors after construction
+      errors.invalidChoice = "mutated error";
+      const result2 = parser.parse("z");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+
+    it("should snapshot errors.invalidChoice for number choices at construction time", () => {
+      const errors: { invalidChoice: string } = {
+        invalidChoice: "original error",
+      };
+      const parser = choice([1, 2], { errors: errors as never });
+      const result = parser.parse("99");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.invalidChoice = "mutated error";
+      const result2 = parser.parse("99");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+
+    it("should work with all-duplicate list", () => {
+      const parser = choice(["a", "a"]);
+      assert.deepEqual(parser.choices, ["a"]);
+      const result = parser.parse("a");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "a");
+      }
+    });
+  });
+});
+
+describe("non-choice parsers should not have choices metadata", () => {
+  it("string() should not have choices", () => {
+    const parser = string();
+    assert.equal(parser.choices, undefined);
+  });
+
+  it("integer() should not have choices", () => {
+    const parser = integer({});
+    assert.equal(parser.choices, undefined);
+  });
+
+  it("float() should not have choices", () => {
+    const parser = float({});
+    assert.equal(parser.choices, undefined);
+  });
+});
+
+describe("transform", () => {
+  it("should transform parsed values", () => {
+    const parser = transform(choice(["foo", "bar"] as const), {
+      map: (value) => value === "foo" ? "FOO" as const : "BAR" as const,
+      unmap: (value) => value === "FOO" ? "foo" as const : "bar" as const,
+    });
+
+    const result = parser.parse("foo");
+
+    assert.ok(result.success);
+    assert.equal(result.value, "FOO");
+  });
+
+  it("should preserve parse failures from the inner parser", () => {
+    const parser = transform(choice(["foo", "bar"] as const), {
+      map: (value) => value === "foo" ? "FOO" as const : "BAR" as const,
+      unmap: (value) => value === "FOO" ? "foo" as const : "bar" as const,
+    });
+
+    const result = parser.parse("baz");
+
+    assert.ok(!result.success);
+    assert.deepEqual(result.error, [
+      { type: "text", text: "Expected one of " },
+      { type: "value", value: "foo" },
+      { type: "text", text: " and " },
+      { type: "value", value: "bar" },
+      { type: "text", text: ", but got " },
+      { type: "value", value: "baz" },
+      { type: "text", text: "." },
+    ]);
+  });
+
+  it("should format values through the inverse mapping", () => {
+    const parser = transform(choice(["foo", "bar"] as const), {
+      map: (value) => value === "foo" ? "FOO" as const : "BAR" as const,
+      unmap: (value) => value === "FOO" ? "foo" as const : "bar" as const,
+    });
+
+    const formatted = parser.format("BAR");
+
+    assert.equal(formatted, "bar");
+  });
+
+  it("should validate transformed values through the inner parser", () => {
+    const parser = transform(integer({ min: 1, max: 10 }), {
+      map: (value) => ({ count: value }),
+      unmap: (value: { readonly count: number }) => value.count,
+    });
+
+    const valid = parser.validate?.({ count: 3 });
+    const invalid = parser.validate?.({ count: 12 });
+
+    assert.deepEqual(valid, { success: true, value: { count: 3 } });
+    assert.ok(invalid != null);
+    assert.ok(!invalid.success);
+    assert.deepEqual(invalid.error, [
+      { type: "text", text: "Expected a value less than or equal to " },
+      { type: "text", text: "10" },
+      { type: "text", text: ", but got " },
+      { type: "value", value: "12" },
+      { type: "text", text: "." },
+    ]);
+  });
+
+  it("should reject parsed values when mapping throws", () => {
+    const parser = transform(string(), {
+      map() {
+        throw new TypeError("Cannot map value.");
+      },
+      unmap: () => "foo",
+    });
+
+    const result = parser.parse("foo");
+
+    assert.ok(!result.success);
+    assert.deepEqual(result.error, [
+      { type: "text", text: "Failed to transform value." },
+    ]);
+  });
+
+  it("should reject validated values when mapping throws", () => {
+    const parser = transform(integer({ min: 1, max: 10 }), {
+      map() {
+        throw new TypeError("Cannot map value.");
+      },
+      unmap: (value: { readonly count: number }) => value.count,
+    });
+
+    const result = parser.validate?.({ count: 3 });
+
+    assert.ok(result != null);
+    assert.ok(!result.success);
+    assert.deepEqual(result.error, [
+      { type: "text", text: "Failed to transform value." },
+    ]);
+  });
+
+  it("should preserve fallback values when round-trip unmapping throws", () => {
+    const sentinel = { count: 3 };
+    const parser = transform(integer({ min: 1, max: 10 }), {
+      map: (value) => ({ count: value }),
+      unmap(value: { readonly count: number }) {
+        if (value === sentinel) throw new TypeError("Cannot unmap sentinel.");
+        return value.count;
+      },
+    });
+
+    const result = parser.validate?.(sentinel);
+
+    assert.deepEqual(result, { success: true, value: sentinel });
+  });
+
+  it("should preserve fallback values when validate unmapping throws", () => {
+    const sentinel = { count: 3 };
+    const parser = transform(
+      {
+        mode: "sync" as const,
+        metavar: "COUNT",
+        placeholder: 1,
+        parse(input: string): ValueParserResult<number> {
+          return { success: true, value: Number(input) };
+        },
+        format(value: number): string {
+          return value.toString();
+        },
+        validate(value: number): ValueParserResult<number> {
+          return value < 1
+            ? { success: false, error: message`Expected positive count.` }
+            : { success: true, value };
+        },
+      },
+      {
+        map: (value) => ({ count: value }),
+        unmap(value: { readonly count: number }) {
+          if (value === sentinel) throw new TypeError("Cannot unmap sentinel.");
+          return value.count;
+        },
+      },
+    );
+
+    const result = parser.validate?.(sentinel);
+
+    assert.deepEqual(result, { success: true, value: sentinel });
+  });
+
+  it("should preserve fallback values when round-trip formatting throws", () => {
+    const sentinel = { count: 12 };
+    const parser = transform(
+      {
+        mode: "sync" as const,
+        metavar: "COUNT",
+        placeholder: 1,
+        parse(input: string): ValueParserResult<number> {
+          return { success: true, value: Number(input) };
+        },
+        format(value: number): string {
+          if (value > 10) throw new TypeError("Cannot format sentinel.");
+          return value.toString();
+        },
+      },
+      {
+        map: (value) => ({ count: value }),
+        unmap: (value: { readonly count: number }) => value.count,
+      },
+    );
+
+    const result = parser.validate?.(sentinel);
+
+    assert.deepEqual(result, { success: true, value: sentinel });
+  });
+
+  it("should reject malformed fallback values", () => {
+    const parser = transform(integer(), {
+      map: (value) => ({ count: value }),
+      unmap: (value: { readonly count: number }) => value.count,
+    });
+
+    const result = parser.validate?.("3" as never);
+
+    assert.ok(result != null);
+    assert.ok(!result.success);
+    assert.deepEqual(result.error, [
+      { type: "text", text: "Failed to transform value." },
+    ]);
+  });
+
+  it("should reject fallback values that format to non-strings", () => {
+    const parser = transform(string(), {
+      map: (value) => ({ value }),
+      unmap: (value: { readonly value: string }) => value.value,
+    });
+
+    const result = parser.validate?.({} as never);
+
+    assert.ok(result != null);
+    assert.ok(!result.success);
+    assert.deepEqual(result.error, [
+      { type: "text", text: "Failed to transform value." },
+    ]);
+  });
+
+  it("should transform placeholder and choices metadata", () => {
+    const parser = transform(choice(["foo", "bar"] as const), {
+      map: (value) => value === "foo" ? "FOO" as const : "BAR" as const,
+      unmap: (value) => value === "FOO" ? "foo" as const : "bar" as const,
+    });
+
+    assert.equal(parser.placeholder, "FOO");
+    assert.deepEqual(parser.choices, ["FOO", "BAR"]);
+  });
+
+  it("should tolerate throwing placeholder getters", () => {
+    const inner: ValueParser<"sync", string> = {
+      mode: "sync",
+      metavar: "WORD",
+      get placeholder(): string {
+        throw new TypeError("Cannot resolve placeholder.");
+      },
+      parse(input: string): ValueParserResult<string> {
+        return { success: true, value: input };
+      },
+      format(value: string): string {
+        return value;
+      },
+    };
+    const parser = transform(inner, {
+      map: (value) => value.toUpperCase(),
+      unmap: (value) => value.toLowerCase(),
+    });
+
+    assert.equal(parser.placeholder, undefined);
+  });
+
+  it("should delegate suggestions as input strings", () => {
+    const parser = transform(choice(["foo", "bar"] as const), {
+      map: (value) => value === "foo" ? "FOO" as const : "BAR" as const,
+      unmap: (value) => value === "FOO" ? "foo" as const : "bar" as const,
+    });
+
+    const suggestions = [...(parser.suggest?.("f") ?? [])];
+
+    assert.deepEqual(suggestions, [{ kind: "literal", text: "foo" }]);
+  });
+
+  it("should reject async suggestions from sync inner parsers", () => {
+    const inner: ValueParser<"sync", string> = {
+      mode: "sync",
+      metavar: "WORD",
+      placeholder: "foo",
+      parse(input: string): ValueParserResult<string> {
+        return { success: true, value: input };
+      },
+      format(value: string): string {
+        return value;
+      },
+      suggest() {
+        return (async function* () {
+          yield { kind: "literal" as const, text: "foo" };
+        })() as never;
+      },
+    };
+    const parser = transform(inner, {
+      map: (value) => value.length,
+      unmap: (value) => "x".repeat(value),
+    });
+
+    assert.throws(
+      () => [...(parser.suggest?.("f") ?? [])],
+      {
+        name: "TypeError",
+        message: "Synchronous mode cannot wrap AsyncIterable value.",
+      },
+    );
+  });
+
+  it("should preserve async value parser mode", async () => {
+    const inner: ValueParser<"async", string> = {
+      mode: "async",
+      metavar: "WORD",
+      placeholder: "foo",
+      parse(input: string): Promise<ValueParserResult<string>> {
+        return Promise.resolve({ success: true, value: input });
+      },
+      format(value: string): string {
+        return value;
+      },
+      async *suggest(prefix: string) {
+        yield { kind: "literal" as const, text: `${prefix}-value` };
+      },
+    };
+    const parser = transform(inner, {
+      map: (value) => value.length,
+      unmap: (value) => "x".repeat(value),
+    });
+
+    const result = await parser.parse("abcd");
+    const suggestions = [];
+    for await (const suggestion of parser.suggest?.("x") ?? []) {
+      suggestions.push(suggestion);
+    }
+
+    parser satisfies ValueParser<"async", number>;
+    assert.equal(parser.mode, "async");
+    assert.ok(result.success);
+    assert.equal(result.value, 4);
+    assert.deepEqual(suggestions, [{ kind: "literal", text: "x-value" }]);
+  });
+
+  it("should reject promises from sync inner parsers", () => {
+    const inner: ValueParser<"sync", string> = {
+      mode: "sync",
+      metavar: "WORD",
+      placeholder: "foo",
+      parse(input: string): ValueParserResult<string> {
+        return Promise.resolve({ success: true, value: input }) as never;
+      },
+      format(value: string): string {
+        return value;
+      },
+    };
+    const parser = transform(inner, {
+      map: (value) => value.length,
+      unmap: (value) => "x".repeat(value),
+    });
+
+    assert.throws(
+      () => parser.parse("abcd"),
+      {
+        name: "TypeError",
+        message: "Synchronous mode cannot wrap Promise value.",
+      },
+    );
+  });
+
+  it("should reject promises from sync inner parser validation", () => {
+    const inner: ValueParser<"sync", string> = {
+      mode: "sync",
+      metavar: "WORD",
+      placeholder: "foo",
+      parse(input: string): ValueParserResult<string> {
+        return Promise.resolve({ success: true, value: input }) as never;
+      },
+      format(value: string): string {
+        return value;
+      },
+    };
+    const parser = transform(inner, {
+      map: (value) => value.length,
+      unmap: (value) => "x".repeat(value),
+    });
+
+    assert.throws(
+      () => parser.validate?.(3),
+      {
+        name: "TypeError",
+        message: "Synchronous mode cannot wrap Promise value.",
+      },
+    );
+  });
+
+  it("should preserve deferred results when mapping throws", () => {
+    const inner: ValueParser<"sync", string> = {
+      mode: "sync",
+      metavar: "WORD",
+      placeholder: "placeholder",
+      parse(): ValueParserResult<string> {
+        return { success: true, value: "placeholder", deferred: true };
+      },
+      format(value: string): string {
+        return value;
+      },
+    };
+    const parser = transform(inner, {
+      map(value) {
+        if (value === "placeholder") {
+          throw new TypeError("Cannot map placeholder.");
+        }
+        return value.toUpperCase();
+      },
+      unmap(value) {
+        return value.toLowerCase();
+      },
+    });
+
+    const result = parser.parse("ignored");
+
+    assert.deepEqual(result, {
+      success: true,
+      value: undefined,
+      deferred: true,
+    });
+  });
+
+  it("should not map missing placeholders", () => {
+    const inner: ValueParser<"sync", string | undefined> = {
+      mode: "sync",
+      metavar: "WORD",
+      placeholder: undefined,
+      parse(input: string): ValueParserResult<string | undefined> {
+        return { success: true, value: input };
+      },
+      format(value: string | undefined): string {
+        return value ?? "";
+      },
+    };
+    const parser = transform(inner, {
+      map: (value) => ({ value }),
+      unmap: (value: { readonly value: string | undefined }) => value.value,
+    });
+
+    assert.equal(parser.placeholder, undefined);
+  });
+
+  it("should keep transformed placeholders enumerable for dependencies", () => {
+    const transformed = dependency(
+      transform(choice(["dev", "prod"] as const), {
+        map: (value) => value.toUpperCase() as "DEV" | "PROD",
+        unmap: (value) => value.toLowerCase() as "dev" | "prod",
+      }),
+    );
+    const mapped = dependency(biject({ dev: "DEV", prod: "PROD" } as const));
+
+    assert.ok(isValueParser(transformed));
+    assert.ok(isValueParser(mapped));
+    assert.ok(Object.keys(transformed).includes("placeholder"));
+    assert.ok(Object.keys(mapped).includes("placeholder"));
+  });
+
+  it("should reject direct dependency source transforms", () => {
+    const mode = dependency(choice(["dev", "prod"] as const));
+
+    assert.throws(
+      () =>
+        transform(mode, {
+          map: (value) => value.toUpperCase() as "DEV" | "PROD",
+          unmap: (value) => value.toLowerCase() as "dev" | "prod",
+        }),
+      {
+        name: "TypeError",
+        message: "Cannot transform a dependency source directly.",
+      },
+    );
+  });
+
+  it("should lazily map dependency-derived placeholders", () => {
+    const mode = dependency(choice(["dev", "prod"] as const));
+    const level = mode.derive({
+      metavar: "LEVEL",
+      mode: "sync",
+      factory: () => choice(["debug", "info"] as const),
+      defaultValue() {
+        throw new Error("Default mode is unavailable.");
+      },
+    });
+    const parser = transform(level, {
+      map(value) {
+        return value.toUpperCase() as "DEBUG" | "INFO";
+      },
+      unmap(value) {
+        return value.toLowerCase() as "debug" | "info";
+      },
+    });
+
+    assert.equal(parser.placeholder, undefined);
+    const result = parser.parse("debug");
+
+    assert.ok(!result.success);
+    assert.deepEqual(result.error, [
+      { type: "text", text: "Derived parser error: " },
+      { type: "value", value: "Default mode is unavailable." },
+    ]);
+  });
+
+  it("should preserve dependency-derived default snapshots", () => {
+    let defaultCalls = 0;
+    const mode = dependency(choice(["dev", "prod"] as const));
+    const level = mode.derive({
+      metavar: "LEVEL",
+      mode: "sync",
+      factory: (value) =>
+        choice(
+          value === "dev"
+            ? (["debug", "info"] as const)
+            : (["warn", "error"] as const),
+        ),
+      defaultValue() {
+        defaultCalls++;
+        return defaultCalls === 1 ? "dev" as const : "prod" as const;
+      },
+    });
+    const parser = transform(level, {
+      map(value) {
+        return value.toUpperCase() as "DEBUG" | "INFO" | "WARN" | "ERROR";
+      },
+      unmap(value) {
+        return value.toLowerCase() as "debug" | "info" | "warn" | "error";
+      },
+    });
+
+    const result = parser.parse("debug");
+
+    assert.ok(result.success);
+    assert.equal(result.value, "DEBUG");
+    assert.deepEqual(
+      getSnapshottedDefaultDependencyValues(result),
+      ["dev"],
+    );
+    assert.equal(defaultCalls, 1);
+  });
+
+  it("should preserve dependency-derived parser replay behavior", () => {
+    const mode = dependency(choice(["dev", "prod"] as const));
+    const level = mode.derive({
+      metavar: "LEVEL",
+      mode: "sync",
+      factory: (value) =>
+        choice(
+          value === "dev"
+            ? (["debug", "info"] as const)
+            : (["warn", "error"] as const),
+        ),
+      defaultValue: () => "dev" as const,
+    });
+    const parser = object({
+      mode: withDefault(option("--mode", mode), "prod" as const),
+      level: option(
+        "--level",
+        transform(level, {
+          map(value) {
+            return value.toUpperCase() as "DEBUG" | "INFO" | "WARN" | "ERROR";
+          },
+          unmap(value) {
+            return value.toLowerCase() as
+              | "debug"
+              | "info"
+              | "warn"
+              | "error";
+          },
+        }),
+      ),
+    });
+
+    const result = parse(parser, ["--mode", "prod", "--level", "warn"]);
+
+    assert.ok(result.success);
+    assert.equal(result.value.level, "WARN");
+  });
+
+  it("should preserve dependency-derived suggestion replay behavior", () => {
+    const mode = dependency(choice(["dev", "prod"] as const));
+    const level = mode.derive({
+      metavar: "LEVEL",
+      mode: "sync",
+      factory: (value) =>
+        choice(
+          value === "dev"
+            ? (["debug", "info"] as const)
+            : (["warn", "error"] as const),
+        ),
+      defaultValue: () => "dev" as const,
+    });
+    const parser = object({
+      mode: withDefault(option("--mode", mode), "prod" as const),
+      level: option(
+        "--level",
+        transform(level, {
+          map(value) {
+            return value.toUpperCase() as "DEBUG" | "INFO" | "WARN" | "ERROR";
+          },
+          unmap(value) {
+            return value.toLowerCase() as
+              | "debug"
+              | "info"
+              | "warn"
+              | "error";
+          },
+        }),
+      ),
+    });
+
+    const suggestions = suggestSync(parser, [
+      "--mode",
+      "prod",
+      "--level",
+      "",
+    ]);
+
+    assert.deepEqual(
+      suggestions.map((suggestion) =>
+        suggestion.kind === "literal" ? suggestion.text : suggestion.pattern
+      ),
+      ["warn", "error"],
+    );
+  });
+
+  it("should preserve this context for derived suggestions", () => {
+    const derived: DerivedValueParser<"sync", string, unknown> = {
+      mode: "sync",
+      metavar: "LEVEL",
+      placeholder: "debug",
+      [derivedValueParserMarker]: true,
+      [dependencyId]: Symbol("mode"),
+      parse(input: string): ValueParserResult<string> {
+        return { success: true, value: input };
+      },
+      [parseWithDependency](
+        input: string,
+        _dependencyValue: unknown,
+      ): ValueParserResult<string> {
+        return { success: true, value: input };
+      },
+      format(value: string): string {
+        return value;
+      },
+      *[suggestWithDependency](
+        this: { readonly prefix: string },
+        prefix: string,
+      ) {
+        yield { kind: "literal" as const, text: `${this.prefix}-${prefix}` };
+      },
+      prefix: "ctx",
+    } as DerivedValueParser<"sync", string, unknown> & {
+      readonly prefix: string;
+    };
+    const parser = transform(derived, {
+      map: (value) => value.toUpperCase(),
+      unmap: (value) => value.toLowerCase(),
+    });
+
+    const transformed = parser as DerivedValueParser<"sync", string, unknown>;
+    const suggest = transformed[suggestWithDependency];
+    assert.ok(suggest != null);
+    const suggestions = [...suggest("", undefined) as Iterable<unknown>];
+
+    assert.deepEqual(suggestions, [{ kind: "literal", text: "ctx-" }]);
+  });
+});
+
+describe("biject", () => {
+  it("should parse keys into mapped values", () => {
+    const parser = biject({
+      foo: 123,
+      bar: 456,
+      baz: 789,
+    });
+
+    const result = parser.parse("bar");
+
+    assert.ok(result.success);
+    assert.equal(result.value, 456);
+  });
+
+  it("should infer literal value types from inline mappings", () => {
+    const parser = biject({
+      foo: 123,
+      bar: "enabled",
+      baz: true,
+    });
+
+    parser satisfies ValueParser<"sync", 123 | "enabled" | true>;
+  });
+
+  it("should accept typed mappings without string index signatures", () => {
+    interface StatusMap {
+      readonly ok: 0;
+      readonly error: 1;
+    }
+    const mapping: StatusMap = {
+      ok: 0,
+      error: 1,
+    };
+
+    const parser = biject(mapping);
+    const result = parser.parse("ok");
+
+    parser satisfies ValueParser<"sync", 0 | 1>;
+    assert.ok(result.success);
+    assert.equal(result.value, 0);
+  });
+
+  it("should preserve value types for numeric object keys", () => {
+    const parser = biject(
+      {
+        1: "one",
+        2: "two",
+      } as const,
+    );
+
+    const result = parser.parse("1");
+
+    parser satisfies ValueParser<"sync", "one" | "two">;
+    assert.ok(result.success);
+    assert.equal(result.value, "one");
+    assert.equal(parser.format("two"), "2");
+    assert.deepEqual(parser.choices, ["one", "two"]);
+  });
+
+  it("should reject array mappings", () => {
+    assert.throws(
+      () => {
+        const parser = biject(["one", "two"] as const);
+        parser satisfies never;
+      },
+      {
+        name: "TypeError",
+        message: "Expected object, got array.",
+      },
+    );
+  });
+
+  it("should reject null or primitive mappings", () => {
+    assert.throws(
+      () => biject(null as never),
+      {
+        name: "TypeError",
+        message: "Expected object.",
+      },
+    );
+    assert.throws(
+      () => biject(42 as never),
+      {
+        name: "TypeError",
+        message: "Expected object.",
+      },
+    );
+    assert.throws(
+      () => biject("abc" as never),
+      {
+        name: "TypeError",
+        message: "Expected object.",
+      },
+    );
+  });
+
+  it("should reject inputs outside the mapping keys", () => {
+    const parser = biject({
+      foo: 123,
+      bar: 456,
+    });
+
+    const result = parser.parse("baz");
+
+    assert.ok(!result.success);
+    assert.deepEqual(result.error, [
+      { type: "text", text: "Expected one of " },
+      { type: "value", value: "foo" },
+      { type: "text", text: " and " },
+      { type: "value", value: "bar" },
+      { type: "text", text: ", but got " },
+      { type: "value", value: "baz" },
+      { type: "text", text: "." },
+    ]);
+  });
+
+  it("should format mapped values back to keys", () => {
+    const parser = biject({
+      foo: 123,
+      bar: 456,
+    });
+
+    const formatted = parser.format(456);
+
+    assert.equal(formatted, "bar");
+  });
+
+  it("should expose key-based metadata and suggestions", () => {
+    const parser = biject({
+      foo: 123,
+      bar: 456,
+      baz: 789,
+    });
+
+    const suggestions = [...(parser.suggest?.("ba") ?? [])];
+
+    assert.equal(parser.placeholder, 123);
+    assert.deepEqual(parser.choices, [123, 456, 789]);
+    assert.deepEqual(suggestions, [
+      { kind: "literal", text: "bar" },
+      { kind: "literal", text: "baz" },
+    ]);
+  });
+
+  it("should snapshot mappings at construction time", () => {
+    const mapping = {
+      foo: 123,
+      bar: 456,
+    };
+    const parser = biject(mapping);
+
+    mapping.foo = 456;
+    mapping.bar = 789;
+
+    const result = parser.parse("foo");
+
+    assert.ok(result.success);
+    assert.equal(result.value, 123);
+    assert.deepEqual(parser.choices, [123, 456]);
+    assert.deepEqual(parser.validate?.(123), { success: true, value: 123 });
+    assert.ok(!parser.validate?.(789)?.success);
+  });
+
+  it("should validate mapped values through the reverse mapping", () => {
+    const mapping: Readonly<Record<string, number>> = {
+      foo: 123,
+      bar: 456,
+    };
+    const parser = biject(mapping);
+
+    const valid = parser.validate?.(123);
+    const invalid = parser.validate?.(789);
+
+    assert.deepEqual(valid, { success: true, value: 123 });
+    assert.ok(invalid != null);
+    assert.ok(!invalid.success);
+    assert.deepEqual(invalid.error, [
+      { type: "text", text: "Expected one of " },
+      { type: "value", value: "foo" },
+      { type: "text", text: " and " },
+      { type: "value", value: "bar" },
+      { type: "text", text: ", but got " },
+      { type: "value", value: "789" },
+      { type: "text", text: "." },
+    ]);
+  });
+
+  it("should reject fallback values that stringify to input keys", () => {
+    const parser = biject({
+      foo: 123,
+    });
+
+    const result = parser.validate?.("foo" as never);
+
+    assert.ok(result != null);
+    assert.ok(!result.success);
+  });
+
+  it("should not throw when validating unlisted values that cannot stringify", () => {
+    const listed = { id: "listed" };
+    const parser = biject({
+      listed,
+    });
+    const unlisted = Object.create(null, {
+      toString: {
+        get() {
+          throw new Error("Cannot stringify.");
+        },
+      },
+    });
+
+    const result = parser.validate?.(unlisted);
+
+    assert.ok(result != null);
+    assert.ok(!result.success);
+  });
+
+  it("should throw RangeError for duplicate mapped values", () => {
+    assert.throws(
+      () =>
+        biject({
+          foo: "dup",
+          bar: "dup",
+        }),
+      {
+        name: "RangeError",
+        message: 'Duplicate biject value for key "bar".',
+      },
+    );
+  });
+
+  it("should use Map key equality for duplicate values", () => {
+    assert.throws(
+      () =>
+        biject({
+          positiveZero: 0,
+          negativeZero: -0,
+        }),
+      {
+        name: "RangeError",
+        message: 'Duplicate biject value for key "negativeZero".',
+      },
+    );
+    assert.throws(
+      () =>
+        biject({
+          first: NaN,
+          second: NaN,
+        }),
+      {
+        name: "RangeError",
+        message: 'Duplicate biject value for key "second".',
+      },
+    );
+  });
+
+  it("should compare object values by identity", () => {
+    const shared = { id: "shared" };
+    const first = { id: "same-shape" };
+    const second = { id: "same-shape" };
+
+    const parser = biject({
+      first,
+      second,
+    });
+
+    assert.equal(parser.format(second), "second");
+    assert.throws(
+      () => biject({ first: shared, second: shared }),
+      RangeError,
+    );
+  });
+
+  it("should throw RangeError for empty mappings", () => {
+    assert.throws(
+      () => biject({}),
+      {
+        name: "RangeError",
+        message: "Expected at least one biject entry.",
+      },
+    );
+  });
+
+  it("should reject empty keys through the choice parser", () => {
+    assert.throws(
+      () => biject({ "": "empty" }),
+      {
+        name: "TypeError",
+        message: "Empty strings are not allowed as choices.",
+      },
+    );
+  });
+});
+
+describe("float", () => {
+  describe("basic parsing", () => {
+    it("should parse valid floating-point numbers", () => {
+      const parser = float({});
+
+      const result1 = parser.parse("42.5");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 42.5);
+        assert.equal(typeof result1.value, "number");
+      }
+
+      const result2 = parser.parse("0.0");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 0.0);
+      }
+
+      const result3 = parser.parse("-3.14159");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, -3.14159);
+      }
+
+      const result4 = parser.parse("1e5");
+      assert.ok(result4.success);
+      if (result4.success) {
+        assert.equal(result4.value, 100000);
+      }
+
+      const result5 = parser.parse("2.5e-3");
+      assert.ok(result5.success);
+      if (result5.success) {
+        assert.equal(result5.value, 0.0025);
+      }
+
+      const result6 = parser.parse(".5");
+      assert.ok(result6.success);
+      if (result6.success) {
+        assert.equal(result6.value, 0.5);
+      }
+
+      const result7 = parser.parse("-.75");
+      assert.ok(result7.success);
+      if (result7.success) {
+        assert.equal(result7.value, -0.75);
+      }
+    });
+
+    it("should parse integer values as floats", () => {
+      const parser = float({});
+
+      const result1 = parser.parse("42");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 42);
+        assert.equal(typeof result1.value, "number");
+      }
+
+      const result2 = parser.parse("-5");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, -5);
+      }
+    });
+
+    it("should reject Infinity by default", () => {
+      const parser = float({});
+
+      const result1 = parser.parse("Infinity");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("-Infinity");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("+Infinity");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("infinity");
+      assert.ok(!result4.success);
+
+      const result5 = parser.parse("INFINITY");
+      assert.ok(!result5.success);
+    });
+
+    it("should reject NaN by default", () => {
+      const parser = float({});
+
+      const result1 = parser.parse("NaN");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("nan");
+      assert.ok(!result2.success);
+    });
+
+    it("should reject invalid numeric strings", () => {
+      const parser = float({});
+
+      const result1 = parser.parse("abc");
+      assert.ok(!result1.success);
+      if (!result1.success) {
+        assert.equal(typeof result1.error, "object");
+      }
+
+      const result2 = parser.parse("12.34.56");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("--5");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("5e");
+      assert.ok(!result4.success);
+
+      const result5 = parser.parse("e5");
+      assert.ok(!result5.success);
+
+      const result6 = parser.parse("not-a-number");
+      assert.ok(!result6.success);
+
+      const result7 = parser.parse("");
+      assert.ok(!result7.success);
+
+      const result8 = parser.parse("   ");
+      assert.ok(!result8.success);
+
+      const result9 = parser.parse("0x10");
+      assert.ok(!result9.success);
+
+      const result10 = parser.parse("0b10");
+      assert.ok(!result10.success);
+
+      const result11 = parser.parse("0o10");
+      assert.ok(!result11.success);
+
+      const result12 = parser.parse(".");
+      assert.ok(!result12.success);
+
+      const result13 = parser.parse("+");
+      assert.ok(!result13.success);
+
+      const result14 = parser.parse("-");
+      assert.ok(!result14.success);
+
+      const result15 = parser.parse("++5");
+      assert.ok(!result15.success);
+
+      const result16 = parser.parse("5.5.5");
+      assert.ok(!result16.success);
+    });
+  });
+
+  describe("NaN handling", () => {
+    it("should allow NaN when allowNaN is true", () => {
+      const parser = float({ allowNaN: true });
+
+      const result1 = parser.parse("NaN");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.ok(Number.isNaN(result1.value));
+      }
+
+      const result2 = parser.parse("nan");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.ok(Number.isNaN(result2.value));
+      }
+    });
+
+    it("should reject NaN when allowNaN is false", () => {
+      const parser = float({ allowNaN: false });
+
+      const result1 = parser.parse("NaN");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("nan");
+      assert.ok(!result2.success);
+    });
+  });
+
+  describe("Infinity handling", () => {
+    it("should allow Infinity when allowInfinity is true", () => {
+      const parser = float({ allowInfinity: true });
+
+      const result1 = parser.parse("Infinity");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, Infinity);
+      }
+
+      const result2 = parser.parse("-Infinity");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, -Infinity);
+      }
+
+      const result3 = parser.parse("+Infinity");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, Infinity);
+      }
+    });
+
+    it("should allow Infinity with case insensitivity when allowInfinity is true", () => {
+      const parser = float({ allowInfinity: true });
+
+      const result1 = parser.parse("infinity");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, Infinity);
+      }
+
+      const result2 = parser.parse("INFINITY");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, Infinity);
+      }
+
+      const result3 = parser.parse("-infinity");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, -Infinity);
+      }
+
+      const result4 = parser.parse("+INFINITY");
+      assert.ok(result4.success);
+      if (result4.success) {
+        assert.equal(result4.value, Infinity);
+      }
+    });
+
+    it("should reject Infinity when allowInfinity is false", () => {
+      const parser = float({ allowInfinity: false });
+
+      const result1 = parser.parse("Infinity");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("-Infinity");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("infinity");
+      assert.ok(!result3.success);
+    });
+  });
+
+  describe("constraints", () => {
+    it("should enforce minimum constraint", () => {
+      const parser = float({ min: 0 });
+
+      const result1 = parser.parse("5.5");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 5.5);
+      }
+
+      const result2 = parser.parse("0");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 0);
+      }
+
+      const result3 = parser.parse("-1.5");
+      assert.ok(!result3.success);
+      if (!result3.success) {
+        assert.equal(typeof result3.error, "object");
+      }
+    });
+
+    it("should enforce maximum constraint", () => {
+      const parser = float({ max: 100 });
+
+      const result1 = parser.parse("50.5");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 50.5);
+      }
+
+      const result2 = parser.parse("100");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 100);
+      }
+
+      const result3 = parser.parse("150.5");
+      assert.ok(!result3.success);
+      if (!result3.success) {
+        assert.equal(typeof result3.error, "object");
+      }
+    });
+
+    it("should enforce both min and max constraints", () => {
+      const parser = float({ min: -10.5, max: 10.5 });
+
+      const result1 = parser.parse("5.25");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 5.25);
+      }
+
+      const result2 = parser.parse("-10.5");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("10.5");
+      assert.ok(result3.success);
+
+      const result4 = parser.parse("-10.6");
+      assert.ok(!result4.success);
+
+      const result5 = parser.parse("10.6");
+      assert.ok(!result5.success);
+    });
+
+    it("should handle NaN constraints when allowNaN is true", () => {
+      const parser = float({ allowNaN: true, min: 0 });
+
+      const result1 = parser.parse("NaN");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.ok(Number.isNaN(result1.value));
+      }
+
+      const result2 = parser.parse("-5");
+      assert.ok(!result2.success);
+    });
+
+    it("should handle Infinity constraints when allowInfinity is true", () => {
+      const parser = float({ allowInfinity: true, max: 100 });
+
+      const result1 = parser.parse("Infinity");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("-Infinity");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, -Infinity);
+      }
+
+      const result3 = parser.parse("50");
+      assert.ok(result3.success);
+    });
+
+    it("should handle both NaN and Infinity options", () => {
+      const parser = float({ allowNaN: true, allowInfinity: true });
+
+      const result1 = parser.parse("NaN");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.ok(Number.isNaN(result1.value));
+      }
+
+      const result2 = parser.parse("Infinity");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, Infinity);
+      }
+
+      const result3 = parser.parse("-Infinity");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, -Infinity);
+      }
+    });
+  });
+
+  describe("error messages", () => {
+    it("should provide structured error messages for invalid input", () => {
+      const parser = float({});
+      const result = parser.parse("invalid");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected a valid number, but got " },
+            { type: "value", value: "invalid" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for min constraint violation", () => {
+      const parser = float({ min: 0 });
+      const result = parser.parse("-5.5");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            {
+              type: "text",
+              text: "Expected a value greater than or equal to ",
+            },
+            { type: "text", text: "0" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "-5.5" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for max constraint violation", () => {
+      const parser = float({ max: 100 });
+      const result = parser.parse("150.5");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected a value less than or equal to " },
+            { type: "text", text: "100" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "150.5" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle zero correctly", () => {
+      const parser = float({});
+
+      const result1 = parser.parse("0");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 0);
+      }
+
+      const result2 = parser.parse("-0");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, -0);
+        assert.ok(Object.is(result2.value, -0));
+      }
+
+      const result3 = parser.parse("0.0");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, 0.0);
+      }
+    });
+
+    it("should handle very small and very large numbers", () => {
+      const parser = float({});
+
+      const result1 = parser.parse("1e-10");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 1e-10);
+      }
+
+      const result2 = parser.parse("1e10");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 1e10);
+      }
+    });
+
+    it("should reject numbers with leading/trailing whitespace", () => {
+      const parser = float({});
+
+      // Strict parsing should reject whitespace-padded numbers
+      const result1 = parser.parse("  42.5  ");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("\t3.14\n");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse(" 123");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("456 ");
+      assert.ok(!result4.success);
+    });
+
+    it("should handle precision edge cases", () => {
+      const parser = float({});
+
+      const result1 = parser.parse("0.1");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 0.1);
+      }
+
+      const result2 = parser.parse("0.123456789012345");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 0.123456789012345);
+      }
+    });
+  });
+
+  describe("placeholder", () => {
+    it("should use min as default placeholder when min > 0", () => {
+      const parser = float({ min: 5 });
+      assert.equal(parser.placeholder, 5);
+    });
+
+    it("should use max as default placeholder when max < 0", () => {
+      const parser = float({ max: -3 });
+      assert.equal(parser.placeholder, -3);
+    });
+
+    it("should use 0 as default placeholder when range includes 0", () => {
+      const parser = float({ min: -5, max: 10 });
+      assert.equal(parser.placeholder, 0);
+    });
+
+    it("should use 0 as default placeholder when no bounds given", () => {
+      const parser = float({});
+      assert.equal(parser.placeholder, 0);
+    });
+  });
+
+  describe("custom metavar", () => {
+    it("should use custom metavar when provided", () => {
+      const parser = float({ metavar: "RATE" });
+      assert.equal(parser.metavar, "RATE");
+    });
+
+    it("should use default metavar when not provided", () => {
+      const parser = float({});
+      assert.equal(parser.metavar, "NUMBER");
+    });
+  });
+
+  describe("contradictory min > max", () => {
+    it("should throw RangeError when min > max", () => {
+      assert.throws(
+        () => float({ min: 10, max: 5 }),
+        RangeError,
+      );
+    });
+
+    it("should not throw when min equals max", () => {
+      assert.doesNotThrow(() => float({ min: 5, max: 5 }));
+    });
+  });
+
+  describe("non-finite bounds", () => {
+    it("should throw RangeError when min is NaN", () => {
+      assert.throws(
+        () => float({ min: NaN as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is NaN", () => {
+      assert.throws(
+        () => float({ max: NaN as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when min is Infinity", () => {
+      assert.throws(
+        () => float({ min: Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when min is -Infinity", () => {
+      assert.throws(
+        () => float({ min: -Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is Infinity", () => {
+      assert.throws(
+        () => float({ max: Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is -Infinity", () => {
+      assert.throws(
+        () => float({ max: -Infinity as never }),
+        RangeError,
+      );
+    });
+  });
+});
+
+describe("url", () => {
+  describe("basic parsing", () => {
+    it("should parse valid URLs", () => {
+      const parser = url({});
+
+      const result1 = parser.parse("https://example.com");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.ok(result1.value instanceof URL);
+        assert.equal(result1.value.hostname, "example.com");
+        assert.equal(result1.value.protocol, "https:");
+      }
+
+      const result2 = parser.parse("http://localhost:8080/path?query=value");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value.hostname, "localhost");
+        assert.equal(result2.value.port, "8080");
+        assert.equal(result2.value.pathname, "/path");
+        assert.equal(result2.value.search, "?query=value");
+      }
+
+      const result3 = parser.parse("ftp://files.example.com/file.txt");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value.protocol, "ftp:");
+        assert.equal(result3.value.hostname, "files.example.com");
+        assert.equal(result3.value.pathname, "/file.txt");
+      }
+    });
+
+    it("should parse URLs with different protocols", () => {
+      const parser = url({});
+
+      const protocols = [
+        "https://example.com",
+        "http://example.com",
+        "ftp://example.com",
+        "file:///path/to/file",
+        "mailto:test@example.com",
+        "ws://websocket.example.com",
+        "wss://secure-websocket.example.com",
+      ];
+
+      for (const urlString of protocols) {
+        const result = parser.parse(urlString);
+        assert.ok(result.success, `Should parse ${urlString}`);
+        if (result.success) {
+          assert.ok(result.value instanceof URL);
+        }
+      }
+    });
+
+    it("should reject invalid URLs", () => {
+      const parser = url({});
+
+      const invalidUrls = [
+        "not-a-url",
+        "://missing-protocol",
+        "http://",
+        "",
+        "   ",
+        "http:// invalid url",
+        "http://[invalid-ipv6",
+      ];
+
+      for (const invalidUrl of invalidUrls) {
+        const result = parser.parse(invalidUrl);
+        assert.ok(!result.success, `Should reject ${invalidUrl}`);
+        if (!result.success) {
+          assert.equal(typeof result.error, "object");
+        }
+      }
+    });
+  });
+
+  describe("protocol restrictions", () => {
+    it("should allow only specified protocols", () => {
+      const parser = url({ allowedProtocols: ["http:", "https:"] });
+
+      const result1 = parser.parse("https://example.com");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value.protocol, "https:");
+      }
+
+      const result2 = parser.parse("http://example.com");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value.protocol, "http:");
+      }
+
+      const result3 = parser.parse("ftp://example.com");
+      assert.ok(!result3.success);
+      if (!result3.success) {
+        assert.deepEqual(
+          result3.error,
+          [
+            { type: "text", text: "URL protocol " },
+            { type: "value", value: "ftp:" },
+            { type: "text", text: " is not allowed. Allowed protocols: " },
+            { type: "value", value: "http:" },
+            { type: "text", text: " and " },
+            { type: "value", value: "https:" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should handle case insensitive protocol matching", () => {
+      const parser = url({ allowedProtocols: ["HTTP:", "HTTPS:"] });
+
+      const result1 = parser.parse("https://example.com");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("http://example.com");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("ftp://example.com");
+      assert.ok(!result3.success);
+    });
+
+    it("should allow single protocol restriction", () => {
+      const parser = url({ allowedProtocols: ["https:"] });
+
+      const result1 = parser.parse("https://example.com");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("http://example.com");
+      assert.ok(!result2.success);
+    });
+
+    it("should throw TypeError when empty protocol list is provided", () => {
+      assert.throws(
+        () => url({ allowedProtocols: [] }),
+        {
+          name: "TypeError",
+          message: "allowedProtocols must not be empty.",
+        },
+      );
+    });
+  });
+
+  describe("URL object properties", () => {
+    it("should provide access to URL components", () => {
+      const parser = url({});
+      const result = parser.parse(
+        "https://user:pass@example.com:8080/path/to/resource?query=value&param=test#fragment",
+      );
+
+      assert.ok(result.success);
+      if (result.success) {
+        const url = result.value;
+        assert.equal(url.protocol, "https:");
+        assert.equal(url.hostname, "example.com");
+        assert.equal(url.port, "8080");
+        assert.equal(url.pathname, "/path/to/resource");
+        assert.equal(url.search, "?query=value&param=test");
+        assert.equal(url.hash, "#fragment");
+        assert.equal(url.username, "user");
+        assert.equal(url.password, "pass");
+      }
+    });
+
+    it("should handle URLs without optional components", () => {
+      const parser = url({});
+      const result = parser.parse("https://example.com");
+
+      assert.ok(result.success);
+      if (result.success) {
+        const url = result.value;
+        assert.equal(url.protocol, "https:");
+        assert.equal(url.hostname, "example.com");
+        assert.equal(url.port, "");
+        assert.equal(url.pathname, "/");
+        assert.equal(url.search, "");
+        assert.equal(url.hash, "");
+        assert.equal(url.username, "");
+        assert.equal(url.password, "");
+      }
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle IPv4 addresses", () => {
+      const parser = url({});
+      const result = parser.parse("http://192.168.1.1:8080/api");
+
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value.hostname, "192.168.1.1");
+        assert.equal(result.value.port, "8080");
+      }
+    });
+
+    it("should handle IPv6 addresses", () => {
+      const parser = url({});
+      const result = parser.parse("http://[2001:db8::1]:8080/api");
+
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value.hostname, "[2001:db8::1]");
+        assert.equal(result.value.port, "8080");
+      }
+    });
+
+    it("should handle URLs with encoded characters", () => {
+      const parser = url({});
+      const result = parser.parse(
+        "https://example.com/path%20with%20spaces?query=hello%20world",
+      );
+
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value.pathname, "/path%20with%20spaces");
+        assert.equal(result.value.search, "?query=hello%20world");
+      }
+    });
+
+    it("should handle file URLs", () => {
+      const parser = url({});
+      const result = parser.parse("file:///absolute/path/to/file.txt");
+
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value.protocol, "file:");
+        assert.equal(result.value.pathname, "/absolute/path/to/file.txt");
+      }
+    });
+
+    it("should handle localhost variations", () => {
+      const parser = url({});
+
+      const localhosts = [
+        "http://localhost",
+        "http://127.0.0.1",
+        "http://[::1]",
+      ];
+
+      for (const localhost of localhosts) {
+        const result = parser.parse(localhost);
+        assert.ok(result.success, `Should parse ${localhost}`);
+      }
+    });
+  });
+
+  describe("error messages", () => {
+    it("should provide structured error messages for invalid URLs", () => {
+      const parser = url({});
+      const result = parser.parse("not-a-url");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Invalid URL: " },
+            { type: "value", value: "not-a-url" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for protocol violations", () => {
+      const parser = url({ allowedProtocols: ["https:"] });
+      const result = parser.parse("http://example.com");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "URL protocol " },
+            { type: "value", value: "http:" },
+            { type: "text", text: " is not allowed. Allowed protocols: " },
+            { type: "value", value: "https:" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+  });
+
+  describe("custom metavar", () => {
+    it("should use custom metavar when provided", () => {
+      const parser = url({ metavar: "ENDPOINT" });
+      assert.equal(parser.metavar, "ENDPOINT");
+    });
+
+    it("should use default metavar when not provided", () => {
+      const parser = url({});
+      assert.equal(parser.metavar, "URL");
+    });
+
+    it("should snapshot allowedProtocols at construction time", () => {
+      const protocols = ["https:"];
+      const parser = url({ allowedProtocols: protocols });
+      assert.ok(parser.parse("https://example.com").success);
+      assert.ok(!parser.parse("http://example.com").success);
+      // Mutate protocols after construction
+      protocols[0] = "http:";
+      // Parser should still accept https and reject http
+      assert.ok(parser.parse("https://example.com").success);
+      assert.ok(!parser.parse("http://example.com").success);
+    });
+
+    it("should snapshot errors.invalidUrl at construction time", () => {
+      const errors: { invalidUrl: string } = {
+        invalidUrl: "original error",
+      };
+      const parser = url({ errors: errors as never });
+      const result = parser.parse("not-a-url");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.invalidUrl = "mutated error";
+      const result2 = parser.parse("not-a-url");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+
+    it("should snapshot errors.disallowedProtocol at construction time", () => {
+      const errors: { disallowedProtocol: string } = {
+        disallowedProtocol: "original error",
+      };
+      const parser = url({
+        allowedProtocols: ["https:"],
+        errors: errors as never,
+      });
+      const result = parser.parse("http://example.com");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.disallowedProtocol = "mutated error";
+      const result2 = parser.parse("http://example.com");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+  });
+
+  describe("allowedProtocols validation", () => {
+    it("should reject non-string entries", () => {
+      assert.throws(
+        () => url({ allowedProtocols: [123 as never] }),
+        {
+          name: "TypeError",
+          message: /got: 123\./,
+        },
+      );
+      assert.throws(
+        () => url({ allowedProtocols: [null as never] }),
+        {
+          name: "TypeError",
+          message: /got: null\./,
+        },
+      );
+      assert.throws(
+        () => url({ allowedProtocols: [undefined as never] }),
+        {
+          name: "TypeError",
+          message: /got: undefined\./,
+        },
+      );
+    });
+
+    it("should reject entries missing the trailing colon", () => {
+      assert.throws(
+        () => url({ allowedProtocols: ["https" as never] }),
+        {
+          name: "TypeError",
+          message: /got: "https"\./,
+        },
+      );
+      assert.throws(
+        () => url({ allowedProtocols: ["http" as never] }),
+        {
+          name: "TypeError",
+          message: /got: "http"\./,
+        },
+      );
+    });
+
+    it("should reject entries with :// suffix", () => {
+      assert.throws(
+        () => url({ allowedProtocols: ["https://" as never] }),
+        {
+          name: "TypeError",
+          message: /got: "https:\/\/"\./,
+        },
+      );
+    });
+
+    it("should reject empty string", () => {
+      assert.throws(
+        () => url({ allowedProtocols: ["" as never] }),
+        {
+          name: "TypeError",
+          message: /got: ""\./,
+        },
+      );
+    });
+
+    it("should accept valid protocol entries", () => {
+      assert.doesNotThrow(() => url({ allowedProtocols: ["https:"] }));
+      assert.doesNotThrow(() => url({ allowedProtocols: ["HTTP:"] }));
+      assert.doesNotThrow(
+        () => url({ allowedProtocols: ["https:", "http:", "ftp:"] }),
+      );
+      assert.doesNotThrow(
+        () => url({ allowedProtocols: ["custom+proto:"] }),
+      );
+    });
+
+    it("should deduplicate case-only duplicates", () => {
+      const parser = url({ allowedProtocols: ["HTTP:", "http:"] });
+      const suggestions = [...parser.suggest!("ht")]
+        .filter((s) => s.kind === "literal")
+        .map((s) => s.text);
+      assert.deepEqual(suggestions, ["http://"]);
+    });
+  });
+});
+
+describe("locale", () => {
+  describe("basic parsing", () => {
+    it("should parse valid locale identifiers", () => {
+      const parser = locale({});
+
+      const result1 = parser.parse("en");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.ok(result1.value instanceof Intl.Locale);
+        assert.equal(result1.value.language, "en");
+        assert.equal(result1.value.region, undefined);
+      }
+
+      const result2 = parser.parse("en-US");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value.language, "en");
+        assert.equal(result2.value.region, "US");
+      }
+
+      const result3 = parser.parse("zh-Hans-CN");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value.language, "zh");
+        assert.equal(result3.value.script, "Hans");
+        assert.equal(result3.value.region, "CN");
+      }
+    });
+
+    it("should parse language-only locales", () => {
+      const parser = locale({});
+
+      const languages = [
+        "en",
+        "es",
+        "fr",
+        "de",
+        "ja",
+        "ko",
+        "zh",
+        "ar",
+        "hi",
+        "ru",
+      ];
+
+      for (const lang of languages) {
+        const result = parser.parse(lang);
+        assert.ok(result.success, `Should parse language ${lang}`);
+        if (result.success) {
+          assert.equal(result.value.language, lang);
+        }
+      }
+    });
+
+    it("should parse language-region locales", () => {
+      const parser = locale({});
+
+      const locales = [
+        { input: "en-US", language: "en", region: "US" },
+        { input: "en-GB", language: "en", region: "GB" },
+        { input: "fr-FR", language: "fr", region: "FR" },
+        { input: "de-DE", language: "de", region: "DE" },
+        { input: "ja-JP", language: "ja", region: "JP" },
+        { input: "ko-KR", language: "ko", region: "KR" },
+        { input: "pt-BR", language: "pt", region: "BR" },
+        { input: "es-ES", language: "es", region: "ES" },
+        { input: "es-MX", language: "es", region: "MX" },
+      ];
+
+      for (const { input, language, region } of locales) {
+        const result = parser.parse(input);
+        assert.ok(result.success, `Should parse locale ${input}`);
+        if (result.success) {
+          assert.equal(result.value.language, language);
+          assert.equal(result.value.region, region);
+        }
+      }
+    });
+
+    it("should parse locales with scripts", () => {
+      const parser = locale({});
+
+      const locales = [
+        { input: "zh-Hans", language: "zh", script: "Hans" },
+        { input: "zh-Hant", language: "zh", script: "Hant" },
+        { input: "zh-Hans-CN", language: "zh", script: "Hans", region: "CN" },
+        { input: "zh-Hant-TW", language: "zh", script: "Hant", region: "TW" },
+        { input: "sr-Cyrl", language: "sr", script: "Cyrl" },
+        { input: "sr-Latn", language: "sr", script: "Latn" },
+      ];
+
+      for (const { input, language, script, region } of locales) {
+        const result = parser.parse(input);
+        assert.ok(result.success, `Should parse locale ${input}`);
+        if (result.success) {
+          assert.equal(result.value.language, language);
+          assert.equal(result.value.script, script);
+          if (region) {
+            assert.equal(result.value.region, region);
+          }
+        }
+      }
+    });
+
+    it("should parse locales with Unicode extensions", () => {
+      const parser = locale({});
+
+      const locales = [
+        "en-US-u-ca-gregory",
+        "ja-JP-u-ca-japanese",
+        "en-US-u-nu-arab",
+        "de-DE-u-co-phonebk",
+        "th-TH-u-nu-thai",
+      ];
+
+      for (const localeString of locales) {
+        const result = parser.parse(localeString);
+        assert.ok(
+          result.success,
+          `Should parse locale with extension ${localeString}`,
+        );
+        if (result.success) {
+          assert.ok(result.value instanceof Intl.Locale);
+        }
+      }
+    });
+
+    it("should reject invalid locale identifiers", () => {
+      const parser = locale({});
+
+      const invalidLocales = [
+        "",
+        "   ",
+        "toolongcode",
+        "en-",
+        "-US",
+        "en--US",
+        "x-private-only", // Private use only without language subtag
+      ];
+
+      for (const invalidLocale of invalidLocales) {
+        const result = parser.parse(invalidLocale);
+        assert.ok(
+          !result.success,
+          `Should reject invalid locale ${invalidLocale}`,
+        );
+        if (!result.success) {
+          assert.equal(typeof result.error, "object");
+        }
+      }
+    });
+  });
+
+  describe("locale object properties", () => {
+    it("should provide access to locale components", () => {
+      const parser = locale({});
+      const result = parser.parse("zh-Hans-CN-u-ca-chinese-nu-hanidec");
+
+      assert.ok(result.success);
+      if (result.success) {
+        const locale = result.value;
+        assert.equal(locale.language, "zh");
+        assert.equal(locale.script, "Hans");
+        assert.equal(locale.region, "CN");
+        assert.ok(locale.toString().includes("zh"));
+      }
+    });
+
+    it("should handle minimal locale identifiers", () => {
+      const parser = locale({});
+      const result = parser.parse("en");
+
+      assert.ok(result.success);
+      if (result.success) {
+        const locale = result.value;
+        assert.equal(locale.language, "en");
+        assert.equal(locale.script, undefined);
+        assert.equal(locale.region, undefined);
+      }
+    });
+
+    it("should normalize locale identifiers", () => {
+      const parser = locale({});
+
+      // Test case normalization
+      const result1 = parser.parse("EN-us");
+      assert.ok(result1.success);
+      if (result1.success) {
+        // Note: Intl.Locale normalizes case
+        assert.equal(result1.value.language, "en");
+        assert.equal(result1.value.region, "US");
+      }
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle private use subtags", () => {
+      const parser = locale({});
+
+      const privateUseCases = [
+        "en-x-private",
+        "en-US-x-private",
+      ];
+
+      for (const privateUse of privateUseCases) {
+        const result = parser.parse(privateUse);
+        assert.ok(
+          result.success,
+          `Should parse private use locale ${privateUse}`,
+        );
+        if (result.success) {
+          assert.ok(result.value instanceof Intl.Locale);
+        }
+      }
+    });
+
+    it("should handle grandfathered locale tags", () => {
+      const parser = locale({});
+
+      const grandfatheredCases = [
+        "i-default",
+        "i-klingon",
+        "art-lojban",
+      ];
+
+      for (const grandfathered of grandfatheredCases) {
+        const result = parser.parse(grandfathered);
+        // Some grandfathered tags may or may not be supported depending on implementation
+        if (result.success) {
+          assert.ok(result.value instanceof Intl.Locale);
+        }
+      }
+    });
+
+    it("should handle variant subtags", () => {
+      const parser = locale({});
+
+      const variantCases = [
+        "de-DE-1996", // German orthography reform
+        "sl-rozaj", // Resian dialect of Slovenian
+        "de-CH-1901", // Traditional German orthography for Switzerland
+      ];
+
+      for (const variant of variantCases) {
+        const result = parser.parse(variant);
+        assert.ok(result.success, `Should parse variant locale ${variant}`);
+        if (result.success) {
+          assert.ok(result.value instanceof Intl.Locale);
+        }
+      }
+    });
+
+    it("should handle case variations", () => {
+      const parser = locale({});
+
+      const caseCombinations = [
+        { input: "EN", expected: "en" },
+        { input: "en-us", expected: "en-US" },
+        { input: "ZH-HANS-CN", expected: "zh-Hans-CN" },
+        { input: "De-De", expected: "de-DE" },
+      ];
+
+      for (const { input, expected } of caseCombinations) {
+        const result = parser.parse(input);
+        assert.ok(result.success, `Should parse case variation ${input}`);
+        if (result.success) {
+          // Check if the parsed locale matches expected normalization
+          const normalized = result.value.toString();
+          assert.ok(normalized.toLowerCase().includes(expected.toLowerCase()));
+        }
+      }
+    });
+
+    it("should handle locale options and keywords", () => {
+      const parser = locale({});
+
+      const localeOptions = [
+        "en-US-u-ca-gregory-nu-latn",
+        "ja-JP-u-ca-japanese-hc-h24",
+        "ar-EG-u-nu-arab-ca-islamic",
+        "de-DE-u-co-phonebk-kn-true",
+      ];
+
+      for (const option of localeOptions) {
+        const result = parser.parse(option);
+        assert.ok(result.success, `Should parse locale with options ${option}`);
+        if (result.success) {
+          assert.ok(result.value instanceof Intl.Locale);
+          // Verify the locale string contains expected parts
+          const localeString = result.value.toString();
+          assert.ok(localeString.includes("-u-"));
+        }
+      }
+    });
+  });
+
+  describe("error messages", () => {
+    it("should provide structured error messages for invalid locales", () => {
+      const parser = locale({});
+      const result = parser.parse("x-private-only");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Invalid locale: " },
+            { type: "value", value: "x-private-only" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for empty input", () => {
+      const parser = locale({});
+      const result = parser.parse("");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.equal(typeof result.error, "object");
+        // Note: empty string might not show up in formatted error, so we just check the error exists
+      }
+    });
+
+    it("should provide structured error messages for malformed locales", () => {
+      const parser = locale({});
+
+      const malformedLocales = [
+        "en-",
+        "-US",
+        "en--US",
+        "toolongcode",
+      ];
+
+      for (const malformed of malformedLocales) {
+        const result = parser.parse(malformed);
+        assert.ok(
+          !result.success,
+          `Should reject malformed locale ${malformed}`,
+        );
+        if (!result.success) {
+          assert.deepEqual(
+            result.error,
+            [
+              { type: "text", text: "Invalid locale: " },
+              { type: "value", value: malformed },
+              { type: "text", text: "." },
+            ] as const,
+          );
+        }
+      }
+    });
+  });
+
+  describe("custom metavar", () => {
+    it("should use custom metavar when provided", () => {
+      const parser = locale({ metavar: "LANG" });
+      assert.equal(parser.metavar, "LANG");
+    });
+
+    it("should use default metavar when not provided", () => {
+      const parser = locale({});
+      assert.equal(parser.metavar, "LOCALE");
+    });
+  });
+
+  describe("real-world locale examples", () => {
+    it("should parse common locale identifiers", () => {
+      const parser = locale({});
+
+      const commonLocales = [
+        // Major world languages
+        "en-US",
+        "en-GB",
+        "en-CA",
+        "en-AU",
+        "es-ES",
+        "es-MX",
+        "es-AR",
+        "fr-FR",
+        "fr-CA",
+        "de-DE",
+        "de-AT",
+        "de-CH",
+        "it-IT",
+        "pt-PT",
+        "pt-BR",
+        "ru-RU",
+        "ja-JP",
+        "ko-KR",
+        "zh-CN",
+        "zh-TW",
+        "zh-HK",
+        "ar-SA",
+        "ar-EG",
+        "hi-IN",
+        "th-TH",
+        "vi-VN",
+        "tr-TR",
+        "pl-PL",
+        "nl-NL",
+        "nl-BE",
+        "sv-SE",
+        "da-DK",
+        "no-NO",
+        "fi-FI",
+      ];
+
+      for (const localeId of commonLocales) {
+        const result = parser.parse(localeId);
+        assert.ok(result.success, `Should parse common locale ${localeId}`);
+        if (result.success) {
+          assert.ok(result.value instanceof Intl.Locale);
+          assert.ok(result.value.language.length >= 2);
+        }
+      }
+    });
+
+    it("should parse complex real-world locales", () => {
+      const parser = locale({});
+
+      const complexLocales = [
+        "zh-Hans-CN-u-ca-chinese-nu-hanidec",
+        "ja-JP-u-ca-japanese-hc-h24-nu-jpan",
+        "ar-SA-u-ca-islamic-nu-arab",
+        "th-TH-u-ca-buddhist-nu-thai",
+        "he-IL-u-ca-hebrew-nu-hebr",
+        "fa-IR-u-ca-persian-nu-arabext",
+        "en-US-u-ca-gregory-hc-h12-nu-latn-tz-usnyc",
+      ];
+
+      for (const complex of complexLocales) {
+        const result = parser.parse(complex);
+        assert.ok(result.success, `Should parse complex locale ${complex}`);
+        if (result.success) {
+          assert.ok(result.value instanceof Intl.Locale);
+          // Verify Unicode extensions are preserved
+          const localeString = result.value.toString();
+          if (complex.includes("-u-")) {
+            assert.ok(localeString.includes("-u-"));
+          }
+        }
+      }
+    });
+  });
+});
+
+describe("uuid", () => {
+  describe("basic parsing", () => {
+    it("should parse valid UUID strings", () => {
+      const parser = uuid({});
+
+      const result1 = parser.parse("550e8400-e29b-41d4-a716-446655440000");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "550e8400-e29b-41d4-a716-446655440000");
+        assert.equal(typeof result1.value, "string");
+      }
+
+      const result2 = parser.parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+      }
+
+      const result3 = parser.parse("6ba7b811-9dad-11d1-80b4-00c04fd430c8");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, "6ba7b811-9dad-11d1-80b4-00c04fd430c8");
+      }
+    });
+
+    it("should parse UUIDs with uppercase letters", () => {
+      const parser = uuid({});
+
+      const result1 = parser.parse("550E8400-E29B-41D4-A716-446655440000");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "550E8400-E29B-41D4-A716-446655440000");
+      }
+
+      const result2 = parser.parse("6BA7B810-9DAD-11D1-80B4-00C04FD430C8");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "6BA7B810-9DAD-11D1-80B4-00C04FD430C8");
+      }
+    });
+
+    it("should parse UUIDs with mixed case", () => {
+      const parser = uuid({});
+
+      const result = parser.parse("550e8400-E29B-41d4-A716-446655440000");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "550e8400-E29B-41d4-A716-446655440000");
+      }
+    });
+
+    it("should reject invalid UUID strings", () => {
+      const parser = uuid({});
+
+      const invalidUuids = [
+        "not-a-uuid",
+        "550e8400-e29b-41d4-a716", // too short
+        "550e8400-e29b-41d4-a716-446655440000-extra", // too long
+        "550e8400-e29b-41d4-a716-44665544000g", // invalid character 'g'
+        "550e8400e29b41d4a716446655440000", // missing dashes
+        "550e8400-e29b-41d4-a716-4466554400000", // extra character
+        "", // empty string
+        "   ", // whitespace only
+        "550e8400-e29b-41d4-a716-44665544000", // one character short
+        "550e8400-e29b-41d4-a71-446655440000", // wrong segment length
+      ];
+
+      for (const invalidUuid of invalidUuids) {
+        const result = parser.parse(invalidUuid);
+        assert.ok(
+          !result.success,
+          `Should reject invalid UUID: ${invalidUuid}`,
+        );
+        if (!result.success) {
+          assert.equal(typeof result.error, "object");
+        }
+      }
+    });
+
+    it("should reject UUIDs with wrong format", () => {
+      const parser = uuid({});
+
+      const wrongFormats = [
+        "550e8400_e29b_41d4_a716_446655440000", // underscores instead of dashes
+        "550e8400:e29b:41d4:a716:446655440000", // colons instead of dashes
+        "{550e8400-e29b-41d4-a716-446655440000}", // wrapped in braces
+        "(550e8400-e29b-41d4-a716-446655440000)", // wrapped in parentheses
+        "550e8400-e29b-41d4-a716-446655440000 ", // trailing space
+        " 550e8400-e29b-41d4-a716-446655440000", // leading space
+      ];
+
+      for (const wrongFormat of wrongFormats) {
+        const result = parser.parse(wrongFormat);
+        assert.ok(
+          !result.success,
+          `Should reject wrong format: ${wrongFormat}`,
+        );
+        if (!result.success) {
+          assert.equal(typeof result.error, "object");
+        }
+      }
+    });
+  });
+
+  describe("version validation", () => {
+    it("should allow specific versions when specified", () => {
+      const parser = uuid({ allowedVersions: [4] });
+
+      // UUID v4 (random)
+      const result1 = parser.parse("550e8400-e29b-41d4-a716-446655440000");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "550e8400-e29b-41d4-a716-446655440000");
+      }
+
+      const result2 = parser.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479");
+      assert.ok(result2.success);
+    });
+
+    it("should reject versions not in allowed list", () => {
+      const parser = uuid({ allowedVersions: [4] });
+
+      // UUID v1 (time-based)
+      const result1 = parser.parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+      assert.ok(!result1.success);
+      if (!result1.success) {
+        assert.deepEqual(
+          result1.error,
+          [
+            { type: "text", text: "Expected UUID version " },
+            { type: "value", value: "4" },
+            { type: "text", text: ", but got version " },
+            { type: "value", value: "1" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+
+      // UUID v5 (name-based with SHA-1)
+      const result2 = parser.parse("6ba7b815-9dad-51d1-80b4-00c04fd430c8");
+      assert.ok(!result2.success);
+      if (!result2.success) {
+        assert.deepEqual(
+          result2.error,
+          [
+            { type: "text", text: "Expected UUID version " },
+            { type: "value", value: "4" },
+            { type: "text", text: ", but got version " },
+            { type: "value", value: "5" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should allow multiple versions", () => {
+      const parser = uuid({ allowedVersions: [1, 4, 5] });
+
+      // UUID v1
+      const result1 = parser.parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+      assert.ok(result1.success);
+
+      // UUID v4
+      const result2 = parser.parse("550e8400-e29b-41d4-a716-446655440000");
+      assert.ok(result2.success);
+
+      // UUID v5
+      const result3 = parser.parse("6ba7b815-9dad-51d1-80b4-00c04fd430c8");
+      assert.ok(result3.success);
+
+      // UUID v3 should be rejected
+      const result4 = parser.parse("6ba7b813-9dad-31d1-80b4-00c04fd430c8");
+      assert.ok(!result4.success);
+      if (!result4.success) {
+        assert.deepEqual(
+          result4.error,
+          [
+            { type: "text", text: "Expected UUID version " },
+            { type: "value", value: "1" },
+            { type: "text", text: ", " },
+            { type: "value", value: "4" },
+            { type: "text", text: ", or " },
+            { type: "value", value: "5" },
+            { type: "text", text: ", but got version " },
+            { type: "value", value: "3" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should accept any version when allowedVersions is not specified", () => {
+      const parser = uuid({});
+
+      const versions = [
+        "6ba7b810-9dad-11d1-80b4-00c04fd430c8", // v1
+        "6ba7b812-9dad-21d1-80b4-00c04fd430c8", // v2
+        "6ba7b813-9dad-31d1-80b4-00c04fd430c8", // v3
+        "6ba7b814-9dad-41d1-80b4-00c04fd430c8", // v4
+        "6ba7b815-9dad-51d1-80b4-00c04fd430c8", // v5
+      ];
+
+      for (const uuid of versions) {
+        const result = parser.parse(uuid);
+        assert.ok(result.success, `Should accept any version: ${uuid}`);
+      }
+    });
+
+    it("should accept any version when allowedVersions is empty", () => {
+      const parser = uuid({ allowedVersions: [] });
+
+      const result = parser.parse("6ba7b814-9dad-11d1-80b4-00c04fd430c8");
+      assert.ok(result.success);
+    });
+  });
+
+  describe("real-world UUID examples", () => {
+    it("should parse common UUID formats", () => {
+      const parser = uuid({});
+
+      const realWorldUuids = [
+        "00000000-0000-0000-0000-000000000000", // nil UUID
+        "550e8400-e29b-41d4-a716-446655440000", // example UUID
+        "6ba7b810-9dad-11d1-80b4-00c04fd430c8", // namespace DNS
+        "6ba7b811-9dad-11d1-80b4-00c04fd430c8", // namespace URL
+        "6ba7b812-9dad-11d1-80b4-00c04fd430c8", // namespace OID
+        "6ba7b814-9dad-11d1-80b4-00c04fd430c8", // namespace X.500
+        "f47ac10b-58cc-4372-a567-0e02b2c3d479", // random v4
+        "886313e1-3b8a-5372-9b90-0c9aee199e5d", // v5 example
+      ];
+
+      for (const uuid of realWorldUuids) {
+        const result = parser.parse(uuid);
+        assert.ok(result.success, `Should parse real-world UUID: ${uuid}`);
+        if (result.success) {
+          assert.equal(result.value, uuid);
+        }
+      }
+    });
+
+    it("should handle database-generated UUIDs with strict: false", () => {
+      const parser = uuid({ strict: false });
+
+      // These UUIDs have non-standard version/variant values
+      const dbUuids = [
+        "01234567-89ab-cdef-0123-456789abcdef", // all hex digits
+        "fedcba98-7654-3210-fedc-ba9876543210", // reverse pattern
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", // repeating patterns
+        "12345678-1234-1234-1234-123456789012", // repeating sequences
+      ];
+
+      for (const uuid of dbUuids) {
+        const result = parser.parse(uuid);
+        assert.ok(result.success, `Should parse database UUID: ${uuid}`);
+      }
+    });
+  });
+
+  describe("error messages", () => {
+    it("should provide structured error messages for invalid format", () => {
+      const parser = uuid({});
+      const result = parser.parse("not-a-uuid");
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected a valid UUID in format " },
+            { type: "value", value: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "not-a-uuid" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for version mismatch", () => {
+      const parser = uuid({ allowedVersions: [4] });
+      const result = parser.parse("6ba7b815-9dad-51d1-80b4-00c04fd430c8"); // v5
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected UUID version " },
+            { type: "value", value: "4" },
+            { type: "text", text: ", but got version " },
+            { type: "value", value: "5" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for multiple version requirements", () => {
+      const parser = uuid({ allowedVersions: [1, 4] });
+      const result = parser.parse("6ba7b815-9dad-51d1-80b4-00c04fd430c8"); // v5
+
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected UUID version " },
+            { type: "value", value: "1" },
+            { type: "text", text: ", or " },
+            { type: "value", value: "4" },
+            { type: "text", text: ", but got version " },
+            { type: "value", value: "5" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+  });
+
+  describe("custom metavar", () => {
+    it("should use custom metavar when provided", () => {
+      const parser = uuid({ metavar: "ID" });
+      assert.equal(parser.metavar, "ID");
+    });
+
+    it("should use default metavar when not provided", () => {
+      const parser = uuid({});
+      assert.equal(parser.metavar, "UUID");
+    });
+
+    it("should use custom metavar with version restrictions", () => {
+      const parser = uuid({ metavar: "IDENTIFIER", allowedVersions: [4] });
+      assert.equal(parser.metavar, "IDENTIFIER");
+    });
+  });
+
+  describe("strict mode", () => {
+    it("should reject version 0 by default", () => {
+      const parser = uuid({});
+      const result = parser.parse("6ba7b800-9dad-01d1-80b4-00c04fd430c8");
+      assert.ok(!result.success);
+    });
+
+    it("should reject versions 9 through f by default", () => {
+      const parser = uuid({});
+      const hexDigits = "9abcdef";
+      for (const digit of hexDigits) {
+        const input = `6ba7b800-9dad-${digit}1d1-80b4-00c04fd430c8` as const;
+        const result = parser.parse(input);
+        assert.ok(
+          !result.success,
+          `Should reject version ${digit}: ${input}`,
+        );
+      }
+    });
+
+    it("should accept versions 1 through 8 by default", () => {
+      const parser = uuid({});
+      for (let v = 1; v <= 8; v++) {
+        const input = `6ba7b800-9dad-${
+          v.toString(16)
+        }1d1-80b4-00c04fd430c8` as const;
+        const result = parser.parse(input);
+        assert.ok(result.success, `Should accept version ${v}: ${input}`);
+      }
+    });
+
+    it("should reject non-RFC 9562 variant nibbles by default", () => {
+      const parser = uuid({});
+      const invalidVariants = ["0", "3", "7", "c", "d", "f"];
+      for (const v of invalidVariants) {
+        const input = `550e8400-e29b-41d4-${v}716-446655440000` as const;
+        const result = parser.parse(input);
+        assert.ok(
+          !result.success,
+          `Should reject variant ${v}: ${input}`,
+        );
+      }
+    });
+
+    it("should accept valid RFC 9562 variant nibbles", () => {
+      const parser = uuid({});
+      const validVariants = ["8", "9", "a", "b", "A", "B"];
+      for (const v of validVariants) {
+        const input = `550e8400-e29b-41d4-${v}716-446655440000` as const;
+        const result = parser.parse(input);
+        assert.ok(
+          result.success,
+          `Should accept variant ${v}: ${input}`,
+        );
+      }
+    });
+
+    it("should accept nil UUID as special standard value", () => {
+      const parser = uuid({});
+      const result = parser.parse("00000000-0000-0000-0000-000000000000");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "00000000-0000-0000-0000-000000000000");
+      }
+    });
+
+    it("should accept max UUID as special standard value", () => {
+      const parser = uuid({});
+      const result = parser.parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "ffffffff-ffff-ffff-ffff-ffffffffffff");
+      }
+    });
+
+    it("should accept uppercase max UUID", () => {
+      const parser = uuid({});
+      const result = parser.parse("FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF");
+      assert.ok(result.success);
+    });
+
+    it("should behave the same with strict: true as default", () => {
+      const defaultParser = uuid({});
+      const strictParser = uuid({ strict: true });
+
+      const cases = [
+        "550e8400-e29b-41d4-a716-446655440000", // valid v4
+        "6ba7b800-9dad-01d1-80b4-00c04fd430c8", // invalid v0
+        "550e8400-e29b-41d4-0716-446655440000", // invalid variant
+        "00000000-0000-0000-0000-000000000000", // nil
+        "ffffffff-ffff-ffff-ffff-ffffffffffff", // max
+      ];
+
+      for (const input of cases) {
+        assert.deepEqual(
+          defaultParser.parse(input),
+          strictParser.parse(input),
+          `Mismatch for: ${input}`,
+        );
+      }
+    });
+
+    it("should accept any version and variant with strict: false", () => {
+      const parser = uuid({ strict: false });
+
+      const cases = [
+        "6ba7b800-9dad-01d1-80b4-00c04fd430c8", // v0
+        "6ba7b800-9dad-f1d1-80b4-00c04fd430c8", // v15
+        "550e8400-e29b-41d4-0716-446655440000", // variant 0
+        "550e8400-e29b-41d4-f716-446655440000", // variant f
+        "01234567-89ab-cdef-0123-456789abcdef", // non-standard
+      ];
+
+      for (const input of cases) {
+        const result = parser.parse(input);
+        assert.ok(result.success, `Should accept with strict: false: ${input}`);
+      }
+    });
+
+    it("should still validate variant bits with allowedVersions in strict mode", () => {
+      const parser = uuid({ allowedVersions: [4] });
+      // v4 UUID with invalid variant nibble (0)
+      const result = parser.parse("550e8400-e29b-41d4-0716-446655440000");
+      assert.ok(!result.success);
+    });
+
+    it("should skip variant check with allowedVersions and strict: false", () => {
+      const parser = uuid({ allowedVersions: [4], strict: false });
+      // v4 UUID with invalid variant nibble (0)
+      const result = parser.parse("550e8400-e29b-41d4-0716-446655440000");
+      assert.ok(result.success);
+    });
+
+    it("should still reject disallowed versions with strict: false", () => {
+      const parser = uuid({ allowedVersions: [4], strict: false });
+      // v1 UUID should be rejected by allowedVersions
+      const result = parser.parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+      assert.ok(!result.success);
+    });
+
+    it("should accept nil UUID even with allowedVersions", () => {
+      const parser = uuid({ allowedVersions: [4] });
+      const result = parser.parse("00000000-0000-0000-0000-000000000000");
+      assert.ok(result.success);
+    });
+
+    it("should accept max UUID even with allowedVersions", () => {
+      const parser = uuid({ allowedVersions: [4] });
+      const result = parser.parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+      assert.ok(result.success);
+    });
+
+    it("should accept nil and max UUIDs with allowedVersions and strict: false", () => {
+      const parser = uuid({ allowedVersions: [4], strict: false });
+      assert.ok(
+        parser.parse("00000000-0000-0000-0000-000000000000").success,
+      );
+      assert.ok(
+        parser.parse("ffffffff-ffff-ffff-ffff-ffffffffffff").success,
+      );
+    });
+
+    it("should reject non-RFC variant in default strict mode (issue #334)", () => {
+      const parser = uuid();
+      // variant 'c' is outside RFC 9562 set {8, 9, a, b}
+      const r1 = parser.parse("123e4567-e89b-12d3-c456-426614174000");
+      assert.ok(!r1.success);
+      if (!r1.success) {
+        assert.deepEqual(
+          r1.error,
+          [
+            {
+              type: "text",
+              text:
+                "Expected RFC 9562 variant (8, 9, a, or b at position 20), but got ",
+            },
+            { type: "value", value: "c" },
+            { type: "text", text: " in " },
+            { type: "value", value: "123e4567-e89b-12d3-c456-426614174000" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+      // variant 'f' is outside RFC 9562 set
+      const r2 = parser.parse("123e4567-e89b-12d3-f456-426614174000");
+      assert.ok(!r2.success);
+      if (!r2.success) {
+        assert.deepEqual(
+          r2.error,
+          [
+            {
+              type: "text",
+              text:
+                "Expected RFC 9562 variant (8, 9, a, or b at position 20), but got ",
+            },
+            { type: "value", value: "f" },
+            { type: "text", text: " in " },
+            { type: "value", value: "123e4567-e89b-12d3-f456-426614174000" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should reject non-RFC variant even with allowedVersions (issue #334)", () => {
+      const parser = uuid({ allowedVersions: [1] });
+      // version 1 matches, but variant 'f' is invalid
+      const result = parser.parse("123e4567-e89b-12d3-f456-426614174000");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            {
+              type: "text",
+              text:
+                "Expected RFC 9562 variant (8, 9, a, or b at position 20), but got ",
+            },
+            { type: "value", value: "f" },
+            { type: "text", text: " in " },
+            { type: "value", value: "123e4567-e89b-12d3-f456-426614174000" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide default error message for invalid variant", () => {
+      const parser = uuid({});
+      const result = parser.parse("550e8400-e29b-41d4-0716-446655440000");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            {
+              type: "text",
+              text:
+                "Expected RFC 9562 variant (8, 9, a, or b at position 20), but got ",
+            },
+            { type: "value", value: "0" },
+            { type: "text", text: " in " },
+            { type: "value", value: "550e8400-e29b-41d4-0716-446655440000" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide default error message for invalid version", () => {
+      const parser = uuid({});
+      const result = parser.parse("6ba7b800-9dad-01d1-80b4-00c04fd430c8");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            {
+              type: "text",
+              text: "Expected UUID version 1 through 8, but got version ",
+            },
+            { type: "value", value: "0" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should use custom invalidVariant error message", () => {
+      const parser = uuid({
+        errors: {
+          invalidVariant: message`Bad variant bits.`,
+        },
+      });
+      const result = parser.parse("550e8400-e29b-41d4-0716-446655440000");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Bad variant bits." },
+        ]);
+      }
+    });
+
+    it("should use custom invalidVariant function error", () => {
+      const parser = uuid({
+        errors: {
+          invalidVariant: (input) => message`Invalid variant in ${input}.`,
+        },
+      });
+      const result = parser.parse("550e8400-e29b-41d4-0716-446655440000");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Invalid variant in " },
+          { type: "value", value: "550e8400-e29b-41d4-0716-446655440000" },
+          { type: "text", text: "." },
+        ]);
+      }
+    });
+
+    it("should snapshot strict option at construction time", () => {
+      const options: { strict: boolean } = { strict: false };
+      const parser = uuid(options);
+      // v0 UUID should pass with strict: false
+      assert.ok(
+        parser.parse("6ba7b800-9dad-01d1-80b4-00c04fd430c8").success,
+      );
+      // Mutate strict after construction
+      options.strict = true;
+      // Parser should still accept v0
+      assert.ok(
+        parser.parse("6ba7b800-9dad-01d1-80b4-00c04fd430c8").success,
+      );
+    });
+
+    it("should reject non-boolean strict option", () => {
+      assert.throws(
+        () => uuid({ strict: 1 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => uuid({ strict: "true" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => uuid({ strict: 0 as never }),
+        TypeError,
+      );
+    });
+
+    it("should snapshot errors.invalidVariant at construction time", () => {
+      const errors: { invalidVariant: string } = {
+        invalidVariant: "original error",
+      };
+      const parser = uuid({ errors: errors as never });
+      const result = parser.parse("550e8400-e29b-41d4-0716-446655440000");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.invalidVariant = "mutated error";
+      const result2 = parser.parse("550e8400-e29b-41d4-0716-446655440000");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle nil UUID", () => {
+      const parser = uuid({});
+      const result = parser.parse("00000000-0000-0000-0000-000000000000");
+
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "00000000-0000-0000-0000-000000000000");
+      }
+    });
+
+    it("should handle all uppercase UUID", () => {
+      const parser = uuid({});
+      const result = parser.parse("550E8400-E29B-41D4-A716-446655440000");
+
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "550E8400-E29B-41D4-A716-446655440000");
+      }
+    });
+
+    it("should reject version 0 in strict mode", () => {
+      const parser = uuid({});
+      const result = parser.parse("6ba7b800-9dad-01d1-80b4-00c04fd430c8"); // v0
+
+      assert.ok(!result.success);
+    });
+
+    it("should accept version 0 with strict: false", () => {
+      const parser = uuid({ strict: false });
+      const result = parser.parse("6ba7b800-9dad-01d1-80b4-00c04fd430c8"); // v0
+
+      assert.ok(result.success);
+    });
+
+    it("should reject non-integer allowedVersions", () => {
+      assert.throws(
+        () => uuid({ allowedVersions: [4.5] as never }),
+        (e: unknown) =>
+          e instanceof TypeError &&
+          e.message ===
+            'Expected every element of allowedVersions to be an integer, but got value "4.5" of type "number".',
+      );
+      assert.throws(
+        () => uuid({ allowedVersions: [NaN] as never }),
+        (e: unknown) =>
+          e instanceof TypeError &&
+          e.message ===
+            'Expected every element of allowedVersions to be an integer, but got value "NaN" of type "number".',
+      );
+      assert.throws(
+        () => uuid({ allowedVersions: ["4" as never] }),
+        (e: unknown) =>
+          e instanceof TypeError &&
+          e.message ===
+            'Expected every element of allowedVersions to be an integer, but got value "4" of type "string".',
+      );
+    });
+
+    it("should reject out-of-range allowedVersions", () => {
+      assert.throws(
+        () => uuid({ allowedVersions: [0] as never }),
+        (e: unknown) =>
+          e instanceof RangeError &&
+          e.message ===
+            "Expected every element of allowedVersions to be between 1 and 8, but got: 0.",
+      );
+      assert.throws(
+        () => uuid({ allowedVersions: [9] as never }),
+        (e: unknown) =>
+          e instanceof RangeError &&
+          e.message ===
+            "Expected every element of allowedVersions to be between 1 and 8, but got: 9.",
+      );
+      assert.throws(
+        () => uuid({ allowedVersions: [-1] as never }),
+        (e: unknown) =>
+          e instanceof RangeError &&
+          e.message ===
+            "Expected every element of allowedVersions to be between 1 and 8, but got: -1.",
+      );
+      assert.throws(
+        () => uuid({ allowedVersions: [99] as never }),
+        (e: unknown) =>
+          e instanceof RangeError &&
+          e.message ===
+            "Expected every element of allowedVersions to be between 1 and 8, but got: 99.",
+      );
+      assert.throws(
+        () => uuid({ allowedVersions: [15] as never }),
+        (e: unknown) =>
+          e instanceof RangeError &&
+          e.message ===
+            "Expected every element of allowedVersions to be between 1 and 8, but got: 15.",
+      );
+    });
+
+    it("should deduplicate allowedVersions", () => {
+      const parser = uuid({ allowedVersions: [4, 4, 4] as never });
+      const result = parser.parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8"); // v1
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.equal(
+          formatMessage(result.error, { quotes: false }),
+          "Expected UUID version 4, but got version 1.",
+        );
+      }
+    });
+
+    it("should accept valid allowedVersions", () => {
+      assert.doesNotThrow(() => uuid({ allowedVersions: [1, 4, 7] }));
+      assert.doesNotThrow(() => uuid({ allowedVersions: [] }));
+    });
+
+    it("should snapshot allowedVersions at construction time", () => {
+      const versions: number[] = [4];
+      const parser = uuid({ allowedVersions: versions });
+      // v4 UUID should pass
+      assert.ok(
+        parser.parse("550e8400-e29b-41d4-a716-446655440000").success,
+      );
+      // v1 UUID should fail
+      assert.ok(
+        !parser.parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8").success,
+      );
+      // Mutate versions after construction
+      versions[0] = 1;
+      // Parser should still accept v4 and reject v1
+      assert.ok(
+        parser.parse("550e8400-e29b-41d4-a716-446655440000").success,
+      );
+      assert.ok(
+        !parser.parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8").success,
+      );
+    });
+
+    it("should snapshot errors.invalidUuid at construction time", () => {
+      const errors: { invalidUuid: string } = {
+        invalidUuid: "original error",
+      };
+      const parser = uuid({ errors: errors as never });
+      const result = parser.parse("not-a-uuid");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.invalidUuid = "mutated error";
+      const result2 = parser.parse("not-a-uuid");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+
+    it("should snapshot errors.disallowedVersion at construction time", () => {
+      const errors: { disallowedVersion: string } = {
+        disallowedVersion: "original error",
+      };
+      const parser = uuid({
+        allowedVersions: [4],
+        errors: errors as never,
+      });
+      // v1 UUID triggers disallowedVersion
+      const result = parser.parse(
+        "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      );
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.disallowedVersion = "mutated error";
+      const result2 = parser.parse(
+        "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      );
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+  });
+});
+
+describe("error customization", () => {
+  describe("string parser", () => {
+    it("should use custom patternMismatch error message", () => {
+      const parser = string({
+        pattern: /^\d+$/,
+        errors: {
+          patternMismatch: message`Custom error: input must be numeric.`,
+        },
+      });
+
+      const result = parser.parse("abc");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Custom error: input must be numeric." },
+      ]);
+    });
+
+    it("should use function-based patternMismatch error message", () => {
+      const parser = string({
+        pattern: /^\d+$/,
+        errors: {
+          patternMismatch: (input, pattern) =>
+            message`Value ${input} does not match pattern ${
+              text(pattern.source)
+            }.`,
+        },
+      });
+
+      const result = parser.parse("abc");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Value " },
+        { type: "value", value: "abc" },
+        { type: "text", text: " does not match pattern " },
+        { type: "text", text: "^\\d+$" },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("choice parser", () => {
+    it("should use custom invalidChoice error message", () => {
+      const parser = choice(["red", "green", "blue"], {
+        errors: {
+          invalidChoice: message`Please select a valid color.`,
+        },
+      });
+
+      const result = parser.parse("yellow");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Please select a valid color." },
+      ]);
+    });
+
+    it("should use function-based invalidChoice error message", () => {
+      const parser = choice(["red", "green", "blue"], {
+        errors: {
+          invalidChoice: (input, choices) =>
+            message`${input} is not valid. Choose from: ${values(choices)}.`,
+        },
+      });
+
+      const result = parser.parse("yellow");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "yellow" },
+        { type: "text", text: " is not valid. Choose from: " },
+        { type: "values", values: ["red", "green", "blue"] },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("integer parser", () => {
+    it("should use custom invalidInteger error message", () => {
+      const parser = integer({
+        errors: {
+          invalidInteger: message`Must be a whole number.`,
+        },
+      });
+
+      const result = parser.parse("abc");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Must be a whole number." },
+      ]);
+    });
+
+    it("should use custom belowMinimum error message", () => {
+      const parser = integer({
+        min: 10,
+        errors: {
+          belowMinimum: (value, min) =>
+            message`Value ${text(value.toString())} is too small (minimum: ${
+              text(min.toString())
+            }).`,
+        },
+      });
+
+      const result = parser.parse("5");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Value " },
+        { type: "text", text: "5" },
+        { type: "text", text: " is too small (minimum: " },
+        { type: "text", text: "10" },
+        { type: "text", text: ")." },
+      ]);
+    });
+
+    it("should use custom aboveMaximum error message", () => {
+      const parser = integer({
+        max: 100,
+        errors: {
+          aboveMaximum: (value, max) =>
+            message`Value ${text(value.toString())} exceeds maximum of ${
+              text(max.toString())
+            }.`,
+        },
+      });
+
+      const result = parser.parse("150");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Value " },
+        { type: "text", text: "150" },
+        { type: "text", text: " exceeds maximum of " },
+        { type: "text", text: "100" },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("float parser", () => {
+    it("should use custom invalidNumber error message", () => {
+      const parser = float({
+        errors: {
+          invalidNumber: message`Please enter a valid decimal number.`,
+        },
+      });
+
+      const result = parser.parse("not-a-number");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Please enter a valid decimal number." },
+      ]);
+    });
+
+    it("should use custom belowMinimum error message", () => {
+      const parser = float({
+        min: 0.5,
+        errors: {
+          belowMinimum: (value, min) =>
+            message`${
+              text(value.toString())
+            } is below the minimum threshold of ${text(min.toString())}.`,
+        },
+      });
+
+      const result = parser.parse("0.1");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "0.1" },
+        { type: "text", text: " is below the minimum threshold of " },
+        { type: "text", text: "0.5" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should use custom aboveMaximum error message", () => {
+      const parser = float({
+        max: 10.0,
+        errors: {
+          aboveMaximum: (value, max) =>
+            message`${text(value.toString())} exceeds the maximum limit of ${
+              text(max.toString())
+            }.`,
+        },
+      });
+
+      const result = parser.parse("15.5");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "15.5" },
+        { type: "text", text: " exceeds the maximum limit of " },
+        { type: "text", text: "10" },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("url parser", () => {
+    it("should use custom invalidUrl error message", () => {
+      const parser = url({
+        errors: {
+          invalidUrl: message`Please provide a valid web address.`,
+        },
+      });
+
+      const result = parser.parse("not-a-url");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Please provide a valid web address." },
+      ]);
+    });
+
+    it("should use custom disallowedProtocol error message", () => {
+      const parser = url({
+        allowedProtocols: ["https:"],
+        errors: {
+          disallowedProtocol: (protocol, allowedProtocols) =>
+            message`Protocol ${protocol} not allowed. Use: ${
+              values(allowedProtocols)
+            }.`,
+        },
+      });
+
+      const result = parser.parse("http://example.com");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Protocol " },
+        { type: "value", value: "http:" },
+        { type: "text", text: " not allowed. Use: " },
+        { type: "values", values: ["https:"] },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("locale parser", () => {
+    it("should use custom invalidLocale error message", () => {
+      const parser = locale({
+        errors: {
+          invalidLocale: message`Please use a valid language code.`,
+        },
+      });
+
+      const result = parser.parse("xyz-INVALID-123");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Please use a valid language code." },
+      ]);
+    });
+
+    it("should use function-based invalidLocale error message", () => {
+      const parser = locale({
+        errors: {
+          invalidLocale: (input) =>
+            message`${input} is not a recognized locale identifier.`,
+        },
+      });
+
+      const result = parser.parse("xyz-INVALID-123");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "value", value: "xyz-INVALID-123" },
+        { type: "text", text: " is not a recognized locale identifier." },
+      ]);
+    });
+  });
+
+  describe("uuid parser", () => {
+    it("should use custom invalidUuid error message", () => {
+      const parser = uuid({
+        errors: {
+          invalidUuid: message`Please provide a valid UUID string.`,
+        },
+      });
+
+      const result = parser.parse("not-a-uuid");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "Please provide a valid UUID string." },
+      ]);
+    });
+
+    it("should use custom disallowedVersion error message", () => {
+      const parser = uuid({
+        allowedVersions: [4],
+        errors: {
+          disallowedVersion: (version, allowedVersions) =>
+            message`UUID version ${
+              text(version.toString())
+            } not supported. Need version ${
+              values(allowedVersions.map((v) => v.toString()))
+            }.`,
+        },
+      });
+
+      const result = parser.parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8"); // v1
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: "UUID version " },
+        { type: "text", text: "1" },
+        { type: "text", text: " not supported. Need version " },
+        { type: "values", values: ["4"] },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("error fallback behavior", () => {
+    it("should fall back to default error when custom error is not provided", () => {
+      const parser = integer({
+        min: 10,
+        errors: {
+          invalidInteger: message`Custom invalid message.`,
+          // belowMinimum is not customized, should use default
+        },
+      });
+
+      const result1 = parser.parse("abc");
+      assert.ok(!result1.success);
+      assert.deepEqual(result1.error, [
+        { type: "text", text: "Custom invalid message." },
+      ]);
+
+      const result2 = parser.parse("5");
+      assert.ok(!result2.success);
+      // Should use default error message for belowMinimum
+      assert.ok(
+        result2.error.some((term) =>
+          term.type === "text" &&
+          term.text.includes("Expected a value greater than or equal to")
+        ),
+      );
+    });
+
+    it("should work correctly when no errors option is provided", () => {
+      const parser = integer({ min: 10 });
+
+      const result = parser.parse("5");
+      assert.ok(!result.success);
+      // Should use default error message
+      assert.ok(
+        result.error.some((term) =>
+          term.type === "text" &&
+          term.text.includes("Expected a value greater than or equal to")
+        ),
+      );
+    });
+  });
+});
+
+describe("ValueParser suggest() methods", () => {
+  describe("url parser", () => {
+    it("should suggest protocol completions when allowedProtocols is set", () => {
+      const parser = url({
+        allowedProtocols: ["https:", "http:", "ftp:"],
+      });
+
+      const suggestions = Array.from(parser.suggest!("ht"));
+      const texts = suggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      ).sort();
+
+      assert.deepEqual(texts, ["http://", "https://"]);
+    });
+
+    it("should suggest all protocols for single character prefix", () => {
+      const parser = url({
+        allowedProtocols: ["https:", "http:", "ftp:"],
+      });
+
+      const suggestions = Array.from(parser.suggest!("h"));
+      const texts = suggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      ).sort();
+
+      assert.deepEqual(texts, ["http://", "https://"]);
+    });
+
+    it("should not suggest protocols when input contains ://", () => {
+      const parser = url({
+        allowedProtocols: ["https:", "http:", "ftp:"],
+      });
+
+      const suggestions = Array.from(parser.suggest!("https://example"));
+      assert.equal(suggestions.length, 0);
+    });
+
+    it("should not suggest when no allowedProtocols is set", () => {
+      const parser = url();
+
+      const suggestions = Array.from(parser.suggest!("ht"));
+      assert.equal(suggestions.length, 0);
+    });
+
+    it("should handle case insensitive matching", () => {
+      const parser = url({
+        allowedProtocols: ["HTTPS:", "HTTP:"],
+      });
+
+      const suggestions = Array.from(parser.suggest!("ht"));
+      const texts = suggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      ).sort();
+
+      assert.deepEqual(texts, ["http://", "https://"]);
+    });
+
+    it("should suggest non-hierarchical schemes with ':' not '://'", () => {
+      const parser = url({
+        allowedProtocols: ["mailto:", "urn:", "https:"],
+      });
+
+      const suggestions = Array.from(parser.suggest!("m"));
+      const texts = suggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+      assert.deepEqual(texts, ["mailto:"]);
+
+      const suggestions2 = Array.from(parser.suggest!("u"));
+      const texts2 = suggestions2.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+      assert.deepEqual(texts2, ["urn:"]);
+
+      const suggestions3 = Array.from(parser.suggest!("h"));
+      const texts3 = suggestions3.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+      assert.deepEqual(texts3, ["https://"]);
+    });
+
+    it("should stop suggesting after prefix contains ':'", () => {
+      const parser = url({
+        allowedProtocols: ["mailto:", "https:"],
+      });
+
+      assert.deepEqual(
+        Array.from(parser.suggest!("mailto:someone")),
+        [],
+      );
+      assert.deepEqual(
+        Array.from(parser.suggest!("https:")),
+        [],
+      );
+    });
+  });
+
+  describe("locale parser", () => {
+    it("should suggest common locales with matching prefix", () => {
+      const parser = locale();
+
+      const suggestions = Array.from(parser.suggest!("en"));
+      const texts = suggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+
+      assert.ok(texts.includes("en"));
+      assert.ok(texts.includes("en-US"));
+      assert.ok(texts.includes("en-GB"));
+      assert.ok(!texts.includes("fr"));
+    });
+
+    it("should suggest multiple language families", () => {
+      const parser = locale();
+
+      const suggestions = Array.from(parser.suggest!("de"));
+      const texts = suggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+
+      assert.ok(texts.includes("de"));
+      assert.ok(texts.includes("de-DE"));
+      assert.ok(texts.includes("de-AT"));
+    });
+
+    it("should handle case insensitive matching", () => {
+      const parser = locale();
+
+      const suggestions = Array.from(parser.suggest!("EN"));
+      const texts = suggestions.map((s) =>
+        s.kind === "literal" ? s.text : s.pattern || ""
+      );
+
+      assert.ok(texts.length > 0);
+      assert.ok(texts.includes("en"));
+    });
+
+    it("should return empty for non-matching prefix", () => {
+      const parser = locale();
+
+      const suggestions = Array.from(parser.suggest!("xyz"));
+      assert.equal(suggestions.length, 0);
+    });
+  });
+});
+
+describe("string", () => {
+  describe("basic parsing", () => {
+    it("should parse any string without options", () => {
+      const parser = string();
+
+      const result1 = parser.parse("hello");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "hello");
+      }
+
+      const result2 = parser.parse("123");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "123");
+      }
+    });
+
+    it("should parse empty string", () => {
+      const parser = string();
+
+      const result = parser.parse("");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "");
+      }
+    });
+
+    it("should parse strings with unicode characters", () => {
+      const parser = string();
+
+      const result1 = parser.parse("hello 세계");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "hello 세계");
+      }
+
+      const result2 = parser.parse("日本語");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "日本語");
+      }
+
+      const result3 = parser.parse("émojis: 🎉🚀");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, "émojis: 🎉🚀");
+      }
+    });
+
+    it("should parse strings with special characters", () => {
+      const parser = string();
+
+      const result1 = parser.parse("hello\nworld");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, "hello\nworld");
+      }
+
+      const result2 = parser.parse("tab\there");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, "tab\there");
+      }
+    });
+  });
+
+  describe("pattern matching", () => {
+    it("should accept strings matching pattern", () => {
+      const parser = string({ pattern: /^[a-z]+$/ });
+
+      const result = parser.parse("hello");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, "hello");
+      }
+    });
+
+    it("should reject strings not matching pattern", () => {
+      const parser = string({ pattern: /^[a-z]+$/ });
+
+      const result = parser.parse("Hello123");
+      assert.ok(!result.success);
+    });
+
+    it("should handle pattern with empty string", () => {
+      const parser = string({ pattern: /^$/ });
+
+      const result1 = parser.parse("");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("non-empty");
+      assert.ok(!result2.success);
+    });
+
+    it("should throw TypeError when pattern is not a RegExp", () => {
+      assert.throws(
+        () => string({ pattern: "abc" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => string({ pattern: 123 as never }),
+        TypeError,
+      );
+    });
+
+    it("should snapshot pattern at construction time", () => {
+      const options: { pattern: RegExp } = { pattern: /^a$/ };
+      const parser = string(options);
+      assert.ok(parser.parse("a").success);
+      assert.ok(!parser.parse("b").success);
+      // Mutate the options after construction
+      options.pattern = /^b$/;
+      // Parser should still use the original pattern
+      assert.ok(parser.parse("a").success);
+      assert.ok(!parser.parse("b").success);
+    });
+
+    it("should snapshot errors.patternMismatch at construction time", () => {
+      const errors: {
+        patternMismatch: string | ((i: string, p: RegExp) => string);
+      } = {
+        patternMismatch: "original error",
+      };
+      const parser = string({ pattern: /^a$/, errors: errors as never });
+      const result = parser.parse("b");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      // Mutate errors after construction
+      errors.patternMismatch = "mutated error";
+      const result2 = parser.parse("b");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+  });
+});
+
+describe("integer edge cases", () => {
+  describe("number parser edge cases", () => {
+    it("should handle leading zeros", () => {
+      const parser = integer({});
+
+      const result1 = parser.parse("007");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 7);
+      }
+
+      const result2 = parser.parse("00123");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 123);
+      }
+    });
+
+    it("should handle Number.MAX_SAFE_INTEGER boundary", () => {
+      const parser = integer({});
+
+      const result1 = parser.parse(Number.MAX_SAFE_INTEGER.toString());
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, Number.MAX_SAFE_INTEGER);
+      }
+
+      // MAX_SAFE_INTEGER + 1: exactly representable as a number, but outside
+      // the safe integer range
+      const result2 = parser.parse("9007199254740992"); // MAX_SAFE_INTEGER + 1
+      assert.ok(!result2.success);
+      if (!result2.success) {
+        assert.deepEqual(
+          result2.error,
+          message`Expected a safe integer between ${
+            text(Number.MIN_SAFE_INTEGER.toLocaleString("en"))
+          } and ${
+            text(Number.MAX_SAFE_INTEGER.toLocaleString("en"))
+          }, but got ${"9007199254740992"}. Use type: "bigint" for large values.`,
+        );
+      }
+
+      // MAX_SAFE_INTEGER + 2
+      const result3 = parser.parse("9007199254740993");
+      assert.ok(!result3.success);
+    });
+
+    it("should handle Number.MIN_SAFE_INTEGER boundary", () => {
+      const parser = integer({});
+
+      const result1 = parser.parse(Number.MIN_SAFE_INTEGER.toString());
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, Number.MIN_SAFE_INTEGER);
+      }
+
+      // MIN_SAFE_INTEGER - 1
+      const result2 = parser.parse("-9007199254740992");
+      assert.ok(!result2.success);
+
+      // MIN_SAFE_INTEGER - 2
+      const result3 = parser.parse("-9007199254740993");
+      assert.ok(!result3.success);
+    });
+
+    it("should reject very large integers in number mode", () => {
+      const parser = integer({});
+
+      const result = parser.parse("9999999999999999999999999999");
+      assert.ok(!result.success);
+    });
+
+    it("should use custom unsafeInteger function callback", () => {
+      const parser = integer({
+        errors: {
+          unsafeInteger: (input: string) => message`Unsafe value: ${input}.`,
+        },
+      });
+
+      const result = parser.parse("9007199254740993");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          message`Unsafe value: ${"9007199254740993"}.`,
+        );
+      }
+    });
+
+    it("should use custom unsafeInteger static message", () => {
+      const parser = integer({
+        errors: {
+          unsafeInteger: message`Value out of safe range.`,
+        },
+      });
+
+      const result = parser.parse("9007199254740993");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          message`Value out of safe range.`,
+        );
+      }
+    });
+
+    it("should accept negative integers", () => {
+      const parser = integer({});
+
+      const result = parser.parse("-42");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, -42);
+      }
+    });
+  });
+
+  describe("bigint parser edge cases", () => {
+    it("should handle leading zeros", () => {
+      const parser = integer({ type: "bigint" });
+
+      const result = parser.parse("007");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, 7n);
+      }
+    });
+
+    it("should handle extremely large numbers", () => {
+      const parser = integer({ type: "bigint" });
+      const veryLarge =
+        "123456789012345678901234567890123456789012345678901234567890";
+
+      const result = parser.parse(veryLarge);
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, BigInt(veryLarge));
+      }
+    });
+
+    it("should handle negative zero", () => {
+      const parser = integer({ type: "bigint" });
+
+      const result = parser.parse("-0");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, 0n);
+      }
+    });
+  });
+});
+
+describe("float edge cases", () => {
+  it("should handle very large exponents", () => {
+    const parser = float({});
+
+    const result1 = parser.parse("1e308");
+    assert.ok(result1.success);
+    if (result1.success) {
+      assert.equal(result1.value, 1e308);
+    }
+
+    const result2 = parser.parse("1e-308");
+    assert.ok(result2.success);
+    if (result2.success) {
+      assert.equal(result2.value, 1e-308);
+    }
+  });
+
+  it("should reject values that overflow to Infinity by default", () => {
+    const parser = float({});
+
+    // 1e309 is beyond the range of a JavaScript number and becomes Infinity
+    const result1 = parser.parse("1e309");
+    assert.ok(!result1.success);
+
+    const result2 = parser.parse("-1e309");
+    assert.ok(!result2.success);
+  });
+
+  it("should accept values that become Infinity when allowInfinity is true", () => {
+    const parser = float({ allowInfinity: true });
+
+    const result = parser.parse("1e309");
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value, Infinity);
+    }
+  });
+
+  it("should handle negative zero", () => {
+    const parser = float({});
+
+    const result = parser.parse("-0");
+    assert.ok(result.success);
+    if (result.success) {
+      // Note: Object.is can distinguish -0 from 0
+      assert.ok(Object.is(result.value, -0));
+    }
+  });
+
+  it("should handle subnormal numbers", () => {
+    const parser = float({});
+
+    // Smallest positive subnormal number
+    const result = parser.parse("5e-324");
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value, 5e-324);
+    }
+  });
+
+  it("should handle numbers very close to zero", () => {
+    const parser = float({});
+
+    const result = parser.parse("0.0000000001");
+    assert.ok(result.success);
+    if (result.success) {
+      assert.equal(result.value, 0.0000000001);
+    }
+  });
+});
+
+describe("ensureNonEmptyString", () => {
+  it("should throw TypeError for empty metavar in string()", () => {
+    assert.throws(
+      () => string({ metavar: "" as unknown as NonEmptyString }),
+      TypeError,
+      "Expected a non-empty string.",
+    );
+  });
+
+  it("should throw TypeError for empty metavar in choice()", () => {
+    assert.throws(
+      () => choice(["a", "b"], { metavar: "" as unknown as NonEmptyString }),
+      TypeError,
+      "Expected a non-empty string.",
+    );
+  });
+
+  it("should throw TypeError for empty metavar in integer()", () => {
+    assert.throws(
+      () => integer({ metavar: "" as unknown as NonEmptyString }),
+      TypeError,
+      "Expected a non-empty string.",
+    );
+  });
+
+  it("should throw TypeError for empty metavar in integer() with bigint", () => {
+    assert.throws(
+      () =>
+        integer({ type: "bigint", metavar: "" as unknown as NonEmptyString }),
+      TypeError,
+      "Expected a non-empty string.",
+    );
+  });
+
+  it("should throw TypeError for empty metavar in float()", () => {
+    assert.throws(
+      () => float({ metavar: "" as unknown as NonEmptyString }),
+      TypeError,
+      "Expected a non-empty string.",
+    );
+  });
+
+  it("should throw TypeError for empty metavar in url()", () => {
+    assert.throws(
+      () => url({ metavar: "" as unknown as NonEmptyString }),
+      TypeError,
+      "Expected a non-empty string.",
+    );
+  });
+
+  it("should throw TypeError for empty metavar in locale()", () => {
+    assert.throws(
+      () => locale({ metavar: "" as unknown as NonEmptyString }),
+      TypeError,
+      "Expected a non-empty string.",
+    );
+  });
+
+  it("should throw TypeError for empty metavar in uuid()", () => {
+    assert.throws(
+      () => uuid({ metavar: "" as unknown as NonEmptyString }),
+      TypeError,
+      "Expected a non-empty string.",
+    );
+  });
+
+  it("should accept non-empty metavar", () => {
+    const parser = string({ metavar: "FILE" });
+    assert.equal(parser.metavar, "FILE");
+  });
+});
+
+describe("port", () => {
+  describe("number parser", () => {
+    it("should parse valid port numbers", () => {
+      const parser = port({});
+
+      const result1 = parser.parse("8080");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 8080);
+        assert.equal(typeof result1.value, "number");
+      }
+
+      const result2 = parser.parse("1");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 1);
+      }
+
+      const result3 = parser.parse("65535");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, 65535);
+      }
+
+      const result4 = parser.parse("3000");
+      assert.ok(result4.success);
+      if (result4.success) {
+        assert.equal(result4.value, 3000);
+      }
+    });
+
+    it("should reject invalid port numbers", () => {
+      const parser = port({});
+
+      const result1 = parser.parse("abc");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("8080.5");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("1e4");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("");
+      assert.ok(!result4.success);
+
+      const result5 = parser.parse("  8080  ");
+      assert.ok(!result5.success);
+
+      const result6 = parser.parse("-8080");
+      assert.ok(!result6.success);
+    });
+
+    it("should enforce default minimum constraint (1)", () => {
+      const parser = port({});
+
+      const result1 = parser.parse("1");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("0");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("-1");
+      assert.ok(!result3.success);
+    });
+
+    it("should enforce default maximum constraint (65535)", () => {
+      const parser = port({});
+
+      const result1 = parser.parse("65535");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("65536");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("100000");
+      assert.ok(!result3.success);
+    });
+
+    it("should enforce custom minimum constraint", () => {
+      const parser = port({ min: 1024 });
+
+      const result1 = parser.parse("1024");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 1024);
+      }
+
+      const result2 = parser.parse("8080");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("1023");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("80");
+      assert.ok(!result4.success);
+    });
+
+    it("should enforce custom maximum constraint", () => {
+      const parser = port({ max: 9000 });
+
+      const result1 = parser.parse("9000");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 9000);
+      }
+
+      const result2 = parser.parse("8080");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("9001");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("65535");
+      assert.ok(!result4.success);
+    });
+
+    it("should enforce both min and max constraints", () => {
+      const parser = port({ min: 3000, max: 9000 });
+
+      const result1 = parser.parse("3000");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("8080");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("9000");
+      assert.ok(result3.success);
+
+      const result4 = parser.parse("2999");
+      assert.ok(!result4.success);
+
+      const result5 = parser.parse("9001");
+      assert.ok(!result5.success);
+    });
+
+    it("should disallow well-known ports when requested", () => {
+      const parser = port({ disallowWellKnown: true });
+
+      const result1 = parser.parse("1024");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("8080");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("1023");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("80");
+      assert.ok(!result4.success);
+
+      const result5 = parser.parse("443");
+      assert.ok(!result5.success);
+
+      const result6 = parser.parse("22");
+      assert.ok(!result6.success);
+
+      const result7 = parser.parse("1");
+      assert.ok(!result7.success);
+    });
+
+    it("should allow well-known ports by default", () => {
+      const parser = port({});
+
+      const result1 = parser.parse("80");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("443");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("22");
+      assert.ok(result3.success);
+
+      const result4 = parser.parse("1023");
+      assert.ok(result4.success);
+    });
+
+    it("should work with custom min and disallowWellKnown together", () => {
+      const parser = port({ min: 100, disallowWellKnown: true });
+
+      const result1 = parser.parse("1024");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("500");
+      assert.ok(!result2.success); // below 1024 (well-known)
+
+      const result3 = parser.parse("99");
+      assert.ok(!result3.success); // below min and well-known
+    });
+  });
+
+  describe("bigint parser", () => {
+    it("should parse valid port numbers as bigint", () => {
+      const parser = port({ type: "bigint" });
+
+      const result1 = parser.parse("8080");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 8080n);
+        assert.equal(typeof result1.value, "bigint");
+      }
+
+      const result2 = parser.parse("1");
+      assert.ok(result2.success);
+      if (result2.success) {
+        assert.equal(result2.value, 1n);
+      }
+
+      const result3 = parser.parse("65535");
+      assert.ok(result3.success);
+      if (result3.success) {
+        assert.equal(result3.value, 65535n);
+      }
+    });
+
+    it("should reject invalid port numbers", () => {
+      const parser = port({ type: "bigint" });
+
+      const result1 = parser.parse("abc");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("8080.5");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("1e4");
+      assert.ok(!result3.success);
+    });
+
+    it("should reject non-decimal literals and whitespace", () => {
+      const parser = port({ type: "bigint" });
+
+      assert.ok(!parser.parse("").success);
+      assert.ok(!parser.parse("   ").success);
+      assert.ok(!parser.parse("+1").success);
+      assert.ok(!parser.parse("0x50").success);
+      assert.ok(!parser.parse("0b10").success);
+      assert.ok(!parser.parse("0o10").success);
+      assert.ok(!parser.parse(" 8080 ").success);
+    });
+
+    it("should enforce bigint minimum constraint", () => {
+      const parser = port({ type: "bigint", min: 1024n });
+
+      const result1 = parser.parse("1024");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 1024n);
+      }
+
+      const result2 = parser.parse("8080");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("1023");
+      assert.ok(!result3.success);
+    });
+
+    it("should enforce bigint maximum constraint", () => {
+      const parser = port({ type: "bigint", max: 9000n });
+
+      const result1 = parser.parse("9000");
+      assert.ok(result1.success);
+      if (result1.success) {
+        assert.equal(result1.value, 9000n);
+      }
+
+      const result2 = parser.parse("8080");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("9001");
+      assert.ok(!result3.success);
+    });
+
+    it("should enforce default constraints with bigint", () => {
+      const parser = port({ type: "bigint" });
+
+      const result1 = parser.parse("1");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("0");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("65535");
+      assert.ok(result3.success);
+
+      const result4 = parser.parse("65536");
+      assert.ok(!result4.success);
+    });
+
+    it("should disallow well-known ports with bigint", () => {
+      const parser = port({ type: "bigint", disallowWellKnown: true });
+
+      const result1 = parser.parse("1024");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("80");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("443");
+      assert.ok(!result3.success);
+    });
+  });
+
+  describe("format() method", () => {
+    it("should format number port correctly", () => {
+      const parser = port({});
+
+      assert.equal(parser.format(8080), "8080");
+      assert.equal(parser.format(80), "80");
+      assert.equal(parser.format(65535), "65535");
+      assert.equal(parser.format(1), "1");
+    });
+
+    it("should format bigint port correctly", () => {
+      const parser = port({ type: "bigint" });
+
+      assert.equal(parser.format(8080n), "8080");
+      assert.equal(parser.format(80n), "80");
+      assert.equal(parser.format(65535n), "65535");
+      assert.equal(parser.format(1n), "1");
+    });
+  });
+
+  describe("error messages", () => {
+    it("should provide structured error messages for invalid port", () => {
+      const parser = port({});
+
+      const result = parser.parse("abc");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Expected a valid port number, but got " },
+            { type: "value", value: "abc" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for below minimum", () => {
+      const parser = port({ min: 1024 });
+
+      const result = parser.parse("80");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            {
+              type: "text",
+              text: "Expected a port number greater than or equal to ",
+            },
+            { type: "text", text: "1,024" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "80" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for above maximum", () => {
+      const parser = port({ max: 9000 });
+
+      const result = parser.parse("10000");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            {
+              type: "text",
+              text: "Expected a port number less than or equal to ",
+            },
+            { type: "text", text: "9,000" },
+            { type: "text", text: ", but got " },
+            { type: "value", value: "10000" },
+            { type: "text", text: "." },
+          ] as const,
+        );
+      }
+    });
+
+    it("should provide structured error messages for well-known ports", () => {
+      const parser = port({ disallowWellKnown: true });
+
+      const result = parser.parse("80");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(
+          result.error,
+          [
+            { type: "text", text: "Port " },
+            { type: "value", value: "80" },
+            {
+              type: "text",
+              text:
+                " is a well-known port (1-1023) and may require elevated privileges.",
+            },
+          ] as const,
+        );
+      }
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("should use custom invalidPort error message", () => {
+      const parser = port({
+        errors: {
+          invalidPort: message`Must be a valid port number.`,
+        },
+      });
+
+      const result = parser.parse("abc");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Must be a valid port number." },
+        ]);
+      }
+    });
+
+    it("should use function-based invalidPort error message", () => {
+      const parser = port({
+        errors: {
+          invalidPort: (input) => message`${input} is not a valid port.`,
+        },
+      });
+
+      const result = parser.parse("abc");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "value", value: "abc" },
+          { type: "text", text: " is not a valid port." },
+        ]);
+      }
+    });
+
+    it("should use custom belowMinimum error message", () => {
+      const parser = port({
+        min: 1024,
+        errors: {
+          belowMinimum: (port, min) =>
+            message`Port ${text(port.toString())} is below minimum ${
+              text(min.toString())
+            }.`,
+        },
+      });
+
+      const result = parser.parse("80");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Port " },
+          { type: "text", text: "80" },
+          { type: "text", text: " is below minimum " },
+          { type: "text", text: "1024" },
+          { type: "text", text: "." },
+        ]);
+      }
+    });
+
+    it("should use custom aboveMaximum error message", () => {
+      const parser = port({
+        max: 9000,
+        errors: {
+          aboveMaximum: (port, max) =>
+            message`Port ${text(port.toString())} exceeds maximum ${
+              text(max.toString())
+            }.`,
+        },
+      });
+
+      const result = parser.parse("10000");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Port " },
+          { type: "text", text: "10000" },
+          { type: "text", text: " exceeds maximum " },
+          { type: "text", text: "9000" },
+          { type: "text", text: "." },
+        ]);
+      }
+    });
+
+    it("should use custom wellKnownNotAllowed error message", () => {
+      const parser = port({
+        disallowWellKnown: true,
+        errors: {
+          wellKnownNotAllowed: (port) =>
+            message`Cannot use privileged port ${text(port.toString())}.`,
+        },
+      });
+
+      const result = parser.parse("80");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Cannot use privileged port " },
+          { type: "text", text: "80" },
+          { type: "text", text: "." },
+        ]);
+      }
+    });
+  });
+
+  describe("custom metavar", () => {
+    it("should use custom metavar when provided", () => {
+      const parser = port({ metavar: "SERVER_PORT" });
+      assert.equal(parser.metavar, "SERVER_PORT");
+    });
+
+    it("should use default metavar when not provided", () => {
+      const parser = port({});
+      assert.equal(parser.metavar, "PORT");
+    });
+
+    it("should use custom metavar with bigint type", () => {
+      const parser = port({ type: "bigint", metavar: "LISTEN_PORT" });
+      assert.equal(parser.metavar, "LISTEN_PORT");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle common web server ports", () => {
+      const parser = port({});
+
+      const commonPorts = [
+        "80", // HTTP
+        "443", // HTTPS
+        "8080", // HTTP alternate
+        "8443", // HTTPS alternate
+        "3000", // Node.js dev
+        "5000", // Flask dev
+        "8000", // Django dev
+      ];
+
+      for (const portStr of commonPorts) {
+        const result = parser.parse(portStr);
+        assert.ok(result.success, `Should accept common port ${portStr}`);
+      }
+    });
+
+    it("should handle database ports", () => {
+      const parser = port({});
+
+      const dbPorts = [
+        "3306", // MySQL
+        "5432", // PostgreSQL
+        "27017", // MongoDB
+        "6379", // Redis
+        "9042", // Cassandra
+      ];
+
+      for (const portStr of dbPorts) {
+        const result = parser.parse(portStr);
+        assert.ok(result.success, `Should accept database port ${portStr}`);
+      }
+    });
+
+    it("should reject port 0", () => {
+      const parser = port({});
+
+      const result = parser.parse("0");
+      assert.ok(!result.success);
+    });
+
+    it("should accept minimum port with custom min", () => {
+      const parser = port({ min: 0 });
+
+      const result = parser.parse("0");
+      assert.ok(result.success);
+      if (result.success) {
+        assert.equal(result.value, 0);
+      }
+    });
+  });
+
+  describe("boolean option validation", () => {
+    it("should reject non-boolean disallowWellKnown option", () => {
+      assert.throws(
+        () => port({ disallowWellKnown: "no" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ disallowWellKnown: 1 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ disallowWellKnown: "true" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ disallowWellKnown: 0 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ disallowWellKnown: null as never }),
+        TypeError,
+      );
+    });
+
+    it("should reject non-boolean disallowWellKnown option (bigint)", () => {
+      assert.throws(
+        () => port({ type: "bigint", disallowWellKnown: "no" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ type: "bigint", disallowWellKnown: 1 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ type: "bigint", disallowWellKnown: "true" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ type: "bigint", disallowWellKnown: 0 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ type: "bigint", disallowWellKnown: null as never }),
+        TypeError,
+      );
+    });
+
+    it("should throw RangeError when disallowWellKnown range covers only well-known ports (number)", () => {
+      // When both min and max are below 1024 and disallowWellKnown is true,
+      // every port in the range would be rejected, so construction must fail.
+      assert.throws(
+        () => port({ min: 80, max: 443, disallowWellKnown: true }),
+        {
+          name: "RangeError",
+          message:
+            "disallowWellKnown is incompatible with the configured port range: " +
+            "all ports 80..443 are well-known.",
+        },
+      );
+    });
+
+    it("should throw RangeError when disallowWellKnown range covers only well-known ports (bigint)", () => {
+      assert.throws(
+        () =>
+          port({
+            type: "bigint",
+            min: 80n,
+            max: 443n,
+            disallowWellKnown: true,
+          }),
+        {
+          name: "RangeError",
+          message:
+            "disallowWellKnown is incompatible with the configured port range: " +
+            "all ports 80..443 are well-known.",
+        },
+      );
+    });
+  });
+
+  describe("type discriminant validation", () => {
+    it("should reject invalid type discriminant", () => {
+      assert.throws(
+        () => port({ type: "num" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ type: 123 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ type: null as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => port({ type: "" as never }),
+        TypeError,
+      );
+    });
+
+    it("should accept valid type discriminant", () => {
+      assert.ok(port({ type: "number" }));
+      assert.ok(port({ type: "bigint" }));
+      assert.ok(port());
+    });
+  });
+
+  describe("ipv4()", () => {
+    describe("basic validation", () => {
+      it("should accept valid IPv4 addresses", () => {
+        const parser = ipv4();
+
+        const validAddresses = [
+          "192.168.1.1",
+          "10.0.0.1",
+          "172.16.0.1",
+          "8.8.8.8",
+          "1.1.1.1",
+          "255.255.255.255",
+          "0.0.0.0",
+          "127.0.0.1",
+        ];
+
+        for (const addr of validAddresses) {
+          const result = parser.parse(addr);
+          assert.ok(
+            result.success,
+            `Should accept valid IPv4 address ${addr}`,
+          );
+          if (result.success) {
+            assert.equal(result.value, addr);
+          }
+        }
+      });
+
+      it("should reject invalid IPv4 addresses", () => {
+        const parser = ipv4();
+
+        const invalidAddresses = [
+          "256.1.1.1", // Octet > 255
+          "1.256.1.1",
+          "1.1.256.1",
+          "1.1.1.256",
+          "192.168.1", // Only 3 octets
+          "192.168.1.1.1", // 5 octets
+          "192.168.1.a", // Non-numeric
+          "192.168.1.-1", // Negative
+          "192.168.1.1.1.1", // Too many octets
+          "", // Empty
+          "192.168..1", // Empty octet
+          "....", // All dots
+          "not-an-ip",
+        ];
+
+        for (const addr of invalidAddresses) {
+          const result = parser.parse(addr);
+          assert.ok(
+            !result.success,
+            `Should reject invalid IPv4 address ${addr}`,
+          );
+        }
+      });
+
+      it("should reject leading zeros", () => {
+        const parser = ipv4();
+
+        const withLeadingZeros = [
+          "192.168.001.1",
+          "010.0.0.1",
+          "192.168.1.01",
+          "01.01.01.01",
+        ];
+
+        for (const addr of withLeadingZeros) {
+          const result = parser.parse(addr);
+          assert.ok(
+            !result.success,
+            `Should reject IPv4 with leading zeros: ${addr}`,
+          );
+        }
+      });
+
+      it("should accept single zero octet", () => {
+        const parser = ipv4();
+
+        const result = parser.parse("192.168.0.1");
+        assert.ok(result.success);
+        if (result.success) {
+          assert.equal(result.value, "192.168.0.1");
+        }
+      });
+
+      it("should reject non-decimal octet representations", () => {
+        const parser = ipv4();
+
+        const nonDecimal = [
+          "192e0.168.1.1", // Scientific notation
+          "+127.0.0.1", // Unary plus
+          "1e2.0.0.1", // 100 via scientific notation
+          "25e0.0.0.1", // 25 via scientific notation
+        ];
+
+        for (const addr of nonDecimal) {
+          const result = parser.parse(addr);
+          assert.ok(
+            !result.success,
+            `Should reject non-decimal IPv4 octet: ${addr}`,
+          );
+        }
+      });
+    });
+
+    describe("private IP filtering", () => {
+      it("should allow private IPs by default", () => {
+        const parser = ipv4();
+
+        const privateIps = [
+          "10.0.0.1",
+          "10.255.255.255",
+          "172.16.0.1",
+          "172.31.255.255",
+          "192.168.0.1",
+          "192.168.255.255",
+        ];
+
+        for (const ip of privateIps) {
+          const result = parser.parse(ip);
+          assert.ok(result.success, `Should accept private IP ${ip}`);
+        }
+      });
+
+      it("should reject private IPs when disallowed", () => {
+        const parser = ipv4({ allowPrivate: false });
+
+        const privateIps = [
+          "10.0.0.1", // 10.0.0.0/8
+          "10.255.255.255",
+          "172.16.0.1", // 172.16.0.0/12
+          "172.31.255.255",
+          "192.168.0.1", // 192.168.0.0/16
+          "192.168.255.255",
+        ];
+
+        for (const ip of privateIps) {
+          const result = parser.parse(ip);
+          assert.ok(!result.success, `Should reject private IP ${ip}`);
+        }
+      });
+
+      it("should accept public IPs when private is disallowed", () => {
+        const parser = ipv4({ allowPrivate: false });
+
+        const publicIps = [
+          "8.8.8.8",
+          "1.1.1.1",
+          "172.32.0.1", // Just outside 172.16.0.0/12
+          "172.15.255.255",
+          "11.0.0.1", // Just outside 10.0.0.0/8
+        ];
+
+        for (const ip of publicIps) {
+          const result = parser.parse(ip);
+          assert.ok(result.success, `Should accept public IP ${ip}`);
+        }
+      });
+    });
+
+    describe("loopback IP filtering", () => {
+      it("should allow loopback IPs by default", () => {
+        const parser = ipv4();
+
+        const loopbackIps = [
+          "127.0.0.1",
+          "127.0.0.0",
+          "127.255.255.255",
+          "127.1.2.3",
+        ];
+
+        for (const ip of loopbackIps) {
+          const result = parser.parse(ip);
+          assert.ok(result.success, `Should accept loopback IP ${ip}`);
+        }
+      });
+
+      it("should reject loopback IPs when disallowed", () => {
+        const parser = ipv4({ allowLoopback: false });
+
+        const loopbackIps = [
+          "127.0.0.1",
+          "127.0.0.0",
+          "127.255.255.255",
+          "127.1.2.3",
+        ];
+
+        for (const ip of loopbackIps) {
+          const result = parser.parse(ip);
+          assert.ok(!result.success, `Should reject loopback IP ${ip}`);
+        }
+      });
+
+      it("should accept non-loopback IPs when loopback is disallowed", () => {
+        const parser = ipv4({ allowLoopback: false });
+
+        const result = parser.parse("8.8.8.8");
+        assert.ok(result.success);
+      });
+    });
+
+    describe("link-local IP filtering", () => {
+      it("should allow link-local IPs by default", () => {
+        const parser = ipv4();
+
+        const linkLocalIps = [
+          "169.254.0.0",
+          "169.254.1.1",
+          "169.254.255.255",
+        ];
+
+        for (const ip of linkLocalIps) {
+          const result = parser.parse(ip);
+          assert.ok(result.success, `Should accept link-local IP ${ip}`);
+        }
+      });
+
+      it("should reject link-local IPs when disallowed", () => {
+        const parser = ipv4({ allowLinkLocal: false });
+
+        const linkLocalIps = [
+          "169.254.0.0",
+          "169.254.1.1",
+          "169.254.255.255",
+        ];
+
+        for (const ip of linkLocalIps) {
+          const result = parser.parse(ip);
+          assert.ok(!result.success, `Should reject link-local IP ${ip}`);
+        }
+      });
+    });
+
+    describe("multicast IP filtering", () => {
+      it("should allow multicast IPs by default", () => {
+        const parser = ipv4();
+
+        const multicastIps = [
+          "224.0.0.0",
+          "224.0.0.1",
+          "239.255.255.255",
+          "230.1.2.3",
+        ];
+
+        for (const ip of multicastIps) {
+          const result = parser.parse(ip);
+          assert.ok(result.success, `Should accept multicast IP ${ip}`);
+        }
+      });
+
+      it("should reject multicast IPs when disallowed", () => {
+        const parser = ipv4({ allowMulticast: false });
+
+        const multicastIps = [
+          "224.0.0.0",
+          "224.0.0.1",
+          "239.255.255.255",
+          "230.1.2.3",
+        ];
+
+        for (const ip of multicastIps) {
+          const result = parser.parse(ip);
+          assert.ok(!result.success, `Should reject multicast IP ${ip}`);
+        }
+      });
+    });
+
+    describe("broadcast IP filtering", () => {
+      it("should allow broadcast IP by default", () => {
+        const parser = ipv4();
+
+        const result = parser.parse("255.255.255.255");
+        assert.ok(result.success);
+        if (result.success) {
+          assert.equal(result.value, "255.255.255.255");
+        }
+      });
+
+      it("should reject broadcast IP when disallowed", () => {
+        const parser = ipv4({ allowBroadcast: false });
+
+        const result = parser.parse("255.255.255.255");
+        assert.ok(!result.success);
+      });
+
+      it("should accept non-broadcast IPs when broadcast is disallowed", () => {
+        const parser = ipv4({ allowBroadcast: false });
+
+        const result = parser.parse("255.255.255.254");
+        assert.ok(result.success);
+      });
+    });
+
+    describe("zero address filtering", () => {
+      it("should allow zero address by default", () => {
+        const parser = ipv4();
+
+        const result = parser.parse("0.0.0.0");
+        assert.ok(result.success);
+        if (result.success) {
+          assert.equal(result.value, "0.0.0.0");
+        }
+      });
+
+      it("should reject zero address when disallowed", () => {
+        const parser = ipv4({ allowZero: false });
+
+        const result = parser.parse("0.0.0.0");
+        assert.ok(!result.success);
+      });
+
+      it("should accept non-zero IPs when zero is disallowed", () => {
+        const parser = ipv4({ allowZero: false });
+
+        const result = parser.parse("0.0.0.1");
+        assert.ok(result.success);
+      });
+    });
+
+    describe("combined filters", () => {
+      it("should apply multiple filters", () => {
+        const parser = ipv4({
+          allowPrivate: false,
+          allowLoopback: false,
+          allowLinkLocal: false,
+        });
+
+        // Should reject private
+        assert.ok(!parser.parse("192.168.1.1").success);
+        // Should reject loopback
+        assert.ok(!parser.parse("127.0.0.1").success);
+        // Should reject link-local
+        assert.ok(!parser.parse("169.254.1.1").success);
+        // Should accept public
+        assert.ok(parser.parse("8.8.8.8").success);
+      });
+
+      it("should accept when all filters allow", () => {
+        const parser = ipv4({
+          allowPrivate: true,
+          allowLoopback: true,
+          allowLinkLocal: true,
+          allowMulticast: true,
+          allowBroadcast: true,
+          allowZero: true,
+        });
+
+        assert.ok(parser.parse("192.168.1.1").success);
+        assert.ok(parser.parse("127.0.0.1").success);
+        assert.ok(parser.parse("169.254.1.1").success);
+        assert.ok(parser.parse("224.0.0.1").success);
+        assert.ok(parser.parse("255.255.255.255").success);
+        assert.ok(parser.parse("0.0.0.0").success);
+      });
+    });
+
+    describe("custom error messages", () => {
+      it("should use custom invalidIpv4 error message", () => {
+        const customError = message`Custom IPv4 error`;
+        const parser = ipv4({
+          errors: {
+            invalidIpv4: customError,
+          },
+        });
+
+        const result = parser.parse("not-an-ip");
+        assert.ok(!result.success);
+        if (!result.success) {
+          assert.deepEqual(result.error, customError);
+        }
+      });
+
+      it("should use custom privateNotAllowed error message", () => {
+        const customError = message`Private IP not allowed`;
+        const parser = ipv4({
+          allowPrivate: false,
+          errors: {
+            privateNotAllowed: customError,
+          },
+        });
+
+        const result = parser.parse("192.168.1.1");
+        assert.ok(!result.success);
+        if (!result.success) {
+          assert.deepEqual(result.error, customError);
+        }
+      });
+
+      it("should use custom error function", () => {
+        const parser = ipv4({
+          allowLoopback: false,
+          errors: {
+            loopbackNotAllowed: (ip) => message`No loopback: ${ip}`,
+          },
+        });
+
+        const result = parser.parse("127.0.0.1");
+        assert.ok(!result.success);
+        if (!result.success) {
+          assert.deepEqual(result.error, [
+            { type: "text", text: "No loopback: " },
+            { type: "value", value: "127.0.0.1" },
+          ]);
+        }
+      });
+    });
+
+    describe("format()", () => {
+      it("should format IPv4 address", () => {
+        const parser = ipv4();
+
+        assert.equal(parser.format("192.168.1.1"), "192.168.1.1");
+        assert.equal(parser.format("8.8.8.8"), "8.8.8.8");
+      });
+    });
+
+    describe("metavar", () => {
+      it("should use default metavar", () => {
+        const parser = ipv4();
+        assert.equal(parser.metavar, "IPV4");
+      });
+
+      it("should use custom metavar", () => {
+        const parser = ipv4({ metavar: "IP_ADDRESS" });
+        assert.equal(parser.metavar, "IP_ADDRESS");
+      });
+    });
+
+    describe("edge cases", () => {
+      it("should handle boundary values for octets", () => {
+        const parser = ipv4();
+
+        assert.ok(parser.parse("0.0.0.0").success);
+        assert.ok(parser.parse("255.255.255.255").success);
+        assert.ok(!parser.parse("256.0.0.0").success);
+        assert.ok(!parser.parse("0.0.0.256").success);
+      });
+
+      it("should handle whitespace", () => {
+        const parser = ipv4();
+
+        assert.ok(!parser.parse(" 192.168.1.1").success);
+        assert.ok(!parser.parse("192.168.1.1 ").success);
+        assert.ok(!parser.parse("192. 168.1.1").success);
+      });
+    });
+  });
+
+  describe("contradictory min > max", () => {
+    it("should throw RangeError for number mode when min > max", () => {
+      assert.throws(
+        () => port({ min: 1000, max: 100 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError for bigint mode when min > max", () => {
+      assert.throws(
+        () => port({ type: "bigint", min: 1000n, max: 100n }),
+        RangeError,
+      );
+    });
+
+    it("should not throw when min equals max (number mode)", () => {
+      assert.doesNotThrow(() => port({ min: 8080, max: 8080 }));
+    });
+
+    it("should not throw when min equals max (bigint mode)", () => {
+      assert.doesNotThrow(
+        () => port({ type: "bigint", min: 8080n, max: 8080n }),
+      );
+    });
+
+    it("should throw RangeError when min exceeds default max", () => {
+      assert.throws(
+        () => port({ min: 70000 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is below default min", () => {
+      assert.throws(
+        () => port({ max: 0 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when bigint min exceeds default max", () => {
+      assert.throws(
+        () => port({ type: "bigint", min: 70000n }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when bigint max is below default min", () => {
+      assert.throws(
+        () => port({ type: "bigint", max: 0n }),
+        RangeError,
+      );
+    });
+  });
+
+  describe("non-finite bounds", () => {
+    it("should throw RangeError when min is NaN", () => {
+      assert.throws(
+        () => port({ min: NaN as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is NaN", () => {
+      assert.throws(
+        () => port({ max: NaN as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when min is Infinity", () => {
+      assert.throws(
+        () => port({ min: Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when min is -Infinity", () => {
+      assert.throws(
+        () => port({ min: -Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is Infinity", () => {
+      assert.throws(
+        () => port({ max: Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is -Infinity", () => {
+      assert.throws(
+        () => port({ max: -Infinity as never }),
+        RangeError,
+      );
+    });
+  });
+});
+
+describe("hostname()", () => {
+  describe("basic validation", () => {
+    it("should accept valid hostnames", () => {
+      const parser = hostname();
+
+      // Simple hostname
+      const result1 = parser.parse("example");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "example");
+
+      // FQDN
+      const result2 = parser.parse("example.com");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "example.com");
+
+      // Subdomain
+      const result3 = parser.parse("sub.example.com");
+      assert.ok(result3.success);
+      assert.strictEqual(result3.value, "sub.example.com");
+
+      // With hyphens
+      const result4 = parser.parse("my-server.example.com");
+      assert.ok(result4.success);
+      assert.strictEqual(result4.value, "my-server.example.com");
+
+      // Numbers
+      const result5 = parser.parse("server123.example.com");
+      assert.ok(result5.success);
+      assert.strictEqual(result5.value, "server123.example.com");
+
+      // localhost
+      const result6 = parser.parse("localhost");
+      assert.ok(result6.success);
+      assert.strictEqual(result6.value, "localhost");
+
+      // Long but valid (253 chars)
+      const longHostname = "a".repeat(63) + "." + "b".repeat(63) + "." +
+        "c".repeat(63) + "." + "d".repeat(59);
+      const result7 = parser.parse(longHostname);
+      assert.ok(result7.success);
+      assert.strictEqual(result7.value, longHostname);
+    });
+
+    it("should reject invalid hostnames", () => {
+      const parser = hostname();
+
+      // Empty string
+      const result1 = parser.parse("");
+      assert.ok(!result1.success);
+      assert.deepStrictEqual(result1.error, [
+        { type: "text", text: "Expected a valid hostname, but got " },
+        { type: "value", value: "" },
+        { type: "text", text: "." },
+      ]);
+
+      // Starts with hyphen
+      const result2 = parser.parse("-example.com");
+      assert.ok(!result2.success);
+
+      // Ends with hyphen
+      const result3 = parser.parse("example-.com");
+      assert.ok(!result3.success);
+
+      // Label too long (>63 chars)
+      const result4 = parser.parse("a".repeat(64) + ".example.com");
+      assert.ok(!result4.success);
+
+      // Double dots
+      const result5 = parser.parse("example..com");
+      assert.ok(!result5.success);
+
+      // Trailing dot alone not valid
+      const result6 = parser.parse("example.com.");
+      assert.ok(!result6.success);
+
+      // Contains spaces
+      const result7 = parser.parse("example .com");
+      assert.ok(!result7.success);
+
+      // Special characters
+      const result8 = parser.parse("example@.com");
+      assert.ok(!result8.success);
+
+      // Wildcard by default not allowed
+      const result9 = parser.parse("*.example.com");
+      assert.ok(!result9.success);
+
+      // Underscore by default not allowed
+      const result10 = parser.parse("_service.example.com");
+      assert.ok(!result10.success);
+    });
+  });
+
+  describe("allowWildcard option", () => {
+    it("should accept wildcard hostnames when allowWildcard is true", () => {
+      const parser = hostname({ allowWildcard: true });
+
+      const result1 = parser.parse("*.example.com");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "*.example.com");
+
+      const result2 = parser.parse("*.sub.example.com");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "*.sub.example.com");
+    });
+
+    it("should reject wildcard hostnames when allowWildcard is false", () => {
+      const parser = hostname({ allowWildcard: false });
+
+      const result = parser.parse("*.example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Wildcard hostname " },
+        { type: "value", value: "*.example.com" },
+        { type: "text", text: " is not allowed." },
+      ]);
+    });
+
+    it("should reject multiple wildcards", () => {
+      const parser = hostname({ allowWildcard: true });
+
+      const result1 = parser.parse("*.*.example.com");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("*.*");
+      assert.ok(!result2.success);
+    });
+
+    it("should reject wildcard outside leftmost position", () => {
+      const parser = hostname({ allowWildcard: true });
+
+      const result1 = parser.parse("foo.*.com");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("example.*");
+      assert.ok(!result2.success);
+    });
+
+    it("should reject bare wildcard", () => {
+      const parser = hostname({ allowWildcard: true });
+
+      const result = parser.parse("*");
+      assert.ok(!result.success);
+    });
+
+    it("should reject wildcard forms when allowWildcard is false", () => {
+      const parser = hostname();
+
+      const result1 = parser.parse("*");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("foo.*.com");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("example.*");
+      assert.ok(!result3.success);
+    });
+  });
+
+  describe("allowUnderscore option", () => {
+    it("should accept underscores when allowUnderscore is true", () => {
+      const parser = hostname({ allowUnderscore: true });
+
+      const result1 = parser.parse("_service.example.com");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "_service.example.com");
+
+      const result2 = parser.parse("my_server.example.com");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "my_server.example.com");
+    });
+
+    it("should reject underscores when allowUnderscore is false", () => {
+      const parser = hostname({ allowUnderscore: false });
+
+      const result = parser.parse("_service.example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Hostname " },
+        { type: "value", value: "_service.example.com" },
+        {
+          type: "text",
+          text: " contains underscore, which is not allowed.",
+        },
+      ]);
+    });
+  });
+
+  describe("allowLocalhost option", () => {
+    it("should accept localhost when allowLocalhost is true", () => {
+      const parser = hostname({ allowLocalhost: true });
+
+      const result = parser.parse("localhost");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "localhost");
+    });
+
+    it("should reject localhost when allowLocalhost is false", () => {
+      const parser = hostname({ allowLocalhost: false });
+
+      const result = parser.parse("localhost");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Hostname 'localhost' is not allowed." },
+      ]);
+    });
+
+    it("should only reject exact localhost string", () => {
+      const parser = hostname({ allowLocalhost: false });
+
+      // These should still be valid
+      const result1 = parser.parse("localhosts");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("my-localhost.com");
+      assert.ok(result2.success);
+    });
+
+    it("should reject case variants of localhost", () => {
+      const parser = hostname({ allowLocalhost: false });
+
+      for (const variant of ["LOCALHOST", "LocalHost", "Localhost"]) {
+        const result = parser.parse(variant);
+        assert.ok(!result.success, `expected ${variant} to be rejected`);
+        assert.deepStrictEqual(result.error, [
+          { type: "text", text: "Hostname 'localhost' is not allowed." },
+        ]);
+      }
+    });
+
+    it("should accept case variants when allowLocalhost is true", () => {
+      const parser = hostname({ allowLocalhost: true });
+
+      for (const variant of ["LOCALHOST", "LocalHost", "Localhost"]) {
+        const result = parser.parse(variant);
+        assert.ok(result.success, `expected ${variant} to be accepted`);
+      }
+    });
+
+    it("should reject wildcard localhost when allowLocalhost is false", () => {
+      const parser = hostname({
+        allowLocalhost: false,
+        allowWildcard: true,
+      });
+
+      for (
+        const variant of ["*.localhost", "*.LOCALHOST", "*.LocalHost"]
+      ) {
+        const result = parser.parse(variant);
+        assert.ok(!result.success, `expected ${variant} to be rejected`);
+        assert.deepStrictEqual(result.error, [
+          { type: "text", text: "Hostname 'localhost' is not allowed." },
+        ]);
+      }
+    });
+
+    it("should accept wildcard localhost when allowLocalhost is true", () => {
+      const parser = hostname({
+        allowLocalhost: true,
+        allowWildcard: true,
+      });
+
+      const result = parser.parse("*.localhost");
+      assert.ok(result.success);
+    });
+
+    it("should use function callback for wildcard localhost error", () => {
+      const parser = hostname({
+        allowLocalhost: false,
+        allowWildcard: true,
+        errors: {
+          localhostNotAllowed: (input) => message`blocked: ${input}`,
+        },
+      });
+
+      const result = parser.parse("*.localhost");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "blocked: " },
+        { type: "value", value: "*.localhost" },
+      ]);
+    });
+  });
+
+  describe("maxLength option", () => {
+    it("should accept hostnames within maxLength", () => {
+      const parser = hostname({ maxLength: 20 });
+
+      const result = parser.parse("example.com");
+      assert.ok(result.success);
+    });
+
+    it("should reject hostnames exceeding maxLength", () => {
+      const parser = hostname({ maxLength: 10 });
+
+      const result = parser.parse("example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Hostname " },
+        { type: "value", value: "example.com" },
+        { type: "text", text: " is too long (maximum " },
+        { type: "text", text: "10" },
+        { type: "text", text: " characters)." },
+      ]);
+    });
+
+    it("should throw RangeError when maxLength is 0", () => {
+      assert.throws(
+        () => hostname({ maxLength: 0 }),
+        {
+          name: "RangeError",
+          message: "maxLength must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should throw RangeError when maxLength is negative", () => {
+      assert.throws(
+        () => hostname({ maxLength: -1 }),
+        {
+          name: "RangeError",
+          message: "maxLength must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should throw RangeError when maxLength is NaN", () => {
+      assert.throws(
+        () => hostname({ maxLength: NaN }),
+        {
+          name: "RangeError",
+          message: "maxLength must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should throw RangeError when maxLength is fractional", () => {
+      assert.throws(
+        () => hostname({ maxLength: 1.5 }),
+        {
+          name: "RangeError",
+          message: "maxLength must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should not throw when maxLength is 1", () => {
+      assert.doesNotThrow(
+        () => hostname({ maxLength: 1 }),
+      );
+    });
+
+    it("should default to 253 characters", () => {
+      const parser = hostname();
+
+      // 253 chars should be valid
+      const validHostname = "a".repeat(63) + "." + "b".repeat(63) + "." +
+        "c".repeat(63) + "." + "d".repeat(61);
+      const result1 = parser.parse(validHostname);
+      assert.strictEqual(validHostname.length, 253);
+      assert.ok(result1.success);
+
+      // 254 chars should be invalid
+      const invalidHostname = validHostname + "x";
+      const result2 = parser.parse(invalidHostname);
+      assert.strictEqual(invalidHostname.length, 254);
+      assert.ok(!result2.success);
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("should use custom static error message for invalidHostname", () => {
+      const parser = hostname({
+        errors: {
+          invalidHostname: message`Bad hostname format!`,
+        },
+      });
+
+      const result = parser.parse("invalid..hostname");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Bad hostname format!" },
+      ]);
+    });
+
+    it("should use custom error function for invalidHostname", () => {
+      const parser = hostname({
+        errors: {
+          invalidHostname: (input) => message`Not valid: ${input}`,
+        },
+      });
+
+      const result = parser.parse("-invalid");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Not valid: " },
+        { type: "value", value: "-invalid" },
+      ]);
+    });
+
+    it("should use custom error message for wildcardNotAllowed", () => {
+      const parser = hostname({
+        allowWildcard: false,
+        errors: {
+          wildcardNotAllowed: (hostname) =>
+            message`Wildcards forbidden: ${hostname}`,
+        },
+      });
+
+      const result = parser.parse("*.example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Wildcards forbidden: " },
+        { type: "value", value: "*.example.com" },
+      ]);
+    });
+
+    it("should use custom error message for underscoreNotAllowed", () => {
+      const parser = hostname({
+        allowUnderscore: false,
+        errors: {
+          underscoreNotAllowed: message`Underscores not accepted`,
+        },
+      });
+
+      const result = parser.parse("_service.example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Underscores not accepted" },
+      ]);
+    });
+
+    it("should use custom error message for localhostNotAllowed", () => {
+      const parser = hostname({
+        allowLocalhost: false,
+        errors: {
+          localhostNotAllowed: message`No localhost allowed!`,
+        },
+      });
+
+      const result = parser.parse("localhost");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "No localhost allowed!" },
+      ]);
+    });
+
+    it("should use custom error message for tooLong", () => {
+      const parser = hostname({
+        maxLength: 10,
+        errors: {
+          tooLong: (hostname, max) =>
+            message`Too big: ${hostname} (max: ${text(max.toString())})`,
+        },
+      });
+
+      const result = parser.parse("verylonghostname.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Too big: " },
+        { type: "value", value: "verylonghostname.com" },
+        { type: "text", text: " (max: " },
+        { type: "text", text: "10" },
+        { type: "text", text: ")" },
+      ]);
+    });
+  });
+
+  describe("format()", () => {
+    it("should return hostname as-is", () => {
+      const parser = hostname();
+
+      assert.strictEqual(parser.format("example.com"), "example.com");
+      assert.strictEqual(parser.format("EXAMPLE.COM"), "EXAMPLE.COM");
+      assert.strictEqual(parser.format("localhost"), "localhost");
+    });
+  });
+
+  describe("metavar", () => {
+    it("should use default metavar HOST", () => {
+      const parser = hostname();
+
+      assert.strictEqual(parser.metavar, "HOST");
+    });
+
+    it("should use custom metavar", () => {
+      const parser = hostname({ metavar: "HOSTNAME" });
+
+      assert.strictEqual(parser.metavar, "HOSTNAME");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle case sensitivity correctly", () => {
+      const parser = hostname();
+
+      const result1 = parser.parse("EXAMPLE.COM");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "EXAMPLE.COM");
+
+      const result2 = parser.parse("Example.Com");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "Example.Com");
+    });
+
+    it("should reject hostnames with invalid label positions", () => {
+      const parser = hostname();
+
+      // Starting with dot
+      const result1 = parser.parse(".example.com");
+      assert.ok(!result1.success);
+
+      // Multiple consecutive dots
+      const result2 = parser.parse("example...com");
+      assert.ok(!result2.success);
+    });
+
+    it("should handle boundary label lengths", () => {
+      const parser = hostname();
+
+      // Exactly 63 chars (valid)
+      const validLabel = "a".repeat(63) + ".com";
+      const result1 = parser.parse(validLabel);
+      assert.ok(result1.success);
+
+      // 64 chars (invalid)
+      const invalidLabel = "a".repeat(64) + ".com";
+      const result2 = parser.parse(invalidLabel);
+      assert.ok(!result2.success);
+    });
+
+    it("should reject dotted all-numeric strings (IPv4-like)", () => {
+      const parser = hostname();
+
+      // Dotted all-numeric patterns should be rejected
+      assert.ok(!parser.parse("192.168.0.1").success);
+      assert.ok(!parser.parse("127.0.0.1").success);
+      assert.ok(!parser.parse("999.999.999.999").success);
+      assert.ok(!parser.parse("1.2.3.4").success);
+      assert.ok(!parser.parse("123.456.789").success);
+      assert.ok(!parser.parse("0.0").success);
+    });
+
+    it("should accept single numeric labels", () => {
+      const parser = hostname();
+
+      // A single numeric label is fine (not dotted)
+      assert.ok(parser.parse("123").success);
+      assert.ok(parser.parse("0").success);
+    });
+
+    it("should accept mixed numeric and alphabetic labels", () => {
+      const parser = hostname();
+
+      // At least one label has a non-digit character
+      assert.ok(parser.parse("server1.123.com").success);
+      assert.ok(parser.parse("1a.2b.3c.4d").success);
+      assert.ok(parser.parse("192.168.0.example").success);
+    });
+  });
+
+  describe("runtime option type validation", () => {
+    it("should throw TypeError for non-boolean allowWildcard", () => {
+      assert.throws(
+        () => hostname({ allowWildcard: "yes" as never }),
+        {
+          name: "TypeError",
+          message:
+            "Expected allowWildcard to be a boolean, but got string: yes.",
+        },
+      );
+    });
+
+    it("should throw TypeError for non-boolean allowUnderscore", () => {
+      assert.throws(
+        () => hostname({ allowUnderscore: "yes" as never }),
+        {
+          name: "TypeError",
+          message:
+            "Expected allowUnderscore to be a boolean, but got string: yes.",
+        },
+      );
+    });
+
+    it("should throw TypeError for non-boolean allowLocalhost", () => {
+      assert.throws(
+        () => hostname({ allowLocalhost: "no" as never }),
+        {
+          name: "TypeError",
+          message:
+            "Expected allowLocalhost to be a boolean, but got string: no.",
+        },
+      );
+    });
+  });
+});
+
+describe("email()", () => {
+  describe("basic validation", () => {
+    it("should accept valid email addresses", () => {
+      const parser = email();
+
+      // Simple email
+      const result1 = parser.parse("user@example.com");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "user@example.com");
+
+      // With subdomain
+      const result2 = parser.parse("user@mail.example.com");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "user@mail.example.com");
+
+      // With dots in local part (RFC 5322 dot-atom)
+      const result3 = parser.parse("first.last@example.com");
+      assert.ok(result3.success);
+      assert.strictEqual(result3.value, "first.last@example.com");
+
+      // With hyphens
+      const result4 = parser.parse("user-name@example.com");
+      assert.ok(result4.success);
+      assert.strictEqual(result4.value, "user-name@example.com");
+
+      // With plus sign (RFC 5322 atext)
+      const result5 = parser.parse("user+tag@example.com");
+      assert.ok(result5.success);
+      assert.strictEqual(result5.value, "user+tag@example.com");
+
+      // With numbers
+      const result6 = parser.parse("user123@example456.com");
+      assert.ok(result6.success);
+      assert.strictEqual(result6.value, "user123@example456.com");
+
+      // With underscores
+      const result7 = parser.parse("user_name@example.com");
+      assert.ok(result7.success);
+      assert.strictEqual(result7.value, "user_name@example.com");
+
+      // Quoted string local part (RFC 5322)
+      const result8 = parser.parse('"user name"@example.com');
+      assert.ok(result8.success);
+      assert.strictEqual(result8.value, '"user name"@example.com');
+
+      // Quoted string with special chars
+      const result9 = parser.parse('"user@domain"@example.com');
+      assert.ok(result9.success);
+      assert.strictEqual(result9.value, '"user@domain"@example.com');
+    });
+
+    it("should reject invalid email addresses", () => {
+      const parser = email();
+
+      // No @ sign
+      const result1 = parser.parse("userexample.com");
+      assert.ok(!result1.success);
+      assert.deepStrictEqual(result1.error, [
+        { type: "text", text: "Expected a valid email address, but got " },
+        { type: "value", value: "userexample.com" },
+        { type: "text", text: "." },
+      ]);
+
+      // Multiple @ signs
+      const result2 = parser.parse("user@@example.com");
+      assert.ok(!result2.success);
+
+      // Missing local part
+      const result3 = parser.parse("@example.com");
+      assert.ok(!result3.success);
+
+      // Missing domain
+      const result4 = parser.parse("user@");
+      assert.ok(!result4.success);
+
+      // No dot in domain
+      const result5 = parser.parse("user@example");
+      assert.ok(!result5.success);
+
+      // Empty string
+      const result6 = parser.parse("");
+      assert.ok(!result6.success);
+
+      // Spaces
+      const result7 = parser.parse("user @example.com");
+      assert.ok(!result7.success);
+
+      // Special characters in local part (not allowed in simplified RFC)
+      const result8 = parser.parse("user!name@example.com");
+      assert.ok(!result8.success);
+
+      // Domain starting with dot
+      const result9 = parser.parse("user@.example.com");
+      assert.ok(!result9.success);
+
+      // Domain ending with dot
+      const result10 = parser.parse("user@example.com.");
+      assert.ok(!result10.success);
+
+      // All-numeric domain labels (IPv4-like patterns)
+      const result11 = parser.parse("user@192.168.0.1");
+      assert.ok(!result11.success);
+
+      const result12 = parser.parse("user@127.0.0.1");
+      assert.ok(!result12.success);
+
+      const result13 = parser.parse("user@999.999.999.999");
+      assert.ok(!result13.success);
+
+      const result14 = parser.parse("user@0.0.0.0");
+      assert.ok(!result14.success);
+
+      // Mixed numeric and alphabetic labels should still be valid
+      const result15 = parser.parse("user@123.example.com");
+      assert.ok(result15.success);
+
+      // All-numeric but not exactly 4 labels (not IPv4-like) should be valid
+      const result16 = parser.parse("user@123.456");
+      assert.ok(result16.success);
+
+      const result17 = parser.parse("user@1.2.3");
+      assert.ok(result17.success);
+    });
+
+    it("should accept local part with exactly 64 characters", () => {
+      const parser = email();
+      const localPart = "a".repeat(64);
+      const result = parser.parse(`${localPart}@example.com`);
+      assert.ok(result.success);
+    });
+
+    it("should reject local part exceeding 64 characters", () => {
+      const parser = email();
+      const localPart = "a".repeat(65);
+      const result = parser.parse(`${localPart}@example.com`);
+      assert.ok(!result.success);
+    });
+
+    it("should reject quoted local part exceeding 64 characters", () => {
+      const parser = email();
+      // Quoted local part: quotes are included in the 64-char limit
+      const inner = "a".repeat(63);
+      const result = parser.parse(`"${inner}"@example.com`);
+      assert.ok(!result.success);
+    });
+
+    it("should measure local-part limit in octets, not code units", () => {
+      const parser = email();
+      // "¢" is U+00A2, 2 bytes in UTF-8; 32 of them = 64 bytes
+      // Plus 2 quote characters = 66 bytes, exceeding the 64-octet limit
+      const result = parser.parse(`"${"\u00A2".repeat(32)}"@example.com`);
+      assert.ok(!result.success);
+    });
+
+    it("should accept quoted local part at exactly 64 octets with multibyte characters", () => {
+      const parser = email();
+      // "¢" is U+00A2, 2 bytes in UTF-8; 31 of them = 62 bytes
+      // Plus 2 quote characters = 64 bytes, exactly at the limit
+      const localPart = `"${"\u00A2".repeat(31)}"`;
+      assert.strictEqual(new TextEncoder().encode(localPart).length, 64);
+      const result = parser.parse(`${localPart}@example.com`);
+      assert.ok(result.success);
+    });
+
+    it("should accept address with exactly 254 characters", () => {
+      const parser = email();
+      // "user" (4) + "@" (1) + domain (249) = 254
+      // domain: 63 + "." + 63 + "." + 63 + "." + 57 = 249
+      const label = "a".repeat(63);
+      const domain = `${label}.${label}.${label}.${"a".repeat(57)}`;
+      assert.strictEqual(domain.length, 249);
+      const addr = `user@${domain}`;
+      assert.strictEqual(addr.length, 254);
+      const result = parser.parse(addr);
+      assert.ok(result.success);
+    });
+
+    it("should reject address exceeding 254 characters", () => {
+      const parser = email();
+      const label = "a".repeat(63);
+      const domain = `${label}.${label}.${label}.${"a".repeat(58)}`;
+      assert.strictEqual(domain.length, 250);
+      const addr = `user@${domain}`;
+      assert.strictEqual(addr.length, 255);
+      const result = parser.parse(addr);
+      assert.ok(!result.success);
+    });
+
+    it("should enforce length limits with allowDisplayName", () => {
+      const parser = email({ allowDisplayName: true });
+      const localPart = "a".repeat(65);
+      const result = parser.parse(`John Doe <${localPart}@example.com>`);
+      assert.ok(!result.success);
+    });
+
+    it("should enforce length limits with allowMultiple", () => {
+      const parser = email({ allowMultiple: true });
+      const localPart = "a".repeat(65);
+      const result = parser.parse(
+        `valid@example.com, ${localPart}@example.com`,
+      );
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("allowMultiple option", () => {
+    it("should accept multiple email addresses when allowMultiple is true", () => {
+      const parser = email({ allowMultiple: true });
+
+      const result1 = parser.parse("user1@example.com,user2@example.com");
+      assert.ok(result1.success);
+      assert.deepStrictEqual(result1.value, [
+        "user1@example.com",
+        "user2@example.com",
+      ]);
+
+      const result2 = parser.parse(
+        "alice@example.com,bob@example.org,charlie@test.com",
+      );
+      assert.ok(result2.success);
+      assert.deepStrictEqual(result2.value, [
+        "alice@example.com",
+        "bob@example.org",
+        "charlie@test.com",
+      ]);
+
+      // Single email should still work
+      const result3 = parser.parse("single@example.com");
+      assert.ok(result3.success);
+      assert.deepStrictEqual(result3.value, ["single@example.com"]);
+    });
+
+    it("should trim whitespace around emails in multiple mode", () => {
+      const parser = email({ allowMultiple: true });
+
+      const result = parser.parse(
+        "user1@example.com, user2@example.com , user3@example.com",
+      );
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, [
+        "user1@example.com",
+        "user2@example.com",
+        "user3@example.com",
+      ]);
+    });
+
+    it("should reject if any email in the list is invalid", () => {
+      const parser = email({ allowMultiple: true });
+
+      const result = parser.parse("valid@example.com,invalid,another@test.com");
+      assert.ok(!result.success);
+    });
+
+    it("should return single email when allowMultiple is false", () => {
+      const parser = email({ allowMultiple: false });
+
+      const result = parser.parse("user@example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "user@example.com");
+    });
+
+    it("should not split on commas inside quoted local parts", () => {
+      const parser = email({ allowMultiple: true });
+
+      const result = parser.parse('"a,b"@example.com, c@example.com');
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, [
+        '"a,b"@example.com',
+        "c@example.com",
+      ]);
+    });
+
+    it("should not split on commas inside quoted local parts for a single email", () => {
+      const parser = email({ allowMultiple: true });
+
+      const result = parser.parse('"a,b"@example.com');
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, ['"a,b"@example.com']);
+    });
+
+    it("should not split on commas after escaped quotes in local parts", () => {
+      const parser = email({ allowMultiple: true });
+
+      const result = parser.parse('"a\\",b"@example.com, c@example.com');
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, [
+        '"a\\",b"@example.com',
+        "c@example.com",
+      ]);
+    });
+
+    it("should not split on commas after escaped quotes in display names", () => {
+      const parser = email({
+        allowMultiple: true,
+        allowDisplayName: true,
+      });
+
+      const result = parser.parse(
+        '"Doe \\", John" <john@example.com>, jane@example.com',
+      );
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, [
+        "john@example.com",
+        "jane@example.com",
+      ]);
+    });
+
+    it("should handle consecutive quotes in local parts without regression", () => {
+      const parser = email({ allowMultiple: true });
+
+      const result = parser.parse('"""@example.com, c@example.com');
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, [
+        '"""@example.com',
+        "c@example.com",
+      ]);
+    });
+
+    it("should not split on commas inside display names", () => {
+      const parser = email({
+        allowMultiple: true,
+        allowDisplayName: true,
+      });
+
+      const result = parser.parse(
+        '"Doe, John" <john@example.com>, jane@example.com',
+      );
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, [
+        "john@example.com",
+        "jane@example.com",
+      ]);
+    });
+  });
+
+  describe("allowDisplayName option", () => {
+    it("should accept display name format when allowDisplayName is true", () => {
+      const parser = email({ allowDisplayName: true });
+
+      const result1 = parser.parse("John Doe <john@example.com>");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "john@example.com");
+
+      const result2 = parser.parse("Alice Smith <alice.smith@example.com>");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "alice.smith@example.com");
+
+      // Without display name should still work
+      const result3 = parser.parse("bob@example.com");
+      assert.ok(result3.success);
+      assert.strictEqual(result3.value, "bob@example.com");
+    });
+
+    it("should reject display name format when allowDisplayName is false", () => {
+      const parser = email({ allowDisplayName: false });
+
+      const result = parser.parse("John Doe <john@example.com>");
+      assert.ok(!result.success);
+    });
+
+    it("should handle display names with special characters", () => {
+      const parser = email({ allowDisplayName: true });
+
+      const result1 = parser.parse('"Smith, John" <john.smith@example.com>');
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "john.smith@example.com");
+    });
+
+    it("should reject malformed display name with multiple angle-bracket groups", () => {
+      const parser = email({ allowDisplayName: true });
+
+      const result1 = parser.parse(
+        "Name <user@example.com> extra <x@y.com>",
+      );
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse(
+        "junk <first@example.com> <second@example.com>",
+      );
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("Name <user@example.com> extra");
+      assert.ok(!result3.success);
+    });
+
+    it("should reject bare angle-bracket wrapper without display name", () => {
+      const parser = email({ allowDisplayName: true });
+
+      const result = parser.parse("<user@example.com>");
+      assert.ok(!result.success);
+    });
+
+    it("should reject empty or whitespace-only quoted display names", () => {
+      const parser = email({ allowDisplayName: true });
+
+      const result1 = parser.parse('"" <user@example.com>');
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse('"   " <user@example.com>');
+      assert.ok(!result2.success);
+    });
+
+    it("should accept well-formed display names with dots and hyphens", () => {
+      const parser = email({ allowDisplayName: true });
+
+      const result = parser.parse("Dr. Smith-Jones <smith@example.com>");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "smith@example.com");
+    });
+
+    it("should accept mixed quoted and unquoted words in display name", () => {
+      const parser = email({ allowDisplayName: true });
+
+      const result1 = parser.parse(
+        'John "Johnny" Doe <john@example.com>',
+      );
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "john@example.com");
+
+      const result2 = parser.parse('"John" Doe <john@example.com>');
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "john@example.com");
+    });
+
+    it("should accept quoted display names containing angle brackets", () => {
+      const parser = email({ allowDisplayName: true });
+
+      const result = parser.parse(
+        '"Team <Ops>" <alerts@example.com>',
+      );
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "alerts@example.com");
+    });
+  });
+
+  describe("lowercase option", () => {
+    it("should lowercase only the domain when lowercase is true", () => {
+      const parser = email({ lowercase: true });
+
+      const result1 = parser.parse("User@Example.COM");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "User@example.com");
+
+      const result2 = parser.parse("ADMIN@COMPANY.NET");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "ADMIN@company.net");
+    });
+
+    it("should preserve local part case including quoted local parts", () => {
+      const parser = email({ lowercase: true });
+
+      const result1 = parser.parse("User.Name+Tag@Example.COM");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "User.Name+Tag@example.com");
+
+      const result2 = parser.parse('"Case.Sensitive"@Example.COM');
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, '"Case.Sensitive"@example.com');
+    });
+
+    it("should preserve case when lowercase is false", () => {
+      const parser = email({ lowercase: false });
+
+      const result = parser.parse("User@Example.COM");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "User@Example.COM");
+    });
+
+    it("should work with allowMultiple", () => {
+      const parser = email({ allowMultiple: true, lowercase: true });
+
+      const result = parser.parse("User1@Example.COM,User2@Example.ORG");
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, [
+        "User1@example.com",
+        "User2@example.org",
+      ]);
+    });
+  });
+
+  describe("allowedDomains option", () => {
+    it("should accept emails from allowed domains", () => {
+      const parser = email({
+        allowedDomains: ["example.com", "example.org"],
+      });
+
+      const result1 = parser.parse("user@example.com");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "user@example.com");
+
+      const result2 = parser.parse("user@example.org");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "user@example.org");
+    });
+
+    it("should reject emails from disallowed domains", () => {
+      const parser = email({
+        allowedDomains: ["example.com", "example.org"],
+      });
+
+      const result = parser.parse("user@other.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Email domain " },
+        { type: "value", value: "other.com" },
+        { type: "text", text: " is not allowed. Allowed domains: " },
+        { type: "value", value: "example.com" },
+        { type: "text", text: " and " },
+        { type: "value", value: "example.org" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should be case-insensitive for domain matching", () => {
+      const parser = email({
+        allowedDomains: ["example.com"],
+      });
+
+      const result1 = parser.parse("user@Example.COM");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("user@EXAMPLE.com");
+      assert.ok(result2.success);
+    });
+
+    it("should work with allowMultiple", () => {
+      const parser = email({
+        allowMultiple: true,
+        allowedDomains: ["example.com"],
+      });
+
+      const result1 = parser.parse("user1@example.com,user2@example.com");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("user1@example.com,user2@other.com");
+      assert.ok(!result2.success);
+    });
+
+    it("should throw TypeError when allowedDomains is empty", () => {
+      assert.throws(
+        () => email({ allowedDomains: [] }),
+        {
+          name: "TypeError",
+          message: "allowedDomains must not be empty.",
+        },
+      );
+    });
+
+    it("should throw TypeError when allowedDomains is empty with allowMultiple", () => {
+      assert.throws(
+        () => email({ allowedDomains: [], allowMultiple: true }),
+        {
+          name: "TypeError",
+          message: "allowedDomains must not be empty.",
+        },
+      );
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("should use custom static error message for invalidEmail", () => {
+      const parser = email({
+        errors: {
+          invalidEmail: message`Not a valid email!`,
+        },
+      });
+
+      const result = parser.parse("invalid");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Not a valid email!" },
+      ]);
+    });
+
+    it("should use custom error function for invalidEmail", () => {
+      const parser = email({
+        errors: {
+          invalidEmail: (input) => message`Bad email: ${input}`,
+        },
+      });
+
+      const result = parser.parse("bad@");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Bad email: " },
+        { type: "value", value: "bad@" },
+      ]);
+    });
+
+    it("should use custom error message for domainNotAllowed", () => {
+      const parser = email({
+        allowedDomains: ["company.com"],
+        errors: {
+          domainNotAllowed: (email, _domains) =>
+            message`Domain not allowed for ${email}`,
+        },
+      });
+
+      const result = parser.parse("user@other.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Domain not allowed for " },
+        { type: "value", value: "user@other.com" },
+      ]);
+    });
+  });
+
+  describe("format()", () => {
+    it("should return single email as-is", () => {
+      const parser = email();
+
+      assert.strictEqual(parser.format("user@example.com"), "user@example.com");
+    });
+
+    it("should return multiple emails joined by comma-space", () => {
+      const parser = email({ allowMultiple: true });
+
+      assert.strictEqual(
+        parser.format(["user1@example.com", "user2@example.com"]),
+        "user1@example.com, user2@example.com",
+      );
+    });
+
+    it("should round-trip emails with quoted commas in local part", () => {
+      const parser = email({ allowMultiple: true });
+      const value = ['"Doe, John"@example.com', "x@example.com"];
+
+      const formatted = parser.format(value);
+      const parsed = parser.parse(formatted);
+      assert.ok(parsed.success);
+      assert.deepStrictEqual(parsed.value, value);
+    });
+
+    it("should round-trip emails with escaped quotes and commas", () => {
+      const parser = email({ allowMultiple: true });
+      const value = ['"a\\",b"@example.com', "d@example.com"];
+
+      const formatted = parser.format(value);
+      const parsed = parser.parse(formatted);
+      assert.ok(parsed.success);
+      assert.deepStrictEqual(parsed.value, value);
+    });
+  });
+
+  describe("metavar", () => {
+    it("should use default metavar EMAIL", () => {
+      const parser = email();
+
+      assert.strictEqual(parser.metavar, "EMAIL");
+    });
+
+    it("should use custom metavar", () => {
+      const parser = email({ metavar: "ADDR" });
+
+      assert.strictEqual(parser.metavar, "ADDR");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle very long email addresses", () => {
+      const parser = email();
+
+      const longLocal = "a".repeat(64);
+      const result1 = parser.parse(`${longLocal}@example.com`);
+      assert.ok(result1.success);
+    });
+
+    it("should handle consecutive dots in local part", () => {
+      const parser = email();
+
+      // Consecutive dots are technically invalid in simplified RFC
+      const result = parser.parse("user..name@example.com");
+      assert.ok(!result.success);
+    });
+
+    it("should handle local part starting with dot", () => {
+      const parser = email();
+
+      const result = parser.parse(".user@example.com");
+      assert.ok(!result.success);
+    });
+
+    it("should handle local part ending with dot", () => {
+      const parser = email();
+
+      const result = parser.parse("user.@example.com");
+      assert.ok(!result.success);
+    });
+
+    it("should work with mixed options", () => {
+      const parser = email({
+        allowMultiple: true,
+        lowercase: true,
+        allowedDomains: ["example.com"],
+      });
+
+      const result = parser.parse("User1@Example.COM,User2@Example.COM");
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, [
+        "User1@example.com",
+        "User2@example.com",
+      ]);
+    });
+
+    it("should snapshot allowedDomains at construction time", () => {
+      const domains = ["example.com"];
+      const parser = email({ allowedDomains: domains });
+      assert.ok(parser.parse("a@example.com").success);
+      assert.ok(!parser.parse("a@other.com").success);
+      // Mutate domains after construction
+      domains[0] = "other.com";
+      // Parser should still accept example.com and reject other.com
+      assert.ok(parser.parse("a@example.com").success);
+      assert.ok(!parser.parse("a@other.com").success);
+    });
+
+    it("should snapshot errors.invalidEmail at construction time", () => {
+      const errors: { invalidEmail: string } = {
+        invalidEmail: "original error",
+      };
+      const parser = email({ errors: errors as never });
+      const result = parser.parse("not-an-email");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.invalidEmail = "mutated error";
+      const result2 = parser.parse("not-an-email");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+
+    it("should snapshot errors.domainNotAllowed at construction time", () => {
+      const errors: { domainNotAllowed: string } = {
+        domainNotAllowed: "original error",
+      };
+      const parser = email({
+        allowedDomains: ["example.com"],
+        errors: errors as never,
+      });
+      const result = parser.parse("a@other.com");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.domainNotAllowed = "mutated error";
+      const result2 = parser.parse("a@other.com");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+
+    it("should throw TypeError for non-string allowedDomains entries", () => {
+      assert.throws(
+        () => email({ allowedDomains: [123 as never] }),
+        { name: "TypeError", message: /allowedDomains\[0\].*must be a string/ },
+      );
+      assert.throws(
+        () => email({ allowedDomains: [null as never] }),
+        { name: "TypeError", message: /allowedDomains\[0\].*must be a string/ },
+      );
+      assert.throws(
+        () => email({ allowedDomains: [undefined as never] }),
+        { name: "TypeError", message: /allowedDomains\[0\].*must be a string/ },
+      );
+    });
+
+    it("should throw TypeError for allowedDomains entries with leading @", () => {
+      assert.throws(
+        () => email({ allowedDomains: ["@example.com"] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*must not start with "@"/,
+        },
+      );
+    });
+
+    it("should throw TypeError for allowedDomains entries with trailing dot", () => {
+      assert.throws(
+        () => email({ allowedDomains: ["example.com."] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+    });
+
+    it("should throw TypeError for allowedDomains entries with whitespace", () => {
+      assert.throws(
+        () => email({ allowedDomains: [" example.com "] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*whitespace/,
+        },
+      );
+      assert.throws(
+        () => email({ allowedDomains: [" example.com"] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*whitespace/,
+        },
+      );
+      assert.throws(
+        () => email({ allowedDomains: ["example.com "] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*whitespace/,
+        },
+      );
+    });
+
+    it("should throw TypeError for empty string allowedDomains entries", () => {
+      assert.throws(
+        () => email({ allowedDomains: [""] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+    });
+
+    it("should throw TypeError for malformed domain syntax", () => {
+      // Leading dot
+      assert.throws(
+        () => email({ allowedDomains: [".example.com"] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+      // Consecutive dots
+      assert.throws(
+        () => email({ allowedDomains: ["foo..bar.com"] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+      // Embedded space
+      assert.throws(
+        () => email({ allowedDomains: ["exa mple.com"] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+      // No dot (bare label)
+      assert.throws(
+        () => email({ allowedDomains: ["localhost"] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+      // Leading hyphen
+      assert.throws(
+        () => email({ allowedDomains: ["-example.com"] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+      // Trailing hyphen
+      assert.throws(
+        () => email({ allowedDomains: ["example-.com"] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+      // Label exceeding 63 characters
+      assert.throws(
+        () =>
+          email({
+            allowedDomains: [`${"a".repeat(64)}.com`] as never,
+          }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+      // IPv4-like dotted-quad
+      assert.throws(
+        () => email({ allowedDomains: ["192.168.0.1"] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+      assert.throws(
+        () => email({ allowedDomains: ["999.999.999.999"] as never }),
+        {
+          name: "TypeError",
+          message: /allowedDomains\[0\].*not a valid domain/,
+        },
+      );
+    });
+
+    it("should accept valid allowedDomains entries without throwing", () => {
+      assert.doesNotThrow(
+        () => email({ allowedDomains: ["example.com", "test.org"] }),
+      );
+      assert.doesNotThrow(
+        () => email({ allowedDomains: ["sub.example.com"] }),
+      );
+      assert.doesNotThrow(
+        () => email({ allowedDomains: ["my-domain.co.uk"] }),
+      );
+    });
+  });
+});
+
+describe("portRange()", () => {
+  describe("basic validation (number type)", () => {
+    it("should accept valid port ranges", () => {
+      const parser = portRange();
+
+      // Simple range
+      const result1 = parser.parse("8000-8080");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.start, 8000);
+      assert.strictEqual(result1.value.end, 8080);
+
+      // Same start and end
+      const result2 = parser.parse("8080-8080");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value.start, 8080);
+      assert.strictEqual(result2.value.end, 8080);
+
+      // Full range
+      const result3 = parser.parse("1-65535");
+      assert.ok(result3.success);
+      assert.strictEqual(result3.value.start, 1);
+      assert.strictEqual(result3.value.end, 65535);
+
+      // Well-known range
+      const result4 = parser.parse("80-443");
+      assert.ok(result4.success);
+      assert.strictEqual(result4.value.start, 80);
+      assert.strictEqual(result4.value.end, 443);
+    });
+
+    it("should reject invalid port ranges", () => {
+      const parser = portRange();
+
+      // No separator
+      const result1 = parser.parse("8000");
+      assert.ok(!result1.success);
+      assert.deepStrictEqual(result1.error, [
+        {
+          type: "text",
+          text: "Expected a port range in format start-end, but got ",
+        },
+        { type: "value", value: "8000" },
+        { type: "text", text: "." },
+      ]);
+
+      // Start > end
+      const result2 = parser.parse("8080-8000");
+      assert.ok(!result2.success);
+      assert.deepStrictEqual(result2.error, [
+        { type: "text", text: "Start port " },
+        { type: "value", value: "8080" },
+        { type: "text", text: " must be less than or equal to end port " },
+        { type: "value", value: "8000" },
+        { type: "text", text: "." },
+      ]);
+
+      // Invalid port number
+      const result3 = parser.parse("abc-8080");
+      assert.ok(!result3.success);
+
+      // Port out of range
+      const result4 = parser.parse("0-8080");
+      assert.ok(!result4.success);
+
+      // Port too high
+      const result5 = parser.parse("8000-70000");
+      assert.ok(!result5.success);
+
+      // Empty string
+      const result6 = parser.parse("");
+      assert.ok(!result6.success);
+
+      // Multiple separators
+      const result7 = parser.parse("8000-8080-9000");
+      assert.ok(!result7.success);
+    });
+  });
+
+  describe("basic validation (bigint type)", () => {
+    it("should accept valid port ranges with bigint", () => {
+      const parser = portRange({ type: "bigint" });
+
+      const result = parser.parse("8000-8080");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.start, 8000n);
+      assert.strictEqual(result.value.end, 8080n);
+    });
+
+    it("should reject invalid ranges with bigint", () => {
+      const parser = portRange({ type: "bigint" });
+
+      // Start > end
+      const result = parser.parse("8080-8000");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Start port " },
+        { type: "value", value: "8080" },
+        { type: "text", text: " must be less than or equal to end port " },
+        { type: "value", value: "8000" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject non-decimal literals in ranges", () => {
+      const parser = portRange({ type: "bigint" });
+
+      // Plus-signed
+      assert.ok(!parser.parse("+80-81").success);
+
+      // Hex literals
+      assert.ok(!parser.parse("0x50-0x51").success);
+
+      // Binary literals
+      assert.ok(!parser.parse("0b1010000-0b1010001").success);
+
+      // Octal literals
+      assert.ok(!parser.parse("0o120-0o121").success);
+    });
+
+    it("should reject non-decimal literals in single port mode", () => {
+      const parser = portRange({ type: "bigint", allowSingle: true });
+
+      assert.ok(!parser.parse("+80").success);
+      assert.ok(!parser.parse("0x50").success);
+      assert.ok(!parser.parse("0b1010000").success);
+      assert.ok(!parser.parse("0o120").success);
+    });
+  });
+
+  describe("allowSingle option", () => {
+    it("should accept single port when allowSingle is true", () => {
+      const parser = portRange({ allowSingle: true });
+
+      const result = parser.parse("8080");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.start, 8080);
+      assert.strictEqual(result.value.end, 8080);
+    });
+
+    it("should reject single port when allowSingle is false", () => {
+      const parser = portRange({ allowSingle: false });
+
+      const result = parser.parse("8080");
+      assert.ok(!result.success);
+    });
+
+    it("should work with bigint type", () => {
+      const parser = portRange({ type: "bigint", allowSingle: true });
+
+      const result = parser.parse("8080");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.start, 8080n);
+      assert.strictEqual(result.value.end, 8080n);
+    });
+  });
+
+  describe("separator option", () => {
+    it("should use custom separator", () => {
+      const parser = portRange({ separator: ":" });
+
+      const result = parser.parse("8000:8080");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.start, 8000);
+      assert.strictEqual(result.value.end, 8080);
+    });
+
+    it("should reject input with wrong separator", () => {
+      const parser = portRange({ separator: ":" });
+
+      const result = parser.parse("8000-8080");
+      assert.ok(!result.success);
+    });
+
+    it("should work with multi-character separator", () => {
+      const parser = portRange({ separator: " to " });
+
+      const result = parser.parse("8000 to 8080");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.start, 8000);
+      assert.strictEqual(result.value.end, 8080);
+    });
+  });
+
+  describe("min and max options", () => {
+    it("should enforce minimum port", () => {
+      const parser = portRange({ min: 1024 });
+
+      // Below minimum
+      const result1 = parser.parse("80-8080");
+      assert.ok(!result1.success);
+
+      // At minimum
+      const result2 = parser.parse("1024-8080");
+      assert.ok(result2.success);
+    });
+
+    it("should enforce maximum port", () => {
+      const parser = portRange({ max: 9000 });
+
+      // Above maximum
+      const result1 = parser.parse("8000-10000");
+      assert.ok(!result1.success);
+
+      // At maximum
+      const result2 = parser.parse("8000-9000");
+      assert.ok(result2.success);
+    });
+
+    it("should apply to both start and end ports", () => {
+      const parser = portRange({ min: 1024, max: 9000 });
+
+      // Start below minimum
+      const result1 = parser.parse("80-8080");
+      assert.ok(!result1.success);
+
+      // End above maximum
+      const result2 = parser.parse("8000-10000");
+      assert.ok(!result2.success);
+
+      // Both in range
+      const result3 = parser.parse("1024-9000");
+      assert.ok(result3.success);
+    });
+
+    it("should work with bigint type", () => {
+      const parser = portRange({ type: "bigint", min: 1024n, max: 9000n });
+
+      const result1 = parser.parse("80-8080");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("1024-9000");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value.start, 1024n);
+      assert.strictEqual(result2.value.end, 9000n);
+    });
+  });
+
+  describe("disallowWellKnown option", () => {
+    it("should reject well-known ports when disallowWellKnown is true", () => {
+      const parser = portRange({ disallowWellKnown: true });
+
+      // Both well-known
+      const result1 = parser.parse("80-443");
+      assert.ok(!result1.success);
+
+      // Start well-known
+      const result2 = parser.parse("80-8080");
+      assert.ok(!result2.success);
+
+      // End well-known
+      const result3 = parser.parse("8000-443");
+      assert.ok(!result3.success);
+
+      // Both non-well-known
+      const result4 = parser.parse("1024-8080");
+      assert.ok(result4.success);
+    });
+
+    it("should work with bigint type", () => {
+      const parser = portRange({ type: "bigint", disallowWellKnown: true });
+
+      const result1 = parser.parse("80-443");
+      assert.ok(!result1.success);
+
+      const result2 = parser.parse("1024-8080");
+      assert.ok(result2.success);
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("should use custom static error message for invalidFormat", () => {
+      const parser = portRange({
+        errors: {
+          invalidFormat: message`Bad port range format`,
+        },
+      });
+
+      // Single port without allowSingle triggers invalidFormat
+      const result = parser.parse("8080");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Bad port range format" },
+      ]);
+    });
+
+    it("should use custom error function for invalidFormat", () => {
+      const parser = portRange({
+        errors: {
+          invalidFormat: (input) => message`Cannot parse: ${input}`,
+        },
+      });
+
+      const result = parser.parse("abc");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Cannot parse: " },
+        { type: "value", value: "abc" },
+      ]);
+    });
+
+    it("should use custom error message for invalidRange", () => {
+      const parser = portRange({
+        errors: {
+          invalidRange: (start, end) =>
+            message`Range error: ${start.toString()} > ${end.toString()}`,
+        },
+      });
+
+      const result = parser.parse("8080-8000");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Range error: " },
+        { type: "value", value: "8080" },
+        { type: "text", text: " > " },
+        { type: "value", value: "8000" },
+      ]);
+    });
+
+    it("should use custom error for port validation", () => {
+      const parser = portRange({
+        min: 1024,
+        errors: {
+          belowMinimum: (port, min) =>
+            message`Port ${port.toString()} is too low (min: ${min.toString()})`,
+        },
+      });
+
+      const result = parser.parse("80-8080");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Port " },
+        { type: "value", value: "80" },
+        { type: "text", text: " is too low (min: " },
+        { type: "value", value: "1024" },
+        { type: "text", text: ")" },
+      ]);
+    });
+  });
+
+  describe("format()", () => {
+    it("should return port range in start-end format", () => {
+      const parser = portRange();
+
+      const formatted = parser.format({ start: 8000, end: 8080 });
+      assert.strictEqual(formatted, "8000-8080");
+    });
+
+    it("should use custom separator in format", () => {
+      const parser = portRange({ separator: ":" });
+
+      const formatted = parser.format({ start: 8000, end: 8080 });
+      assert.strictEqual(formatted, "8000:8080");
+    });
+
+    it("should work with bigint values", () => {
+      const parser = portRange({ type: "bigint" });
+
+      const formatted = parser.format({ start: 8000n, end: 8080n });
+      assert.strictEqual(formatted, "8000-8080");
+    });
+
+    it("should handle single port (same start and end)", () => {
+      const parser = portRange({ allowSingle: true });
+
+      const formatted = parser.format({ start: 8080, end: 8080 });
+      assert.strictEqual(formatted, "8080-8080");
+    });
+  });
+
+  describe("metavar", () => {
+    it("should use default metavar PORT-PORT", () => {
+      const parser = portRange();
+      assert.strictEqual(parser.metavar, "PORT-PORT");
+    });
+
+    it("should use custom metavar", () => {
+      const parser = portRange({ metavar: "RANGE" });
+      assert.strictEqual(parser.metavar, "RANGE");
+    });
+
+    it("should reflect custom separator in default metavar", () => {
+      assert.strictEqual(
+        portRange({ separator: ":" }).metavar,
+        "PORT:PORT",
+      );
+      assert.strictEqual(
+        portRange({ separator: " to " }).metavar,
+        "PORT to PORT",
+      );
+    });
+
+    it("should prefer explicit metavar over separator-derived one", () => {
+      const parser = portRange({ separator: ":", metavar: "CUSTOM" });
+      assert.strictEqual(parser.metavar, "CUSTOM");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle minimum port range (1-1)", () => {
+      const parser = portRange({ allowSingle: true });
+
+      const result = parser.parse("1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.start, 1);
+      assert.strictEqual(result.value.end, 1);
+    });
+
+    it("should handle maximum port range (65535-65535)", () => {
+      const parser = portRange({ allowSingle: true });
+
+      const result = parser.parse("65535");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.start, 65535);
+      assert.strictEqual(result.value.end, 65535);
+    });
+
+    it("should handle wide range (1-65535)", () => {
+      const parser = portRange();
+
+      const result = parser.parse("1-65535");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.start, 1);
+      assert.strictEqual(result.value.end, 65535);
+    });
+
+    it("should work with mixed options", () => {
+      const parser = portRange({
+        allowSingle: true,
+        min: 1024,
+        max: 65535,
+        disallowWellKnown: true,
+      });
+
+      // Single port in range
+      const result1 = parser.parse("8080");
+      assert.ok(result1.success);
+
+      // Range in bounds
+      const result2 = parser.parse("1024-9000");
+      assert.ok(result2.success);
+
+      // Well-known port rejected
+      const result3 = parser.parse("80-443");
+      assert.ok(!result3.success);
+    });
+  });
+
+  describe("boolean option validation", () => {
+    it("should reject non-boolean disallowWellKnown option", () => {
+      assert.throws(
+        () => portRange({ disallowWellKnown: "no" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ disallowWellKnown: 1 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ disallowWellKnown: "true" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ disallowWellKnown: 0 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ disallowWellKnown: null as never }),
+        TypeError,
+      );
+    });
+
+    it("should reject non-boolean disallowWellKnown option (bigint)", () => {
+      assert.throws(
+        () => portRange({ type: "bigint", disallowWellKnown: "no" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: "bigint", disallowWellKnown: 1 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: "bigint", disallowWellKnown: "true" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: "bigint", disallowWellKnown: 0 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: "bigint", disallowWellKnown: null as never }),
+        TypeError,
+      );
+    });
+
+    it("should reject non-boolean allowSingle option", () => {
+      assert.throws(
+        () => portRange({ allowSingle: "no" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ allowSingle: 1 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ allowSingle: "true" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ allowSingle: 0 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ allowSingle: null as never }),
+        TypeError,
+      );
+    });
+
+    it("should reject non-boolean allowSingle option (bigint)", () => {
+      assert.throws(
+        () => portRange({ type: "bigint", allowSingle: "no" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: "bigint", allowSingle: 1 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: "bigint", allowSingle: "true" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: "bigint", allowSingle: 0 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: "bigint", allowSingle: null as never }),
+        TypeError,
+      );
+    });
+  });
+
+  describe("type discriminant validation", () => {
+    it("should reject invalid type discriminant", () => {
+      assert.throws(
+        () => portRange({ type: "num" as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: 123 as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: null as never }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: "" as never }),
+        TypeError,
+      );
+    });
+
+    it("should accept valid type discriminant", () => {
+      assert.ok(portRange({ type: "number" }));
+      assert.ok(portRange({ type: "bigint" }));
+      assert.ok(portRange());
+    });
+  });
+
+  describe("separator validation", () => {
+    it("should reject empty separator", () => {
+      assert.throws(
+        () => portRange({ separator: "" }),
+        {
+          name: "TypeError",
+          message: "Expected separator to not be empty.",
+        },
+      );
+      assert.throws(
+        () => portRange({ type: "bigint", separator: "" }),
+        {
+          name: "TypeError",
+          message: "Expected separator to not be empty.",
+        },
+      );
+    });
+
+    it("should reject separator containing digits", () => {
+      assert.throws(
+        () => portRange({ separator: "0" }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ separator: "8" }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ separator: "123" }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ separator: "a1b" }),
+        TypeError,
+      );
+      // Unicode digits (Arabic-Indic)
+      assert.throws(
+        () => portRange({ separator: "\u0661" }),
+        TypeError,
+      );
+      // Unicode digits (Devanagari)
+      assert.throws(
+        () => portRange({ separator: "\u0967" }),
+        TypeError,
+      );
+    });
+
+    it("should reject separator containing digits (bigint)", () => {
+      assert.throws(
+        () => portRange({ type: "bigint", separator: "0" }),
+        TypeError,
+      );
+      assert.throws(
+        () => portRange({ type: "bigint", separator: "8" }),
+        TypeError,
+      );
+    });
+
+    it("should accept separator without digits", () => {
+      assert.ok(portRange({ separator: ":" }));
+      assert.ok(portRange({ separator: " to " }));
+      assert.ok(portRange({ separator: ".." }));
+      assert.ok(portRange({ separator: "-" }));
+    });
+  });
+
+  describe("contradictory min > max", () => {
+    it("should throw RangeError for number mode when min > max", () => {
+      assert.throws(
+        () => portRange({ min: 9000, max: 1000 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError for bigint mode when min > max", () => {
+      assert.throws(
+        () => portRange({ type: "bigint", min: 9000n, max: 1000n }),
+        RangeError,
+      );
+    });
+
+    it("should not throw when min equals max (number mode)", () => {
+      assert.doesNotThrow(() => portRange({ min: 8080, max: 8080 }));
+    });
+
+    it("should not throw when min equals max (bigint mode)", () => {
+      assert.doesNotThrow(
+        () => portRange({ type: "bigint", min: 8080n, max: 8080n }),
+      );
+    });
+
+    it("should throw RangeError when min exceeds default max", () => {
+      assert.throws(
+        () => portRange({ min: 70000 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when max is below default min", () => {
+      assert.throws(
+        () => portRange({ max: 0 }),
+        RangeError,
+      );
+    });
+  });
+});
+
+describe("socketAddress()", () => {
+  describe("basic validation", () => {
+    it("should accept valid socket addresses", () => {
+      const parser = socketAddress({ defaultPort: 8080 });
+
+      // Hostname with port
+      const result1 = parser.parse("localhost:3000");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "localhost");
+      assert.strictEqual(result1.value.port, 3000);
+
+      // Hostname without port (uses default)
+      const result2 = parser.parse("example.com");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value.host, "example.com");
+      assert.strictEqual(result2.value.port, 8080);
+
+      // IPv4 with port
+      const result3 = parser.parse("192.168.1.1:80");
+      assert.ok(result3.success);
+      assert.strictEqual(result3.value.host, "192.168.1.1");
+      assert.strictEqual(result3.value.port, 80);
+
+      // IPv4 without port
+      const result4 = parser.parse("10.0.0.1");
+      assert.ok(result4.success);
+      assert.strictEqual(result4.value.host, "10.0.0.1");
+      assert.strictEqual(result4.value.port, 8080);
+
+      // Subdomain with port
+      const result5 = parser.parse("api.example.com:443");
+      assert.ok(result5.success);
+      assert.strictEqual(result5.value.host, "api.example.com");
+      assert.strictEqual(result5.value.port, 443);
+    });
+
+    it("should reject invalid socket addresses", () => {
+      const parser = socketAddress({ defaultPort: 8080 });
+
+      // Invalid hostname
+      const result1 = parser.parse("-invalid.com:80");
+      assert.ok(!result1.success);
+
+      // Invalid port (too high)
+      const result2 = parser.parse("example.com:70000");
+      assert.ok(!result2.success);
+
+      // Invalid port (not a number)
+      const result3 = parser.parse("example.com:abc");
+      assert.ok(!result3.success);
+
+      // Empty string
+      const result4 = parser.parse("");
+      assert.ok(!result4.success);
+
+      // Only port
+      const result5 = parser.parse(":8080");
+      assert.ok(!result5.success);
+    });
+  });
+
+  describe("requirePort option", () => {
+    it("should require port when requirePort is true", () => {
+      const parser = socketAddress({ requirePort: true });
+
+      // With port - valid
+      const result1 = parser.parse("localhost:3000");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "localhost");
+      assert.strictEqual(result1.value.port, 3000);
+
+      // Without port - invalid
+      const result2 = parser.parse("localhost");
+      assert.ok(!result2.success);
+      assert.deepStrictEqual(result2.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should allow omitting port when requirePort is false and defaultPort is set", () => {
+      const parser = socketAddress({ requirePort: false, defaultPort: 80 });
+
+      const result = parser.parse("example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "example.com");
+      assert.strictEqual(result.value.port, 80);
+    });
+
+    it("should reject missing port when no defaultPort and requirePort is false", () => {
+      const parser = socketAddress({ requirePort: false });
+
+      const result = parser.parse("example.com");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("separator option", () => {
+    it("should use custom separator", () => {
+      const parser = socketAddress({ separator: " " });
+
+      const result = parser.parse("localhost 3000");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "localhost");
+      assert.strictEqual(result.value.port, 3000);
+    });
+
+    it("should reject input with wrong separator", () => {
+      const parser = socketAddress({ separator: " " });
+
+      const result = parser.parse("localhost:3000");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("host.type option", () => {
+    it("should accept only hostnames when type is hostname", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "hostname" },
+      });
+
+      // Hostname - valid
+      const result1 = parser.parse("example.com:443");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "example.com");
+
+      // IPv4 - invalid
+      const result2 = parser.parse("192.168.1.1:80");
+      assert.ok(!result2.success);
+    });
+
+    it("should accept only IPs when type is ip", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "ip" },
+      });
+
+      // IPv4 - valid
+      const result1 = parser.parse("192.168.1.1:80");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "192.168.1.1");
+
+      // Hostname - invalid
+      const result2 = parser.parse("example.com:443");
+      assert.ok(!result2.success);
+    });
+
+    it("should accept both hostnames and IPs when type is both", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both" },
+      });
+
+      // Hostname
+      const result1 = parser.parse("example.com:443");
+      assert.ok(result1.success);
+
+      // IPv4
+      const result2 = parser.parse("192.168.1.1:80");
+      assert.ok(result2.success);
+    });
+  });
+
+  describe("IPv6 support", () => {
+    it("should parse bracketed IPv6 addresses with explicit ports", () => {
+      const parser = socketAddress({ requirePort: true });
+
+      const result1 = parser.parse("[::1]:8080");
+      assert.ok(result1.success);
+      assert.deepStrictEqual(result1.value, { host: "::1", port: 8080 });
+
+      const result2 = parser.parse("[2001:0db8:0:0:0:0:0:1]:443");
+      assert.ok(result2.success);
+      assert.deepStrictEqual(result2.value, {
+        host: "2001:db8::1",
+        port: 443,
+      });
+    });
+
+    it("should accept bare IPv6 addresses with a default port", () => {
+      const parser = socketAddress({ defaultPort: 8080 });
+
+      const result1 = parser.parse("[::1]");
+      assert.ok(result1.success);
+      assert.deepStrictEqual(result1.value, { host: "::1", port: 8080 });
+
+      const result2 = parser.parse("::1");
+      assert.ok(result2.success);
+      assert.deepStrictEqual(result2.value, { host: "::1", port: 8080 });
+
+      const result3 = parser.parse("::1:8080");
+      assert.ok(result3.success);
+      assert.deepStrictEqual(result3.value, {
+        host: "::1:8080",
+        port: 8080,
+      });
+    });
+
+    it("should reject bare IPv6 addresses when a port is required", () => {
+      const parser = socketAddress({ requirePort: true });
+
+      const result1 = parser.parse("[::1]");
+      assert.ok(!result1.success);
+      assert.deepStrictEqual(result1.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+
+      const result2 = parser.parse("::1");
+      assert.ok(!result2.success);
+      assert.deepStrictEqual(result2.error, result1.error);
+
+      const result3 = parser.parse("::1:8080");
+      assert.ok(!result3.success);
+      assert.deepStrictEqual(result3.error, result1.error);
+    });
+
+    it("should apply IP version filters", () => {
+      const dualStack = socketAddress({
+        defaultPort: 80,
+        host: { type: "ip", version: "both" },
+      });
+      assert.ok(dualStack.parse("192.0.2.1:80").success);
+      assert.ok(dualStack.parse("[2001:db8::1]:80").success);
+
+      const ipv4Only = socketAddress({
+        defaultPort: 80,
+        host: { type: "ip", version: 4 },
+      });
+      assert.ok(ipv4Only.parse("192.0.2.1:80").success);
+      assert.ok(!ipv4Only.parse("[2001:db8::1]:80").success);
+
+      const ipv6Only = socketAddress({
+        defaultPort: 80,
+        host: { type: "ip", version: 6 },
+      });
+      assert.ok(ipv6Only.parse("[2001:db8::1]:80").success);
+      assert.ok(!ipv6Only.parse("192.0.2.1:80").success);
+    });
+
+    it("should throw TypeError for invalid host.version", () => {
+      assert.throws(
+        () =>
+          socketAddress({
+            host: { type: "ip", version: "ipv46" as never },
+          }),
+        {
+          name: "TypeError",
+          message:
+            'Expected host.version to be 4, 6, or "both", but got string: ipv46.',
+        },
+      );
+      assert.throws(
+        () =>
+          socketAddress({
+            host: { type: "ip", version: "4x" as never },
+          }),
+        {
+          name: "TypeError",
+          message:
+            'Expected host.version to be 4, 6, or "both", but got string: 4x.',
+        },
+      );
+      assert.throws(
+        () =>
+          socketAddress({
+            host: { type: "ip", version: "ipv6" as never },
+          }),
+        {
+          name: "TypeError",
+          message:
+            'Expected host.version to be 4, 6, or "both", but got string: ipv6.',
+        },
+      );
+      assert.throws(
+        () =>
+          socketAddress({
+            host: { type: "ip", version: 5 as never },
+          }),
+        {
+          name: "TypeError",
+          message:
+            'Expected host.version to be 4, 6, or "both", but got number: 5.',
+        },
+      );
+    });
+
+    it("should keep legacy host.ip configs IPv4-only by default", () => {
+      for (const type of ["ip", "both"] as const) {
+        const parser = socketAddress({
+          defaultPort: 80,
+          host: {
+            type,
+            ip: { allowLoopback: false, allowPrivate: false },
+          },
+        });
+
+        assert.ok(parser.parse("192.0.2.1:80").success);
+        assert.ok(!parser.parse("127.0.0.1:80").success);
+        assert.ok(!parser.parse("[::1]:80").success);
+        assert.ok(!parser.parse("[2001:db8::1]:80").success);
+      }
+    });
+
+    it("should reject IPv6 addresses in hostname mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "hostname" },
+      });
+
+      assert.ok(!parser.parse("[::1]:8080").success);
+      assert.ok(!parser.parse("::1").success);
+    });
+
+    it("should reject bracketed non-IPv6 hosts", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+
+      assert.ok(!parser.parse("[example.com]:80").success);
+      assert.ok(!parser.parse("[192.0.2.1]:80").success);
+    });
+
+    it("should reject bracketed IPv6 with zero-width compression", () => {
+      const parser = socketAddress({ requirePort: true });
+
+      assert.ok(!parser.parse("[1:2:3:4:5:6:7::8]:80").success);
+    });
+
+    it("should apply IPv4 and IPv6 host restrictions separately", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: {
+          type: "ip",
+          version: "both",
+          ipv4: { allowPrivate: false },
+          ipv6: { allowLoopback: false },
+        },
+      });
+
+      assert.ok(!parser.parse("192.168.1.1:80").success);
+      assert.ok(parser.parse("192.0.2.1:80").success);
+      assert.ok(!parser.parse("[::1]:80").success);
+      assert.ok(parser.parse("[2001:db8::1]:80").success);
+    });
+
+    it("should normalize IPv6 hosts in socket values", () => {
+      const parser = socketAddress();
+
+      assert.deepStrictEqual(
+        parser.normalize!({
+          host: "2001:0db8:0:0:0:0:0:1",
+          port: 443,
+        }),
+        {
+          host: "2001:db8::1",
+          port: 443,
+        },
+      );
+    });
+  });
+
+  describe("host options propagation", () => {
+    it("should pass hostname options to hostname parser", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: {
+          type: "hostname",
+          hostname: { allowLocalhost: false },
+        },
+      });
+
+      // localhost rejected
+      const result1 = parser.parse("localhost:80");
+      assert.ok(!result1.success);
+
+      // Regular hostname accepted
+      const result2 = parser.parse("example.com:80");
+      assert.ok(result2.success);
+    });
+
+    it("should pass IP options to IP parser", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: {
+          type: "ip",
+          ip: { allowPrivate: false },
+        },
+      });
+
+      // Private IP rejected
+      const result1 = parser.parse("192.168.1.1:80");
+      assert.ok(!result1.success);
+
+      // Public IP accepted
+      const result2 = parser.parse("8.8.8.8:80");
+      assert.ok(result2.success);
+    });
+  });
+
+  describe("port options propagation", () => {
+    it("should pass port options to port parser", () => {
+      const parser = socketAddress({
+        defaultPort: 8080,
+        port: { min: 1024, max: 65535 },
+      });
+
+      // Port too low
+      const result1 = parser.parse("localhost:80");
+      assert.ok(!result1.success);
+
+      // Port in range
+      const result2 = parser.parse("localhost:8080");
+      assert.ok(result2.success);
+    });
+
+    it("should disallow well-known ports when configured", () => {
+      const parser = socketAddress({
+        defaultPort: 8080,
+        port: { disallowWellKnown: true },
+      });
+
+      // Well-known port rejected
+      const result1 = parser.parse("localhost:80");
+      assert.ok(!result1.success);
+
+      // Non-well-known port accepted
+      const result2 = parser.parse("localhost:8080");
+      assert.ok(result2.success);
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("should use custom static error message for invalidFormat", () => {
+      const parser = socketAddress({
+        requirePort: true,
+        errors: {
+          invalidFormat: message`Bad socket address format`,
+        },
+      });
+
+      // Invalid hostname with port
+      const result = parser.parse("-invalid:8080");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Bad socket address format" },
+      ]);
+    });
+
+    it("should use custom error function for invalidFormat", () => {
+      const parser = socketAddress({
+        requirePort: true,
+        errors: {
+          invalidFormat: (input) => message`Cannot parse: ${input}`,
+        },
+      });
+
+      const result = parser.parse("bad:format:here");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Cannot parse: " },
+        { type: "value", value: "bad:format:here" },
+      ]);
+    });
+
+    it("should use custom error message for missingPort", () => {
+      const parser = socketAddress({
+        requirePort: true,
+        errors: {
+          missingPort: message`You must specify a port`,
+        },
+      });
+
+      const result = parser.parse("localhost");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "You must specify a port" },
+      ]);
+    });
+  });
+
+  describe("format()", () => {
+    it("should return socket address in host:port format", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+
+      const formatted = parser.format({ host: "example.com", port: 443 });
+      assert.strictEqual(formatted, "example.com:443");
+    });
+
+    it("should use custom separator in format", () => {
+      const parser = socketAddress({ separator: " ", defaultPort: 80 });
+
+      const formatted = parser.format({ host: "localhost", port: 3000 });
+      assert.strictEqual(formatted, "localhost 3000");
+    });
+
+    it("should wrap IPv6 hosts in brackets with the default separator", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+
+      assert.strictEqual(
+        parser.format({ host: "::1", port: 8080 }),
+        "[::1]:8080",
+      );
+      assert.strictEqual(
+        parser.format({ host: "2001:0db8:0:0:0:0:0:1", port: 443 }),
+        "[2001:db8::1]:443",
+      );
+    });
+  });
+
+  describe("metavar", () => {
+    it("should use default metavar HOST:PORT", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+      assert.strictEqual(parser.metavar, "HOST:PORT");
+    });
+
+    it("should use custom metavar", () => {
+      const parser = socketAddress({ defaultPort: 80, metavar: "ENDPOINT" });
+      assert.strictEqual(parser.metavar, "ENDPOINT");
+    });
+
+    it("should reflect custom separator in default metavar", () => {
+      assert.strictEqual(
+        socketAddress({ separator: " " }).metavar,
+        "HOST PORT",
+      );
+    });
+
+    it("should prefer explicit metavar over separator-derived one", () => {
+      const parser = socketAddress({ separator: " ", metavar: "CUSTOM" });
+      assert.strictEqual(parser.metavar, "CUSTOM");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle very high port numbers within range", () => {
+      const parser = socketAddress({ defaultPort: 8080 });
+
+      const result = parser.parse("localhost:65535");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.port, 65535);
+    });
+
+    it("should handle port 1", () => {
+      const parser = socketAddress({ defaultPort: 8080 });
+
+      const result = parser.parse("localhost:1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.port, 1);
+    });
+
+    it("should handle complex hostnames", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+
+      const result = parser.parse("very.long.subdomain.example.com:443");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "very.long.subdomain.example.com");
+      assert.strictEqual(result.value.port, 443);
+    });
+
+    it("should work with mixed options", () => {
+      const parser = socketAddress({
+        defaultPort: 8080,
+        host: {
+          type: "both",
+          hostname: { allowLocalhost: true },
+          ip: { allowPrivate: true },
+        },
+        port: { min: 1024 },
+      });
+
+      const result1 = parser.parse("localhost:3000");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("192.168.1.1:8080");
+      assert.ok(result2.success);
+
+      const result3 = parser.parse("example.com");
+      assert.ok(result3.success);
+      assert.strictEqual(result3.value.port, 8080);
+    });
+  });
+
+  describe("separator validation", () => {
+    it("should reject empty separator", () => {
+      assert.throws(
+        () => socketAddress({ separator: "", defaultPort: 80 }),
+        {
+          name: "TypeError",
+          message: "Expected separator to not be empty.",
+        },
+      );
+    });
+
+    it("should reject separator containing digits", () => {
+      assert.throws(
+        () => socketAddress({ separator: "0", defaultPort: 80 }),
+        TypeError,
+      );
+      assert.throws(
+        () => socketAddress({ separator: "8", defaultPort: 80 }),
+        TypeError,
+      );
+      assert.throws(
+        () => socketAddress({ separator: "123", defaultPort: 80 }),
+        TypeError,
+      );
+      assert.throws(
+        () => socketAddress({ separator: "a1b", defaultPort: 80 }),
+        TypeError,
+      );
+      // Unicode digits (Arabic-Indic)
+      assert.throws(
+        () => socketAddress({ separator: "\u0661", defaultPort: 80 }),
+        TypeError,
+      );
+      // Unicode digits (Devanagari)
+      assert.throws(
+        () => socketAddress({ separator: "\u0967", defaultPort: 80 }),
+        TypeError,
+      );
+    });
+
+    it("should accept separator without digits", () => {
+      assert.ok(socketAddress({ separator: ":", defaultPort: 80 }));
+      assert.ok(socketAddress({ separator: " ", defaultPort: 80 }));
+    });
+  });
+
+  describe("IP bypass prevention in both mode", () => {
+    it("should reject private IP with specific error in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      const result = parser.parse("192.168.1.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.1.1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should reject loopback IP with specific error in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      const result = parser.parse("127.0.0.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "127.0.0.1" },
+        { type: "text", text: " is a loopback address." },
+      ]);
+    });
+
+    it("should reject link-local IP with specific error in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLinkLocal: false } },
+      });
+
+      const result = parser.parse("169.254.1.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "169.254.1.1" },
+        { type: "text", text: " is a link-local address." },
+      ]);
+    });
+
+    it("should reject invalid IPv4 with specific error in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both" },
+      });
+
+      const result1 = parser.parse("999.999.999.999");
+      assert.ok(!result1.success);
+      assert.deepStrictEqual(result1.error, [
+        { type: "text", text: "Expected a valid IPv4 address, but got " },
+        { type: "value", value: "999.999.999.999" },
+        { type: "text", text: "." },
+      ]);
+
+      const result2 = parser.parse("256.256.256.256");
+      assert.ok(!result2.success);
+      assert.deepStrictEqual(result2.error, [
+        { type: "text", text: "Expected a valid IPv4 address, but got " },
+        { type: "value", value: "256.256.256.256" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject restricted IP with port in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      const result = parser.parse("192.168.1.1:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.1.1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should still accept valid hostnames in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      const result1 = parser.parse("example.com:443");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "example.com");
+
+      const result2 = parser.parse("localhost");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value.host, "localhost");
+    });
+
+    it("should still accept valid unrestricted IPs in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      const result = parser.parse("8.8.8.8:53");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "8.8.8.8");
+      assert.strictEqual(result.value.port, 53);
+    });
+
+    it("should use custom invalidFormat over specific IP error", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+        errors: {
+          invalidFormat: message`Custom error`,
+        },
+      });
+
+      const result = parser.parse("192.168.1.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Custom error" },
+      ]);
+    });
+
+    it("should render separator as plain text in format error", () => {
+      for (const separator of [":", " ", "  ", " to ", "\n", "\t"]) {
+        const parser = socketAddress({ separator, defaultPort: 80 });
+        const result = parser.parse("-bad");
+        assert.ok(!result.success);
+        const escaped = JSON.stringify(separator).slice(1, -1);
+        // separator should be embedded as escaped text in format example
+        const formatTerm = result.error.find(
+          (t: { type: string; text?: string }) =>
+            t.type === "text" &&
+            t.text === `host${escaped}port`,
+        );
+        assert.ok(
+          formatTerm !== undefined,
+          `expected text term "host${escaped}port" for separator ${
+            JSON.stringify(separator)
+          }`,
+        );
+        // separator should never appear as a value term
+        const hasValueSep = result.error.some(
+          (t: { type: string; value?: string }) =>
+            t.type === "value" && t.value === separator,
+        );
+        assert.ok(
+          !hasValueSep,
+          `separator ${
+            JSON.stringify(separator)
+          } should not appear as a value term`,
+        );
+      }
+    });
+
+    it("should use socket-level format error for empty host", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both" },
+      });
+
+      // Empty host gets socket-level error, not host parser error
+      const result = parser.parse(":8080");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host:port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: ":8080" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should propagate hostname error for non-IP malformed host", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both" },
+      });
+
+      // Invalid hostname gets the specific hostname parser error
+      const result = parser.parse("-invalid.com:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid hostname, but got " },
+        { type: "value", value: "-invalid.com" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should treat non-decimal dotted strings as hostnames in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      // "192e0" is not a valid decimal IPv4 octet, so 192e0.168.1.1
+      // is not an IPv4 address.  It IS a valid DNS hostname label
+      // (alphanumeric), so it is accepted as a hostname.
+      const result = parser.parse("192e0.168.1.1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "192e0.168.1.1");
+    });
+
+    it("should reject IP-shaped input in hostname mode regardless of IP restrictions", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "hostname", ip: { allowPrivate: false } },
+      });
+
+      // Even though IP parser with allowPrivate:false would reject this,
+      // it should still be detected as IP-shaped and rejected
+      const result = parser.parse("192.168.1.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid hostname, but got " },
+        { type: "value", value: "192.168.1.1" },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("alternate IPv4 literal rejection", () => {
+    it("should reject hex-dotted octets in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      const result = parser.parse("0x7f.0x0.0x0.0x1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0x7f.0x0.0x0.0x1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject mixed hex/decimal dotted in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      const result = parser.parse("0x7f.0.0.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0x7f.0.0.1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject single hex integer in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      const result = parser.parse("0x7f000001");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0x7f000001" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject octal integer in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      // 017700000001 in octal = 2130706433 = 127.0.0.1
+      const result = parser.parse("017700000001");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "017700000001" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject short octal integer in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both" },
+      });
+
+      // 0177 in octal = 127 → 0.0.0.127
+      const result = parser.parse("0177");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0177" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject pure octal-dotted forms with specific error", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      // 4-part: 0177 = octal 127 → 127.0.0.1
+      const result1 = parser.parse("0177.0.0.1");
+      assert.ok(!result1.success);
+      assert.deepStrictEqual(result1.error, [
+        { type: "value", value: "0177.0.0.1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+
+      // 2-part: 0177 = octal 127, 1 → WHATWG: 127.0.0.1
+      const result2 = parser.parse("0177.1");
+      assert.ok(!result2.success);
+      assert.deepStrictEqual(result2.error, [
+        { type: "value", value: "0177.1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+
+      // 3-part: 0177 = octal 127 → WHATWG: 127.0.1
+      const result3 = parser.parse("0177.0.1");
+      assert.ok(!result3.success);
+      assert.deepStrictEqual(result3.error, [
+        { type: "value", value: "0177.0.1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject pure octal-dotted forms in hostname mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "hostname" },
+      });
+
+      const result = parser.parse("0177.0.0.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0177.0.0.1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject 2-part hex dotted in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      const result = parser.parse("0x7f.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0x7f.1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject 3-part hex dotted in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      const result = parser.parse("0x7f.0.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0x7f.0.1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject hex-dotted with port in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      const result = parser.parse("0x7f.0x0.0x0.0x1:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0x7f.0x0.0x0.0x1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject uppercase hex in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      const result = parser.parse("0X7F000001");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0X7F000001" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject mixed hex/octal dotted forms in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      // 0377 = octal 255, 0x1 = hex 1 → WHATWG: 255.0.0.1
+      const result1 = parser.parse("0377.0.0.0x1");
+      assert.ok(!result1.success);
+      assert.deepStrictEqual(result1.error, [
+        { type: "value", value: "0377.0.0.0x1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+
+      // 0177 = octal 127 → WHATWG: 127.0.0.1 (loopback)
+      const result2 = parser.parse("0177.0x0.0.1");
+      assert.ok(!result2.success);
+      assert.deepStrictEqual(result2.error, [
+        { type: "value", value: "0177.0x0.0.1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should accept mixed dotted forms with invalid octal digits", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both" },
+      });
+
+      // 08 contains digit 8, not valid octal—WHATWG IPv4 parsing
+      // fails on this part, so the form is not a valid IPv4 literal
+      const result = parser.parse("08.0.0.0x1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "08.0.0.0x1");
+    });
+
+    it("should reject private IP in hex-dotted in both mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      const result = parser.parse("0xC0.0xA8.0x01.0x01");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0xC0.0xA8.0x01.0x01" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject hex-dotted octets in hostname mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "hostname" },
+      });
+
+      const result = parser.parse("0x7f.0x0.0x0.0x1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0x7f.0x0.0x0.0x1" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should reject single hex integer in hostname mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "hostname" },
+      });
+
+      const result = parser.parse("0x7f000001");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0x7f000001" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should still accept non-hex alphanumeric dotted hostnames", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      // "192e0" is not hex-prefixed, so it's a valid hostname label
+      const result1 = parser.parse("192e0.168.1.1");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "192e0.168.1.1");
+
+      // Purely alphabetic dotted hostnames remain valid
+      const result2 = parser.parse("abc.def.ghi.jkl");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value.host, "abc.def.ghi.jkl");
+    });
+
+    it("should still accept valid hostnames and IPs alongside alt literal rejection", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      const result1 = parser.parse("example.com:443");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "example.com");
+
+      const result2 = parser.parse("8.8.8.8:53");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value.host, "8.8.8.8");
+    });
+
+    it("should use custom invalidFormat over alt literal error", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+        errors: {
+          invalidFormat: message`Custom error`,
+        },
+      });
+
+      const result = parser.parse("0x7f000001");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Custom error" },
+      ]);
+    });
+
+    it("should accept plain decimal integers as hostnames", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both" },
+      });
+
+      // Plain decimal integers have no syntactic marker (unlike 0x or
+      // leading-zero octal), so they are genuinely ambiguous between
+      // hostnames and IPv4 literals.  Accept them as hostnames.
+      const result1 = parser.parse("123");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "123");
+
+      const result2 = parser.parse("1234");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value.host, "1234");
+
+      const result3 = parser.parse("2130706433");
+      assert.ok(result3.success);
+      assert.strictEqual(result3.value.host, "2130706433");
+    });
+
+    it("should accept plain decimal integers in hostname mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "hostname" },
+      });
+
+      const result = parser.parse("1234");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "1234");
+    });
+
+    it("should reject octal integer in hostname mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "hostname" },
+      });
+
+      const result = parser.parse("017700000001");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "017700000001" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should accept leading-zero numbers with non-octal digits as hostnames", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both" },
+      });
+
+      // Contains digits 8/9, not valid octal—treat as hostname
+      const result = parser.parse("0189");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "0189");
+    });
+
+    it("should accept octal integers exceeding 32-bit range as hostnames", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both" },
+      });
+
+      // 040000000000 in octal = 2^32, exceeds 32-bit IPv4 range
+      const result = parser.parse("040000000000");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "040000000000");
+    });
+
+    it("should accept hex integers exceeding 32-bit range as hostnames", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      // 0x100000000 = 2^32, exceeds the 32-bit IPv4 range
+      const result1 = parser.parse("0x100000000");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "0x100000000");
+
+      // Very large hex value, clearly not IPv4
+      const result2 = parser.parse("0xDEADBEEF0");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value.host, "0xDEADBEEF0");
+    });
+
+    it("should still reject hex integers within 32-bit range", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowLoopback: false } },
+      });
+
+      // 0xFFFFFFFF = max 32-bit value, still a valid IPv4 literal
+      const result = parser.parse("0xFFFFFFFF");
+      assert.ok(!result.success);
+    });
+
+    it("should accept hex integers exceeding 32-bit range in hostname mode", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "hostname" },
+      });
+
+      const result = parser.parse("0x100000000");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "0x100000000");
+    });
+
+    it("should accept dotted hex with out-of-range octets as hostnames", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      // 0xFFF = 4095 > 255, can't be an IPv4 octet in any part position
+      const result = parser.parse("0xFFF.0.0.1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "0xFFF.0.0.1");
+    });
+  });
+
+  describe("separator disambiguation", () => {
+    it("should not split host-only input when separator appears inside hostname", () => {
+      const parser = socketAddress({ separator: "to", defaultPort: 80 });
+
+      const result1 = parser.parse("toronto");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "toronto");
+      assert.strictEqual(result1.value.port, 80);
+
+      const result2 = parser.parse("proto");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value.host, "proto");
+      assert.strictEqual(result2.value.port, 80);
+    });
+
+    it("should prefer valid split over host-only to preserve round-trip", () => {
+      const parser = socketAddress({ separator: "to", defaultPort: 80 });
+
+      // "exampleto80" has a valid split: host="example", port=80.
+      // The split must win over host-only so that parse(format(v)) == v.
+      const result1 = parser.parse("exampleto80");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value.host, "example");
+      assert.strictEqual(result1.value.port, 80);
+
+      const result2 = parser.parse("serverto443");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value.host, "server");
+      assert.strictEqual(result2.value.port, 443);
+    });
+
+    it("should split at separator when requirePort is true", () => {
+      const parser = socketAddress({ separator: "to", requirePort: true });
+
+      const result = parser.parse("torontoto8080");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "toronto");
+      assert.strictEqual(result.value.port, 8080);
+    });
+
+    it("should route to invalidFormat when requirePort is true and separator is present but no valid split exists", () => {
+      const parser = socketAddress({ separator: "to", requirePort: true });
+
+      // "toronto" contains "to" but no split produces a valid parse.
+      // Since the separator IS present, the error should be
+      // invalidFormat, not missingPort.
+      const result = parser.parse("toronto");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "hosttoport" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "toronto" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should split when whole input is not a valid hostname", () => {
+      // Default separator ":" never appears in valid hostnames,
+      // so splitting always works correctly.
+      const parser = socketAddress({ separator: ":", defaultPort: 80 });
+
+      const result = parser.parse("localhost:3000");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "localhost");
+      assert.strictEqual(result.value.port, 3000);
+    });
+
+    it("should report missingPort for valid hostname when no defaultPort", () => {
+      // With no defaultPort and requirePort: false (default), a valid
+      // hostname should get missingPort, not invalidFormat.
+      const parser = socketAddress({ separator: "to" });
+
+      const result = parser.parse("toronto");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should try multiple separator positions from right to left", () => {
+      const parser = socketAddress({ separator: "to", requirePort: true });
+
+      // "prototo80" has "to" at positions 3 and 5.
+      // Right-to-left: pos 5 → host="proto", port="80" → both valid → accept
+      const result = parser.parse("prototo80");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "proto");
+      assert.strictEqual(result.value.port, 80);
+    });
+
+    it("should round-trip through format and parse", () => {
+      const parser = socketAddress({ separator: "to", defaultPort: 80 });
+
+      // format() appends separator+port, and since the separator cannot
+      // contain digits, parse() always finds that boundary correctly.
+      const value = { host: "toronto", port: 8080 };
+      const formatted = parser.format(value);
+      assert.strictEqual(formatted, "torontoto8080");
+      const result = parser.parse(formatted);
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, value);
+    });
+
+    it("should fall back to host-only when no valid split exists", () => {
+      const parser = socketAddress({ separator: "-", defaultPort: 80 });
+
+      // "example-server" has no valid split (port "server" is not a
+      // number), so the whole input is treated as a hostname.
+      const result = parser.parse("example-server");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "example-server");
+      assert.strictEqual(result.value.port, 80);
+    });
+
+    it("should reject when split has valid host but invalid numeric port", () => {
+      // "db-70000" should NOT be silently accepted as a hostname.
+      // The port part "70000" is all digits → user intended a port.
+      // But since the separator "-" can appear in hostnames and the
+      // whole input is a valid hostname, the split is ambiguous.
+      // The generic format error is returned.
+      const parser = socketAddress({ separator: "-", defaultPort: 80 });
+
+      const result = parser.parse("db-70000");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host-port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "db-70000" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should propagate IP error over numeric port rejection when host is restricted", () => {
+      // "192.168.1.1:70000" has a private IP host + out-of-range port.
+      // The IP-specific error should surface, not the generic format
+      // error from validHostNumericPortInvalid.
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      const result = parser.parse("192.168.1.1:70000");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.1.1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should reject doubled-separator inputs with invalid numeric port", () => {
+      // "db--70000" has host "db-" (invalid trailing hyphen) + port
+      // "70000".  The all-digit suffix is still a port typo even though
+      // the host part at that split point is invalid.  But since the
+      // whole input is a valid hostname, the split is ambiguous and
+      // the generic format error is returned.
+      const parser = socketAddress({ separator: "-", defaultPort: 80 });
+
+      const result = parser.parse("db--70000");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host-port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "db--70000" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should ignore non-IP split host errors when the whole input is a valid hostname", () => {
+      // "db--oops" splits as host "db-" (invalid trailing hyphen) +
+      // port "oops" (non-numeric).  The non-IP host error should be
+      // deferred, and the whole input "db--oops" accepted as a hostname.
+      const parser = socketAddress({ separator: "-", defaultPort: 80 });
+
+      const result = parser.parse("db--oops");
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, { host: "db--oops", port: 80 });
+    });
+
+    it("should route to invalidFormat, not missingPort, when separator is present", () => {
+      // "example-com" with separator "-" and requirePort: the separator
+      // is present, so the user attempted a split.  Error should be
+      // invalidFormat, not missingPort.
+      const parser = socketAddress({
+        separator: "-",
+        requirePort: true,
+        errors: {
+          invalidFormat: message`Bad format`,
+          missingPort: message`Port needed`,
+        },
+      });
+
+      const result = parser.parse("example-com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Bad format" },
+      ]);
+    });
+
+    it("should reject invalid numeric port even with requirePort", () => {
+      const parser = socketAddress({ separator: "to", requirePort: true });
+
+      // "dbto70000" has a valid host + all-digit invalid port.
+      // But since "dbto70000" is a valid hostname and the separator
+      // "to" can appear in hostnames, the split is ambiguous.
+      const result = parser.parse("dbto70000");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "hosttoport" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "dbto70000" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should propagate IP-specific error, not missing port, for invalid host with requirePort", () => {
+      const parser = socketAddress({
+        separator: "to",
+        requirePort: true,
+        host: { type: "both" },
+      });
+
+      // "999.999.999.999to80" has valid port but invalid IP host.
+      // Error should be about the IP, not "missing port".
+      const result = parser.parse("999.999.999.999to80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid IPv4 address, but got " },
+        { type: "value", value: "999.999.999.999" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject trailing separator even when defaultPort is set", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+
+      // "localhost:" has an explicit trailing separator—the user intended
+      // to specify a port but left it empty.  This should fail, not silently
+      // substitute the default port.
+      const result = parser.parse("localhost:");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should reject trailing separator for hostname with defaultPort", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+      const result = parser.parse("example.com:");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should reject trailing separator for IP address with defaultPort", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+      const result = parser.parse("192.0.2.1:");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should still accept host-only input without separator when defaultPort is set", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+
+      // "example.com" has no separator—this is a valid host-only input.
+      const result = parser.parse("example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "example.com");
+      assert.strictEqual(result.value.port, 80);
+    });
+
+    it("should reject trailing custom separator with defaultPort", () => {
+      const parser = socketAddress({ separator: "-", defaultPort: 80 });
+      const result = parser.parse("example.com-");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should use custom missingPort error for trailing separator", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        errors: { missingPort: message`Port is missing.` },
+      });
+      const result = parser.parse("localhost:");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Port is missing." },
+      ]);
+    });
+
+    it("should pass the original input to function missingPort for trailing separator", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        errors: {
+          missingPort: (input) => message`Port is missing from ${input}.`,
+        },
+      });
+      const result = parser.parse("localhost:");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Port is missing from " },
+        { type: "value", value: "localhost:" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject trailing whitespace separator with defaultPort", () => {
+      const parser = socketAddress({ separator: " ", defaultPort: 80 });
+
+      // "localhost " has a trailing " " separator with empty port.
+      const result = parser.parse("localhost ");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should reject trailing tab separator with defaultPort", () => {
+      const parser = socketAddress({ separator: "\t", defaultPort: 80 });
+      const result = parser.parse("localhost\t");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should still parse whitespace separator with explicit port", () => {
+      const parser = socketAddress({ separator: " ", defaultPort: 80 });
+      const result = parser.parse("localhost 8080");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "localhost");
+      assert.strictEqual(result.value.port, 8080);
+    });
+
+    it("should accept host-only with whitespace separator when no separator in input", () => {
+      const parser = socketAddress({ separator: " ", defaultPort: 80 });
+
+      // "localhost" has no space separator—host-only input.
+      const result = parser.parse("localhost");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "localhost");
+      assert.strictEqual(result.value.port, 80);
+    });
+
+    it("should reject trailing multi-char separator overlapping trimmed region", () => {
+      // "exampleto " with separator "to "—the separator spans indices
+      // 7-9 and the trailing space at index 9 is in the whitespace-
+      // trimmed region.  The overlap means the match depends on the
+      // trailing whitespace, so it should be treated as a trailing
+      // separator, not host-only.
+      const parser = socketAddress({ separator: "to ", defaultPort: 80 });
+      const result = parser.parse("exampleto ");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should prefer host-only over trailing separator when input is a valid hostname", () => {
+      const parser = socketAddress({ separator: "to", defaultPort: 80 });
+
+      // "exampleto" is a valid hostname, so host-only wins.
+      // The trailing "to" is not treated as a separator.
+      const result = parser.parse("exampleto");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.host, "exampleto");
+      assert.strictEqual(result.value.port, 80);
+    });
+
+    it("should report missing port for trailing separator with requirePort", () => {
+      const parser = socketAddress({ requirePort: true });
+
+      const result = parser.parse("localhost:");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should not let trailing separator error override valid hostname", () => {
+      // "0177.0.0.1to" with separator "to" and hostname mode:
+      // the trailing "to" split gives host "0177.0.0.1" which fails
+      // (alt IPv4), but "0177.0.0.1to" itself is a valid hostname
+      // (label "1to" is alphanumeric).  The trailing separator error
+      // should NOT fire when the whole input is a valid hostname.
+      const parser = socketAddress({
+        separator: "to",
+        host: { type: "hostname" },
+        requirePort: true,
+      });
+
+      const result = parser.parse("0177.0.0.1to");
+      assert.ok(!result.success);
+      // Should be invalidFormat (separator found, no valid split),
+      // NOT the alt-IPv4 error for "0177.0.0.1".
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "hosttoport" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "0177.0.0.1to" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should propagate IP-specific error for trailing separator with invalid host", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      const result = parser.parse("192.168.0.1:");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.0.1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should propagate alt IPv4 error for trailing separator", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+
+      const result = parser.parse("0x7f000001:");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0x7f000001" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+
+    it("should not let custom invalidFormat turn valid host-only into failure", () => {
+      // "db-to80" with separator "to" is a valid hostname.
+      // Adding errors.invalidFormat should not change the parse result.
+      const withoutError = socketAddress({
+        separator: "to",
+        defaultPort: 80,
+      });
+      const withError = socketAddress({
+        separator: "to",
+        defaultPort: 80,
+        errors: { invalidFormat: message`Custom error` },
+      });
+
+      const result1 = withoutError.parse("db-to80");
+
+      const result2 = withError.parse("db-to80");
+      assert.deepStrictEqual(result1, result2);
+      assert.ok(result1.success);
+      assert.deepStrictEqual(result1.value, { host: "db-to80", port: 80 });
+    });
+
+    it("should reject IP-shaped split host before host-only fallback", () => {
+      // "192.168.0.1-80" with separator "-" and allowPrivate: false:
+      // the split finds host "192.168.0.1" (private, disallowed) + port
+      // "80" (valid).  The IP error must surface, not be masked by
+      // host-only accepting "192.168.0.1-80" as a hostname.
+      const parser = socketAddress({
+        separator: "-",
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      const result = parser.parse("192.168.0.1-80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.0.1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should reject malformed IPv4 split host before host-only fallback", () => {
+      const parser = socketAddress({ separator: "-", defaultPort: 80 });
+
+      const result = parser.parse("999.999.999.999-80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid IPv4 address, but got " },
+        { type: "value", value: "999.999.999.999" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should use custom invalidFormat over IP-specific split errors", () => {
+      const parser = socketAddress({
+        separator: "-",
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+        errors: { invalidFormat: message`Custom error` },
+      });
+
+      const result = parser.parse("192.168.0.1-80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Custom error" },
+      ]);
+    });
+
+    it("should propagate IP-specific error even when port suffix is invalid", () => {
+      // "192.168.1.1:abc" has an invalid port "abc", but the host
+      // "192.168.1.1" is IP-shaped.  The specific IP error should
+      // still surface rather than a generic format error.
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: { type: "both", ip: { allowPrivate: false } },
+      });
+
+      const result = parser.parse("192.168.1.1:abc");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.1.1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should propagate alt IPv4 error even when port suffix is invalid", () => {
+      const parser = socketAddress({ defaultPort: 80 });
+
+      const result = parser.parse("0x7f000001:abc");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "0x7f000001" },
+        {
+          type: "text",
+          text: " appears to be a non-standard IPv4 address notation.",
+        },
+      ]);
+    });
+  });
+
+  describe("sub-parser error propagation", () => {
+    it("should propagate port min error instead of generic format error", () => {
+      const parser = socketAddress({ port: { min: 1024 } });
+
+      const result = parser.parse("localhost:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a port number greater than or equal to ",
+        },
+        { type: "text", text: "1,024" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "80" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should propagate hostname localhostNotAllowed error", () => {
+      const parser = socketAddress({
+        host: {
+          type: "hostname",
+          hostname: { allowLocalhost: false },
+        },
+      });
+
+      const result = parser.parse("localhost:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Hostname 'localhost' is not allowed." },
+      ]);
+    });
+
+    it("should propagate IP allowPrivate error", () => {
+      const parser = socketAddress({
+        host: {
+          type: "ip",
+          ip: { allowPrivate: false },
+        },
+      });
+
+      const result = parser.parse("192.168.1.1:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.1.1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should propagate localhostNotAllowed for trailing separator", () => {
+      const parser = socketAddress({
+        host: {
+          type: "hostname",
+          hostname: { allowLocalhost: false },
+        },
+        requirePort: true,
+      });
+
+      const result = parser.parse("localhost:");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Hostname 'localhost' is not allowed." },
+      ]);
+    });
+
+    it("should propagate disallowWellKnown port error", () => {
+      const parser = socketAddress({
+        port: { disallowWellKnown: true },
+      });
+
+      const result = parser.parse("localhost:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Port " },
+        { type: "value", value: "80" },
+        {
+          type: "text",
+          text:
+            " is a well-known port (1-1023) and may require elevated privileges.",
+        },
+      ]);
+    });
+
+    it("should propagate localhostNotAllowed in both mode", () => {
+      const parser = socketAddress({
+        host: {
+          type: "both",
+          hostname: { allowLocalhost: false },
+        },
+      });
+
+      const result = parser.parse("localhost:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Hostname 'localhost' is not allowed." },
+      ]);
+    });
+
+    it("should prefer custom invalidFormat over sub-parser errors", () => {
+      const parser = socketAddress({
+        host: {
+          type: "hostname",
+          hostname: { allowLocalhost: false },
+        },
+        errors: {
+          invalidFormat: message`Custom error`,
+        },
+      });
+
+      const result = parser.parse("localhost:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Custom error" },
+      ]);
+    });
+
+    it("should prefer custom invalidFormat over port sub-parser errors", () => {
+      const parser = socketAddress({
+        port: { min: 1024 },
+        errors: {
+          invalidFormat: message`Custom error`,
+        },
+      });
+
+      const result = parser.parse("localhost:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Custom error" },
+      ]);
+    });
+
+    it("should not propagate split-host error when whole input is a valid hostname", () => {
+      // "db--80" with separator "-" splits as host "db-" (invalid
+      // trailing hyphen) + port "80" (valid).  But "db--80" is a valid
+      // single-label hostname, so the split was likely wrong.  The
+      // generic format error should be returned instead.
+      const parser = socketAddress({ separator: "-", requirePort: true });
+
+      const result = parser.parse("db--80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host-port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "db--80" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should propagate split-host error when whole input is also invalid", () => {
+      // "bad..host:80" splits as host "bad..host" (empty label) + port
+      // "80" (valid).  The whole input "bad..host:80" is also invalid as
+      // a hostname (contains colon).  The specific host error is more
+      // informative than the generic format error.
+      const parser = socketAddress({ requirePort: true });
+
+      const result = parser.parse("bad..host:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid hostname, but got " },
+        { type: "value", value: "bad..host" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should use generic format error for bare separator", () => {
+      // ":" is just a bare separator with no host or port.
+      // Should get the generic format error, not a hostname error
+      // for the empty string.
+      const parser = socketAddress({ requirePort: true });
+
+      const result = parser.parse(":");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host:port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: ":" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should use generic format error for bare custom separator", () => {
+      const parser = socketAddress({
+        separator: "-",
+        requirePort: true,
+      });
+
+      const result = parser.parse("-");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host-port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "-" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should not surface IP error for hostname-like input in ip mode with ambiguous separator", () => {
+      // "foo-80" with separator "-" and host type "ip" splits as
+      // host "foo" (invalid IP) + port 80.  But "foo-80" is a
+      // syntactically valid hostname, so the split is ambiguous.
+      // Generic format error should be used, not the IP error.
+      const parser = socketAddress({
+        separator: "-",
+        requirePort: true,
+        host: { type: "ip" },
+      });
+
+      const result = parser.parse("foo-80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host-port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "foo-80" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should not surface IP error for trailing separator in ip mode with ambiguous separator", () => {
+      // "autoto" with separator "to" and host type "ip" has a
+      // trailing "to" giving host "auto" (invalid IP).  But
+      // "autoto" is a valid hostname, so the split is ambiguous.
+      const parser = socketAddress({
+        separator: "to",
+        requirePort: true,
+        host: { type: "ip" },
+      });
+
+      const result = parser.parse("autoto");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "hosttoport" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "autoto" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should not let hostname policy options affect disambiguation in ip mode", () => {
+      // hostname.maxLength is documented as applying only to
+      // hostname/both mode.  It should not affect disambiguation
+      // in ip mode.  "foo-80" is syntactically a valid hostname
+      // (length 6 > maxLength 1), so the split is ambiguous and
+      // the generic format error should be returned.
+      const parser = socketAddress({
+        separator: "-",
+        requirePort: true,
+        host: { type: "ip", hostname: { maxLength: 1 } },
+      });
+
+      const result = parser.parse("foo-80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host-port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "foo-80" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should not surface split-host error for wildcard hostnames with ambiguous separator", () => {
+      // "*.example--80" is a valid hostname under allowWildcard.
+      // The split "*.example-" + "80" is ambiguous, so the generic
+      // format error should be returned.
+      for (const type of ["hostname", "both"] as const) {
+        const parser = socketAddress({
+          separator: "-",
+          requirePort: true,
+          host: { type, hostname: { allowWildcard: true } },
+        });
+
+        const result = parser.parse("*.example--80");
+        assert.ok(!result.success);
+        assert.deepStrictEqual(result.error, [
+          { type: "text", text: "Expected a socket address in format " },
+          { type: "text", text: "host-port" },
+          { type: "text", text: ", but got " },
+          { type: "value", value: "*.example--80" },
+          { type: "text", text: "." },
+        ]);
+      }
+    });
+
+    it("should not surface split-host error for underscore hostnames with ambiguous separator", () => {
+      // "_service--80" is a valid hostname under allowUnderscore.
+      for (const type of ["hostname", "both"] as const) {
+        const parser = socketAddress({
+          separator: "-",
+          requirePort: true,
+          host: { type, hostname: { allowUnderscore: true } },
+        });
+
+        const result = parser.parse("_service--80");
+        assert.ok(!result.success);
+        assert.deepStrictEqual(result.error, [
+          { type: "text", text: "Expected a socket address in format " },
+          { type: "text", text: "host-port" },
+          { type: "text", text: ", but got " },
+          { type: "value", value: "_service--80" },
+          { type: "text", text: "." },
+        ]);
+      }
+    });
+
+    it("should respect enlarged maxLength in disambiguation", () => {
+      // A multi-label hostname longer than 253 chars is valid when
+      // maxLength is raised.  The disambiguation check should
+      // respect this so the input is treated as an ambiguous
+      // hostname-like token.  (Single labels are limited to 63 chars
+      // by RFC 1123 regardless of maxLength.)
+      const base = "aa" + ".aa".repeat(84); // 254 chars, 85 labels
+      const input = `${base}--80`; // 258 chars
+      for (const type of ["hostname", "both"] as const) {
+        const parser = socketAddress({
+          separator: "-",
+          requirePort: true,
+          host: { type, hostname: { maxLength: 300 } },
+        });
+
+        const result = parser.parse(input);
+        assert.ok(!result.success);
+        assert.deepStrictEqual(result.error, [
+          { type: "text", text: "Expected a socket address in format " },
+          { type: "text", text: "host-port" },
+          { type: "text", text: ", but got " },
+          { type: "value", value: input },
+          { type: "text", text: "." },
+        ]);
+      }
+    });
+
+    it("should treat repeated default separator input as bare IPv6", () => {
+      // "::80" is a valid bare IPv6 literal, not host ":" + port 80.
+      // With requirePort it should therefore fail as a missing port.
+      const parser = socketAddress({ requirePort: true });
+
+      const result = parser.parse("::80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Port number is required but was not specified.",
+        },
+      ]);
+    });
+
+    it("should use generic format error for repeated custom separator", () => {
+      const parser = socketAddress({
+        separator: "-",
+        requirePort: true,
+      });
+
+      const result = parser.parse("--80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host-port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "--80" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should not surface port error for ambiguous separator when whole input is a hostname", () => {
+      // "foo-70000" with separator "-": the port 70000 is out of
+      // range, but "foo-70000" is also a valid hostname.  The split
+      // is ambiguous—same as "foo-80"—so the generic format
+      // error should be returned, not the port error.
+      const parser = socketAddress({
+        separator: "-",
+        requirePort: true,
+        host: { type: "ip" },
+      });
+
+      const result = parser.parse("foo-70000");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host-port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "foo-70000" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should still propagate port error for unambiguous separator", () => {
+      // "example.com:70000" with separator ":": colons never appear
+      // in hostnames, so the split is unambiguous.  The specific
+      // port error should be returned.
+      const parser = socketAddress({ requirePort: true });
+
+      const result = parser.parse("example.com:70000");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a port number less than or equal to ",
+        },
+        { type: "text", text: "65,535" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "70000" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should prioritize host error over port error when both fail", () => {
+      // "localhost:70000" with allowLocalhost: false.  Both host and
+      // port are invalid, but the host error is more fundamental —
+      // fixing the port still leaves a rejected host.
+      const parser = socketAddress({
+        requirePort: true,
+        host: {
+          type: "hostname",
+          hostname: { allowLocalhost: false },
+        },
+      });
+
+      const result = parser.parse("localhost:70000");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Hostname 'localhost' is not allowed." },
+      ]);
+    });
+
+    it("should propagate host error for disallowed underscore with ambiguous separator", () => {
+      // "_host-80" with allowUnderscore: false.  The user's parser
+      // rejects "_host-80" as a hostname, so the split is unambiguous.
+      for (const type of ["hostname", "both"] as const) {
+        const parser = socketAddress({
+          separator: "-",
+          requirePort: true,
+          host: {
+            type,
+            hostname: { allowUnderscore: false },
+          },
+        });
+
+        const result = parser.parse("_host-80");
+        assert.ok(!result.success);
+        assert.deepStrictEqual(result.error, [
+          {
+            type: "text",
+            text: "Hostname ",
+          },
+          { type: "value", value: "_host" },
+          {
+            type: "text",
+            text: " contains underscore, which is not allowed.",
+          },
+        ]);
+      }
+    });
+
+    it("should propagate host error for maxLength violation with ambiguous separator", () => {
+      // "foobar-80" with maxLength: 5.  "foobar-80" exceeds 5 chars,
+      // so the user's parser rejects it.  The split is unambiguous.
+      for (const type of ["hostname", "both"] as const) {
+        const parser = socketAddress({
+          separator: "-",
+          requirePort: true,
+          host: {
+            type,
+            hostname: { maxLength: 5 },
+          },
+        });
+
+        const result = parser.parse("foobar-80");
+        assert.ok(!result.success);
+        assert.deepStrictEqual(result.error, [
+          { type: "text", text: "Hostname " },
+          { type: "value", value: "foobar" },
+          { type: "text", text: " is too long (maximum " },
+          { type: "text", text: "5" },
+          { type: "text", text: " characters)." },
+        ]);
+      }
+    });
+
+    it("should propagate host error with dot separator for dotted hosts", () => {
+      // When separator is ".", dotted hosts like "192.168.1.1"
+      // inherently contain the separator.  The degenerate-host guard
+      // should not suppress error propagation for these.
+      const parser = socketAddress({
+        separator: ".",
+        requirePort: true,
+        host: { type: "ip", ip: { allowPrivate: false } },
+      });
+
+      const result = parser.parse("192.168.1.1.");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.1.1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should prefer custom invalidFormat when both host and port fail", () => {
+      const parser = socketAddress({
+        host: {
+          type: "both",
+          ip: { allowPrivate: false },
+        },
+        errors: {
+          invalidFormat: message`Custom error`,
+        },
+      });
+
+      const result = parser.parse("192.168.1.1:70000");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Custom error" },
+      ]);
+    });
+
+    it("should keep IP-shaped split errors over earlier generic host errors", () => {
+      const parser = socketAddress({
+        requirePort: true,
+        host: {
+          type: "both",
+          ip: { allowPrivate: false },
+        },
+      });
+
+      const result = parser.parse("192.168.1.1:abc:80");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.1.1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should prefer custom invalidFormat for invalid trailing hosts", () => {
+      const parser = socketAddress({
+        defaultPort: 80,
+        host: {
+          type: "both",
+          ip: { allowPrivate: false },
+        },
+        errors: {
+          invalidFormat: message`Custom trailing host error`,
+        },
+      });
+
+      const result = parser.parse("192.168.1.1:");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Custom trailing host error" },
+      ]);
+    });
+
+    it("should return socket-level format error for non-numeric port suffix", () => {
+      // "abc" does not match the /^[0-9]+$/ gate, so port() is
+      // never consulted.  The generic format error is the correct
+      // and intentional outcome.
+      const parser = socketAddress({ requirePort: true });
+
+      const result = parser.parse("localhost:abc");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a socket address in format " },
+        { type: "text", text: "host:port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "localhost:abc" },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+});
+
+describe("macAddress()", () => {
+  describe("basic validation with any separator", () => {
+    it("should accept colon-separated MAC addresses", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00:1A:2B:3C:4D:5E");
+    });
+
+    it("should accept lowercase colon-separated", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("00:1a:2b:3c:4d:5e");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00:1a:2b:3c:4d:5e");
+    });
+
+    it("should accept hyphen-separated MAC addresses", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("00-1A-2B-3C-4D-5E");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00-1A-2B-3C-4D-5E");
+    });
+
+    it("should accept dot-separated MAC addresses (Cisco format)", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("001A.2B3C.4D5E");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "001A.2B3C.4D5E");
+    });
+
+    it("should accept dot-separated with lowercase", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("001a.2b3c.4d5e");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "001a.2b3c.4d5e");
+    });
+
+    it("should accept no separator", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("001A2B3C4D5E");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "001A2B3C4D5E");
+    });
+
+    it("should accept and zero-pad single-digit octets with colons", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("0:1:2:3:4:5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00:01:02:03:04:05");
+    });
+  });
+
+  describe("separator option", () => {
+    it("should only accept colon-separated when separator is :", () => {
+      const parser = macAddress({ separator: ":" });
+
+      const result1 = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("00-1A-2B-3C-4D-5E");
+      assert.ok(!result2.success);
+
+      const result3 = parser.parse("001A.2B3C.4D5E");
+      assert.ok(!result3.success);
+
+      const result4 = parser.parse("001A2B3C4D5E");
+      assert.ok(!result4.success);
+    });
+
+    it("should only accept hyphen-separated when separator is -", () => {
+      const parser = macAddress({ separator: "-" });
+
+      const result1 = parser.parse("00-1A-2B-3C-4D-5E");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(!result2.success);
+    });
+
+    it("should only accept dot-separated when separator is .", () => {
+      const parser = macAddress({ separator: "." });
+
+      const result1 = parser.parse("001A.2B3C.4D5E");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(!result2.success);
+    });
+
+    it("should only accept no separator when separator is none", () => {
+      const parser = macAddress({ separator: "none" });
+
+      const result1 = parser.parse("001A2B3C4D5E");
+      assert.ok(result1.success);
+
+      const result2 = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(!result2.success);
+    });
+  });
+
+  describe("case option", () => {
+    it("should preserve case by default", () => {
+      const parser = macAddress();
+
+      const result1 = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "00:1A:2B:3C:4D:5E");
+
+      const result2 = parser.parse("00:1a:2b:3c:4d:5e");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "00:1a:2b:3c:4d:5e");
+    });
+
+    it("should convert to uppercase when case is upper", () => {
+      const parser = macAddress({ case: "upper" });
+
+      const result1 = parser.parse("00:1a:2b:3c:4d:5e");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "00:1A:2B:3C:4D:5E");
+
+      const result2 = parser.parse("00-1a-2b-3c-4d-5e");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "00-1A-2B-3C-4D-5E");
+
+      const result3 = parser.parse("001a.2b3c.4d5e");
+      assert.ok(result3.success);
+      assert.strictEqual(result3.value, "001A.2B3C.4D5E");
+    });
+
+    it("should convert to lowercase when case is lower", () => {
+      const parser = macAddress({ case: "lower" });
+
+      const result1 = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "00:1a:2b:3c:4d:5e");
+
+      const result2 = parser.parse("00-1A-2B-3C-4D-5E");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "00-1a-2b-3c-4d-5e");
+    });
+  });
+
+  describe("outputSeparator option", () => {
+    it("should normalize to colon separator", () => {
+      const parser = macAddress({ outputSeparator: ":" });
+
+      const result1 = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "00:1A:2B:3C:4D:5E");
+
+      const result2 = parser.parse("00-1A-2B-3C-4D-5E");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "00:1A:2B:3C:4D:5E");
+
+      const result3 = parser.parse("001A.2B3C.4D5E");
+      assert.ok(result3.success);
+      assert.strictEqual(result3.value, "00:1A:2B:3C:4D:5E");
+
+      const result4 = parser.parse("001A2B3C4D5E");
+      assert.ok(result4.success);
+      assert.strictEqual(result4.value, "00:1A:2B:3C:4D:5E");
+    });
+
+    it("should normalize to hyphen separator", () => {
+      const parser = macAddress({ outputSeparator: "-" });
+
+      const result1 = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "00-1A-2B-3C-4D-5E");
+
+      const result2 = parser.parse("001A.2B3C.4D5E");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "00-1A-2B-3C-4D-5E");
+    });
+
+    it("should normalize to dot separator (Cisco format)", () => {
+      const parser = macAddress({ outputSeparator: "." });
+
+      const result1 = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "001A.2B3C.4D5E");
+
+      const result2 = parser.parse("00-1A-2B-3C-4D-5E");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "001A.2B3C.4D5E");
+
+      const result3 = parser.parse("001A2B3C4D5E");
+      assert.ok(result3.success);
+      assert.strictEqual(result3.value, "001A.2B3C.4D5E");
+    });
+
+    it("should normalize to no separator", () => {
+      const parser = macAddress({ outputSeparator: "none" });
+
+      const result1 = parser.parse("00:1A:2B:3C:4D:5E");
+      assert.ok(result1.success);
+      assert.strictEqual(result1.value, "001A2B3C4D5E");
+
+      const result2 = parser.parse("001A.2B3C.4D5E");
+      assert.ok(result2.success);
+      assert.strictEqual(result2.value, "001A2B3C4D5E");
+    });
+
+    it("should combine outputSeparator with case conversion", () => {
+      const parser = macAddress({ outputSeparator: ":", case: "upper" });
+
+      const result = parser.parse("00-1a-2b-3c-4d-5e");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00:1A:2B:3C:4D:5E");
+    });
+
+    it("should zero-pad single-digit octets with colon outputSeparator", () => {
+      const parser = macAddress({ outputSeparator: ":" });
+
+      const result = parser.parse("0:1:2:3:4:5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00:01:02:03:04:05");
+    });
+
+    it("should zero-pad single-digit octets with hyphen outputSeparator", () => {
+      const parser = macAddress({ outputSeparator: "-" });
+
+      const result = parser.parse("0:1:2:3:4:5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00-01-02-03-04-05");
+    });
+
+    it("should zero-pad single-digit octets with dot outputSeparator", () => {
+      const parser = macAddress({ outputSeparator: "." });
+
+      const result = parser.parse("0:1:2:3:4:5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "0001.0203.0405");
+    });
+
+    it("should zero-pad single-digit octets with none outputSeparator", () => {
+      const parser = macAddress({ outputSeparator: "none" });
+
+      const result = parser.parse("0:1:2:3:4:5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "000102030405");
+    });
+
+    it("should round-trip single-digit octets through dot format", () => {
+      const dotParser = macAddress({ outputSeparator: ".", case: "upper" });
+      const first = dotParser.parse("0:1:2:3:4:5");
+      assert.ok(first.success);
+      assert.strictEqual(first.value, "0001.0203.0405");
+
+      const second = dotParser.parse(first.value);
+      assert.ok(second.success);
+      assert.strictEqual(second.value, first.value);
+    });
+
+    it("should zero-pad and apply case conversion together", () => {
+      const parser = macAddress({ outputSeparator: ":", case: "upper" });
+
+      const result = parser.parse("a:1b:2:3c:4d:5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "0A:1B:02:3C:4D:05");
+    });
+  });
+
+  describe("invalid input", () => {
+    it("should reject non-hex characters", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("00:1G:2B:3C:4D:5E");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepStrictEqual(result.error, [
+          { type: "text", text: "Expected a valid MAC address, but got " },
+          { type: "value", value: "00:1G:2B:3C:4D:5E" },
+          { type: "text", text: "." },
+        ]);
+      }
+    });
+
+    it("should reject too few octets", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("00:1A:2B:3C:4D");
+      assert.ok(!result.success);
+    });
+
+    it("should reject too many octets", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("00:1A:2B:3C:4D:5E:FF");
+      assert.ok(!result.success);
+    });
+
+    it("should reject invalid dot format (not 3 groups)", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("001A.2B3C");
+      assert.ok(!result.success);
+    });
+
+    it("should reject invalid dot format (wrong group size)", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("001A.2B3.C4D5E");
+      assert.ok(!result.success);
+    });
+
+    it("should reject mixed separators", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("00:1A-2B:3C:4D:5E");
+      assert.ok(!result.success);
+    });
+
+    it("should reject empty string", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("");
+      assert.ok(!result.success);
+    });
+
+    it("should reject octets > FF", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("00:1A:2B:3C:4D:1FF");
+      assert.ok(!result.success);
+    });
+
+    it("should accept and zero-pad single-digit octets with hyphens", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("0-1-2-3-4-5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00-01-02-03-04-05");
+    });
+
+    it("should accept and zero-pad mixed single and double digit octets with colons", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("0A:1:2B:3:4D:5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "0A:01:2B:03:4D:05");
+    });
+
+    it("should accept and zero-pad mixed single and double digit octets with hyphens", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("0A-1-2B-3-4D-5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "0A-01-2B-03-4D-05");
+    });
+
+    it("should keep dot-separated input strict (4 hex chars per group)", () => {
+      const parser = macAddress({ separator: "." });
+
+      assert.ok(!parser.parse("01.23.45").success);
+      assert.ok(!parser.parse("1.0203.0405").success);
+    });
+
+    it("should keep no-separator input strict (12 hex chars)", () => {
+      const parser = macAddress({ separator: "none" });
+
+      assert.ok(!parser.parse("012345").success);
+      assert.ok(!parser.parse("00010203045").success);
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("should use custom static error message", () => {
+      const parser = macAddress({
+        errors: {
+          invalidMacAddress: message`Not a valid MAC address`,
+        },
+      });
+
+      const result = parser.parse("invalid");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepStrictEqual(result.error, [
+          { type: "text", text: "Not a valid MAC address" },
+        ]);
+      }
+    });
+
+    it("should use custom function error message", () => {
+      const parser = macAddress({
+        errors: {
+          invalidMacAddress: (input) => message`Invalid MAC: ${text(input)}`,
+        },
+      });
+
+      const result = parser.parse("00:1G:2B");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepStrictEqual(result.error, [
+          { type: "text", text: "Invalid MAC: " },
+          { type: "text", text: "00:1G:2B" },
+        ]);
+      }
+    });
+  });
+
+  describe("metavar", () => {
+    it("should return default metavar", () => {
+      const parser = macAddress();
+      assert.strictEqual(parser.metavar, "MAC");
+    });
+
+    it("should return custom metavar", () => {
+      const parser = macAddress({ metavar: "MAC_ADDR" });
+      assert.strictEqual(parser.metavar, "MAC_ADDR");
+    });
+  });
+
+  describe("placeholder", () => {
+    it("should reflect the selected output separator", () => {
+      assert.strictEqual(macAddress().placeholder, "00:00:00:00:00:00");
+      assert.strictEqual(
+        macAddress({ separator: "." }).placeholder,
+        "0000.0000.0000",
+      );
+      assert.strictEqual(
+        macAddress({ separator: "none" }).placeholder,
+        "000000000000",
+      );
+      assert.strictEqual(
+        macAddress({ separator: "none", outputSeparator: "-" }).placeholder,
+        "00-00-00-00-00-00",
+      );
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle all zeros", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("00:00:00:00:00:00");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00:00:00:00:00:00");
+    });
+
+    it("should handle all Fs", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("FF:FF:FF:FF:FF:FF");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "FF:FF:FF:FF:FF:FF");
+    });
+
+    it("should zero-pad single-digit octets in all positions", () => {
+      const parser = macAddress();
+
+      const result = parser.parse("0:1:2:3:4:5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00:01:02:03:04:05");
+    });
+
+    it("should zero-pad single-digit octets with outputSeparator", () => {
+      const parser = macAddress({ outputSeparator: ":" });
+
+      const result = parser.parse("0:1:2:3:4:5");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "00:01:02:03:04:05");
+    });
+
+    it("should handle mixed case input with case conversion", () => {
+      const parser = macAddress({ case: "upper" });
+
+      const result = parser.parse("aA:bB:cC:dD:eE:fF");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "AA:BB:CC:DD:EE:FF");
+    });
+  });
+
+  describe("option validation", () => {
+    it("should throw TypeError for invalid separator value", () => {
+      assert.throws(
+        () => macAddress({ separator: "foo" as never }),
+        {
+          name: "TypeError",
+          message:
+            'Expected separator to be one of ":", "-", ".", "none", "any", but got string: "foo".',
+        },
+      );
+    });
+
+    it("should throw TypeError for invalid outputSeparator value", () => {
+      assert.throws(
+        () => macAddress({ outputSeparator: "any" as never }),
+        {
+          name: "TypeError",
+          message:
+            'Expected outputSeparator to be one of ":", "-", ".", "none", but got string: "any".',
+        },
+      );
+    });
+
+    it("should throw TypeError for invalid case value", () => {
+      assert.throws(
+        () => macAddress({ case: "weird" as never }),
+        {
+          name: "TypeError",
+          message:
+            'Expected case to be one of "preserve", "upper", "lower", but got string: "weird".',
+        },
+      );
+    });
+
+    it("should accept all valid separator values", () => {
+      for (const sep of [":", "-", ".", "none", "any"] as const) {
+        macAddress({ separator: sep });
+      }
+    });
+
+    it("should accept all valid outputSeparator values", () => {
+      for (const sep of [":", "-", ".", "none"] as const) {
+        macAddress({ outputSeparator: sep });
+      }
+    });
+
+    it("should accept all valid case values", () => {
+      for (const c of ["preserve", "upper", "lower"] as const) {
+        macAddress({ case: c });
+      }
+    });
+
+    it("should accept undefined options", () => {
+      macAddress();
+      macAddress({});
+    });
+  });
+});
+
+describe("domain()", () => {
+  describe("basic validation", () => {
+    it("should accept valid root domain", () => {
+      const parser = domain();
+      const result = parser.parse("example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "example.com");
+    });
+
+    it("should accept subdomain by default", () => {
+      const parser = domain();
+      const result = parser.parse("www.example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "www.example.com");
+    });
+
+    it("should accept multi-level subdomain", () => {
+      const parser = domain();
+      const result = parser.parse("api.staging.example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "api.staging.example.com");
+    });
+
+    it("should accept domain with numbers", () => {
+      const parser = domain();
+      const result = parser.parse("test123.example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "test123.example.com");
+    });
+
+    it("should accept domain with hyphens", () => {
+      const parser = domain();
+      const result = parser.parse("my-domain.example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "my-domain.example.com");
+    });
+  });
+
+  describe("allowSubdomains option", () => {
+    it("should accept root domain when allowSubdomains is false", () => {
+      const parser = domain({ allowSubdomains: false });
+      const result = parser.parse("example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "example.com");
+    });
+
+    it("should reject subdomain when allowSubdomains is false", () => {
+      const parser = domain({ allowSubdomains: false });
+      const result = parser.parse("www.example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Subdomains are not allowed, but got " },
+        { type: "value", value: "www.example.com" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject multi-level subdomain when allowSubdomains is false", () => {
+      const parser = domain({ allowSubdomains: false });
+      const result = parser.parse("api.staging.example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Subdomains are not allowed, but got " },
+        { type: "value", value: "api.staging.example.com" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should throw TypeError when allowSubdomains is false and minLabels > 2", () => {
+      assert.throws(
+        () => domain({ allowSubdomains: false, minLabels: 3 }),
+        {
+          name: "TypeError",
+          message:
+            "allowSubdomains: false is incompatible with minLabels > 2, " +
+            "as non-subdomain domains have exactly 2 labels.",
+        },
+      );
+    });
+
+    it("should not throw when allowSubdomains is false and minLabels is 2", () => {
+      assert.doesNotThrow(
+        () => domain({ allowSubdomains: false, minLabels: 2 }),
+      );
+    });
+
+    it("should not throw when allowSubdomains is false and minLabels is 1", () => {
+      assert.doesNotThrow(
+        () => domain({ allowSubdomains: false, minLabels: 1 }),
+      );
+    });
+
+    it("should not throw when allowSubdomains is true and minLabels > 2", () => {
+      assert.doesNotThrow(
+        () => domain({ allowSubdomains: true, minLabels: 3 }),
+      );
+    });
+
+    it("should throw RangeError when minLabels is 0", () => {
+      assert.throws(
+        () => domain({ minLabels: 0 }),
+        {
+          name: "RangeError",
+          message: "minLabels must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should throw RangeError when minLabels is negative", () => {
+      assert.throws(
+        () => domain({ minLabels: -1 }),
+        {
+          name: "RangeError",
+          message: "minLabels must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should throw RangeError when minLabels is NaN", () => {
+      assert.throws(
+        () => domain({ minLabels: NaN }),
+        {
+          name: "RangeError",
+          message: "minLabels must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should throw RangeError when minLabels is fractional", () => {
+      assert.throws(
+        () => domain({ minLabels: 1.5 }),
+        {
+          name: "RangeError",
+          message: "minLabels must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should not throw when minLabels is 1", () => {
+      assert.doesNotThrow(
+        () => domain({ minLabels: 1 }),
+      );
+    });
+  });
+
+  describe("allowedTlds option", () => {
+    it("should accept domain with allowed TLD", () => {
+      const parser = domain({ allowedTlds: ["com", "org", "net"] });
+      const result = parser.parse("example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "example.com");
+    });
+
+    it("should accept domain with allowed TLD (case-insensitive)", () => {
+      const parser = domain({ allowedTlds: ["com", "org", "net"] });
+      const result = parser.parse("example.COM");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "example.COM");
+    });
+
+    it("should reject domain with disallowed TLD", () => {
+      const parser = domain({ allowedTlds: ["com", "org", "net"] });
+      const result = parser.parse("example.io");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Top-level domain " },
+        { type: "value", value: "io" },
+        { type: "text", text: " is not allowed. Allowed TLDs: " },
+        { type: "value", value: "com" },
+        { type: "text", text: ", " },
+        { type: "value", value: "org" },
+        { type: "text", text: ", and " },
+        { type: "value", value: "net" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should accept subdomain with allowed TLD", () => {
+      const parser = domain({ allowedTlds: ["com", "org"] });
+      const result = parser.parse("www.example.org");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "www.example.org");
+    });
+
+    it("should throw TypeError when allowedTlds is empty", () => {
+      assert.throws(
+        () => domain({ allowedTlds: [] }),
+        {
+          name: "TypeError",
+          message: "allowedTlds must not be empty.",
+        },
+      );
+    });
+
+    it("should throw TypeError for non-string entry", () => {
+      assert.throws(
+        () => domain({ allowedTlds: [123 as never] }),
+        {
+          name: "TypeError",
+          message: "allowedTlds[0] must be a string, but got number.",
+        },
+      );
+    });
+
+    it("should throw TypeError for array entry", () => {
+      assert.throws(
+        () => domain({ allowedTlds: [["com"] as never] }),
+        {
+          name: "TypeError",
+          message: "allowedTlds[0] must be a string, but got array.",
+        },
+      );
+    });
+
+    it("should throw TypeError for entry containing a dot", () => {
+      assert.throws(
+        () => domain({ allowedTlds: [".com"] as never }),
+        {
+          name: "TypeError",
+          message: 'allowedTlds[0] must not contain dots: ".com".',
+        },
+      );
+    });
+
+    it("should throw TypeError for entry with leading whitespace", () => {
+      assert.throws(
+        () => domain({ allowedTlds: [" com"] as never }),
+        {
+          name: "TypeError",
+          message: "allowedTlds[0] must not have leading or trailing " +
+            'whitespace: " com".',
+        },
+      );
+    });
+
+    it("should throw TypeError for entry with trailing whitespace", () => {
+      assert.throws(
+        () => domain({ allowedTlds: ["com "] as never }),
+        {
+          name: "TypeError",
+          message: "allowedTlds[0] must not have leading or trailing " +
+            'whitespace: "com ".',
+        },
+      );
+    });
+
+    it("should throw TypeError for entry with leading and trailing whitespace", () => {
+      assert.throws(
+        () => domain({ allowedTlds: [" com "] as never }),
+        {
+          name: "TypeError",
+          message: "allowedTlds[0] must not have leading or trailing " +
+            'whitespace: " com ".',
+        },
+      );
+    });
+
+    it("should throw TypeError for empty string entry", () => {
+      assert.throws(
+        () => domain({ allowedTlds: [""] as never }),
+        {
+          name: "TypeError",
+          message: "allowedTlds[0] must not be an empty string.",
+        },
+      );
+    });
+
+    it("should include index in error message", () => {
+      assert.throws(
+        () => domain({ allowedTlds: ["com", "org", 42 as never] }),
+        {
+          name: "TypeError",
+          message: "allowedTlds[2] must be a string, but got number.",
+        },
+      );
+    });
+
+    it("should throw TypeError for entry starting with hyphen", () => {
+      assert.throws(
+        () => domain({ allowedTlds: ["-com"] as never }),
+        {
+          name: "TypeError",
+          message: 'allowedTlds[0] is not a valid DNS label: "-com".',
+        },
+      );
+    });
+
+    it("should throw TypeError for entry ending with hyphen", () => {
+      assert.throws(
+        () => domain({ allowedTlds: ["com-"] as never }),
+        {
+          name: "TypeError",
+          message: 'allowedTlds[0] is not a valid DNS label: "com-".',
+        },
+      );
+    });
+
+    it("should throw TypeError for entry with underscore", () => {
+      assert.throws(
+        () => domain({ allowedTlds: ["co_m"] as never }),
+        {
+          name: "TypeError",
+          message: 'allowedTlds[0] is not a valid DNS label: "co_m".',
+        },
+      );
+    });
+  });
+
+  describe("minLabels option", () => {
+    it("should accept domain with exact minLabels", () => {
+      const parser = domain({ minLabels: 2 });
+      const result = parser.parse("example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "example.com");
+    });
+
+    it("should accept domain with more than minLabels", () => {
+      const parser = domain({ minLabels: 2 });
+      const result = parser.parse("www.example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "www.example.com");
+    });
+
+    it("should reject domain with fewer than minLabels", () => {
+      const parser = domain({ minLabels: 3 });
+      const result = parser.parse("example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Domain " },
+        { type: "value", value: "example.com" },
+        { type: "text", text: " must have at least 3 labels." },
+      ]);
+    });
+
+    it("should accept single label domain with minLabels: 1", () => {
+      const parser = domain({ minLabels: 1 });
+      const result = parser.parse("localhost");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "localhost");
+    });
+
+    it("should reject single label domain by default (minLabels: 2)", () => {
+      const parser = domain();
+      const result = parser.parse("localhost");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Domain " },
+        { type: "value", value: "localhost" },
+        { type: "text", text: " must have at least 2 labels." },
+      ]);
+    });
+  });
+
+  describe("lowercase option", () => {
+    it("should preserve case by default", () => {
+      const parser = domain();
+      const result = parser.parse("Example.COM");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "Example.COM");
+    });
+
+    it("should convert to lowercase when lowercase is true", () => {
+      const parser = domain({ lowercase: true });
+      const result = parser.parse("Example.COM");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "example.com");
+    });
+
+    it("should convert subdomain to lowercase", () => {
+      const parser = domain({ lowercase: true });
+      const result = parser.parse("WWW.Example.COM");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "www.example.com");
+    });
+  });
+
+  describe("invalid domains", () => {
+    it("should reject empty string", () => {
+      const parser = domain();
+      const result = parser.parse("");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid domain name, but got " },
+        { type: "value", value: "" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject domain starting with dot", () => {
+      const parser = domain();
+      const result = parser.parse(".example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid domain name, but got " },
+        { type: "value", value: ".example.com" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject domain ending with dot", () => {
+      const parser = domain();
+      const result = parser.parse("example.com.");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid domain name, but got " },
+        { type: "value", value: "example.com." },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject label starting with hyphen", () => {
+      const parser = domain();
+      const result = parser.parse("-example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid domain name, but got " },
+        { type: "value", value: "-example.com" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject label ending with hyphen", () => {
+      const parser = domain();
+      const result = parser.parse("example-.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid domain name, but got " },
+        { type: "value", value: "example-.com" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject label with special characters", () => {
+      const parser = domain();
+      const result = parser.parse("exam_ple.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid domain name, but got " },
+        { type: "value", value: "exam_ple.com" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject label longer than 63 characters", () => {
+      const parser = domain();
+      const longLabel = "a".repeat(64);
+      const result = parser.parse(`${longLabel}.com`);
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid domain name, but got " },
+        { type: "value", value: `${longLabel}.com` },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject consecutive dots", () => {
+      const parser = domain();
+      const result = parser.parse("example..com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid domain name, but got " },
+        { type: "value", value: "example..com" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject domain with spaces", () => {
+      const parser = domain();
+      const result = parser.parse("example .com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid domain name, but got " },
+        { type: "value", value: "example .com" },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("should use custom invalidDomain message", () => {
+      const parser = domain({
+        errors: {
+          invalidDomain: (input) => message`Domain ${text(input)} is not valid`,
+        },
+      });
+
+      const result = parser.parse("invalid..domain");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Domain " },
+        { type: "text", text: "invalid..domain" },
+        { type: "text", text: " is not valid" },
+      ]);
+    });
+
+    it("should use custom subdomainsNotAllowed message", () => {
+      const parser = domain({
+        allowSubdomains: false,
+        errors: {
+          subdomainsNotAllowed: (domain) =>
+            message`Root domains only. Got: ${text(domain)}`,
+        },
+      });
+
+      const result = parser.parse("www.example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Root domains only. Got: " },
+        { type: "text", text: "www.example.com" },
+      ]);
+    });
+
+    it("should use custom tldNotAllowed message", () => {
+      const parser = domain({
+        allowedTlds: ["com", "org"],
+        errors: {
+          tldNotAllowed: (tld, allowed) =>
+            message`${text(tld)} not in ${text(allowed.join(", "))}`,
+        },
+      });
+
+      const result = parser.parse("example.io");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "io" },
+        { type: "text", text: " not in " },
+        { type: "text", text: "com, org" },
+      ]);
+    });
+
+    it("should use custom tooFewLabels message", () => {
+      const parser = domain({
+        minLabels: 3,
+        errors: {
+          tooFewLabels: (domain, min) =>
+            message`${text(domain)} needs ${text(min.toString())} labels`,
+        },
+      });
+
+      const result = parser.parse("example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "example.com" },
+        { type: "text", text: " needs " },
+        { type: "text", text: "3" },
+        { type: "text", text: " labels" },
+      ]);
+    });
+  });
+
+  describe("metavar", () => {
+    it("should return default metavar", () => {
+      const parser = domain();
+      assert.strictEqual(parser.metavar, "DOMAIN");
+    });
+
+    it("should return custom metavar", () => {
+      const parser = domain({ metavar: "DOMAIN_NAME" });
+      assert.strictEqual(parser.metavar, "DOMAIN_NAME");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should accept maximum label length (63 characters)", () => {
+      const parser = domain();
+      const maxLabel = "a".repeat(63);
+      const result = parser.parse(`${maxLabel}.com`);
+      assert.ok(result.success);
+      assert.strictEqual(result.value, `${maxLabel}.com`);
+    });
+
+    it("should accept numeric-only labels except TLD", () => {
+      const parser = domain();
+      const result = parser.parse("123.456.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "123.456.com");
+    });
+
+    it("should accept all-numeric TLD", () => {
+      const parser = domain({ minLabels: 1 });
+      const result = parser.parse("example.123");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "example.123");
+    });
+
+    it("should reject all-numeric domains like IPv4 addresses", () => {
+      const parser = domain();
+      for (
+        const input of [
+          "192.168.0.1",
+          "127.0.0.1",
+          "999.999.999.999",
+          "1.2",
+          "12.34.56",
+        ]
+      ) {
+        const result = parser.parse(input);
+        assert.ok(!result.success, `Expected ${input} to be rejected`);
+        assert.deepStrictEqual(result.error, [
+          { type: "text", text: "Expected a valid domain name, but got " },
+          { type: "value", value: input },
+          { type: "text", text: "." },
+        ]);
+      }
+    });
+
+    it("should accept domains with some numeric labels", () => {
+      const parser = domain();
+      for (
+        const input of [
+          "123.456.com",
+          "example.123",
+          "1.example.com",
+        ]
+      ) {
+        const result = parser.parse(input);
+        assert.ok(result.success, `Expected ${input} to be accepted`);
+      }
+    });
+
+    it("should accept single-label numeric names with minLabels: 1", () => {
+      const parser = domain({ minLabels: 1 });
+      const result = parser.parse("123");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "123");
+
+      const multiLabel = parser.parse("1.2");
+      assert.ok(
+        !multiLabel.success,
+        "Expected all-numeric multi-label domains to be rejected even when minLabels is 1",
+      );
+    });
+
+    it("should work with allowSubdomains and allowedTlds together", () => {
+      const parser = domain({
+        allowSubdomains: false,
+        allowedTlds: ["com", "org"],
+      });
+      const result = parser.parse("example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "example.com");
+    });
+
+    it("should reject subdomain with restricted TLDs", () => {
+      const parser = domain({
+        allowSubdomains: false,
+        allowedTlds: ["com", "org"],
+      });
+      const result = parser.parse("www.example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Subdomains are not allowed, but got " },
+        { type: "value", value: "www.example.com" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should work with all options combined", () => {
+      const parser = domain({
+        allowSubdomains: true,
+        allowedTlds: ["com", "org", "net"],
+        minLabels: 2,
+        lowercase: true,
+      });
+      const result = parser.parse("API.Example.COM");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "api.example.com");
+    });
+
+    it("should snapshot allowedTlds at construction time", () => {
+      const tlds = ["com"];
+      const parser = domain({ allowedTlds: tlds });
+      assert.ok(parser.parse("example.com").success);
+      assert.ok(!parser.parse("example.org").success);
+      // Mutate tlds after construction
+      tlds[0] = "org";
+      // Parser should still accept .com and reject .org
+      assert.ok(parser.parse("example.com").success);
+      assert.ok(!parser.parse("example.org").success);
+    });
+
+    it("should snapshot errors.invalidDomain at construction time", () => {
+      const errors: { invalidDomain: string } = {
+        invalidDomain: "original error",
+      };
+      const parser = domain({ errors: errors as never });
+      const result = parser.parse("");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.invalidDomain = "mutated error";
+      const result2 = parser.parse("");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+
+    it("should snapshot errors.tldNotAllowed at construction time", () => {
+      const errors: { tldNotAllowed: string } = {
+        tldNotAllowed: "original error",
+      };
+      const parser = domain({
+        allowedTlds: ["com"],
+        errors: errors as never,
+      });
+      const result = parser.parse("example.org");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.tldNotAllowed = "mutated error";
+      const result2 = parser.parse("example.org");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+
+    it("should snapshot errors.tooFewLabels at construction time", () => {
+      const errors: { tooFewLabels: string } = {
+        tooFewLabels: "original error",
+      };
+      const parser = domain({
+        minLabels: 3,
+        errors: errors as never,
+      });
+      const result = parser.parse("example.com");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.tooFewLabels = "mutated error";
+      const result2 = parser.parse("example.com");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+  });
+
+  describe("maxLength option", () => {
+    it("should reject domain exceeding default 253-character limit", () => {
+      const parser = domain();
+      const label = "a".repeat(63);
+      const longDomain = `${label}.${label}.${label}.${label}.com`;
+      assert.ok(longDomain.length > 253);
+      const result = parser.parse(longDomain);
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Domain " },
+        { type: "value", value: longDomain },
+        { type: "text", text: " is too long (maximum " },
+        { type: "text", text: "253" },
+        { type: "text", text: " characters)." },
+      ]);
+    });
+
+    it("should accept domain at exactly 253 characters", () => {
+      const parser = domain();
+      // 63 + 1 + 63 + 1 + 63 + 1 + 58 + 1 + 2 = 253
+      const domain253 = `${"a".repeat(63)}.${"b".repeat(63)}.${
+        "c".repeat(63)
+      }.${"d".repeat(58)}.co`;
+      assert.strictEqual(domain253.length, 253);
+      const result = parser.parse(domain253);
+      assert.ok(result.success);
+      assert.strictEqual(result.value, domain253);
+    });
+
+    it("should reject domain exceeding custom maxLength", () => {
+      const parser = domain({ maxLength: 50 });
+      const longDomain =
+        "abcdefghijklmnopqrstuvwxyz.abcdefghijklmnopqrstuvwx.com";
+      assert.ok(longDomain.length > 50);
+      const result = parser.parse(longDomain);
+      assert.ok(!result.success);
+    });
+
+    it("should accept domain within custom maxLength", () => {
+      const parser = domain({ maxLength: 50 });
+      const result = parser.parse("example.com");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "example.com");
+    });
+
+    it("should use custom tooLong error function", () => {
+      const parser = domain({
+        maxLength: 20,
+        errors: {
+          tooLong: (domain, maxLen) =>
+            message`${text(domain)} exceeds ${text(maxLen.toString())}`,
+        },
+      });
+      const result = parser.parse("this-is-a-long-name.example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "this-is-a-long-name.example.com" },
+        { type: "text", text: " exceeds " },
+        { type: "text", text: "20" },
+      ]);
+    });
+
+    it("should use static tooLong error message", () => {
+      const parser = domain({
+        maxLength: 20,
+        errors: {
+          tooLong: message`Domain is too long.`,
+        },
+      });
+      const result = parser.parse("this-is-a-long-name.example.com");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Domain is too long." },
+      ]);
+    });
+
+    it("should throw RangeError when maxLength is 0", () => {
+      assert.throws(
+        () => domain({ maxLength: 0 }),
+        {
+          name: "RangeError",
+          message: "maxLength must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should throw RangeError when maxLength is negative", () => {
+      assert.throws(
+        () => domain({ maxLength: -1 }),
+        {
+          name: "RangeError",
+          message: "maxLength must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should throw RangeError when maxLength is NaN", () => {
+      assert.throws(
+        () => domain({ maxLength: NaN }),
+        {
+          name: "RangeError",
+          message: "maxLength must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should throw RangeError when maxLength is fractional", () => {
+      assert.throws(
+        () => domain({ maxLength: 1.5 }),
+        {
+          name: "RangeError",
+          message: "maxLength must be an integer greater than or equal to 1.",
+        },
+      );
+    });
+
+    it("should snapshot errors.tooLong at construction time", () => {
+      const errors: { tooLong: string } = {
+        tooLong: "original error",
+      };
+      const parser = domain({
+        maxLength: 10,
+        errors: errors as never,
+      });
+      const result = parser.parse("this-is-long.example.com");
+      assert.ok(!result.success);
+      if (!result.success) assert.equal(result.error, "original error");
+      errors.tooLong = "mutated error";
+      const result2 = parser.parse("this-is-long.example.com");
+      assert.ok(!result2.success);
+      if (!result2.success) assert.equal(result2.error, "original error");
+    });
+  });
+
+  describe("runtime option type validation", () => {
+    it("should throw TypeError for non-boolean allowSubdomains", () => {
+      assert.throws(
+        () => domain({ allowSubdomains: "no" as never }),
+        {
+          name: "TypeError",
+          message:
+            "Expected allowSubdomains to be a boolean, but got string: no.",
+        },
+      );
+    });
+
+    it("should throw TypeError for non-boolean lowercase", () => {
+      assert.throws(
+        () => domain({ lowercase: "yes" as never }),
+        {
+          name: "TypeError",
+          message: "Expected lowercase to be a boolean, but got string: yes.",
+        },
+      );
+    });
+  });
+});
+
+describe("ipv6()", () => {
+  describe("basic validation", () => {
+    it("should accept full IPv6 address", () => {
+      const parser = ipv6();
+      const result = parser.parse("2001:0db8:85a3:0000:0000:8a2e:0370:7334");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "2001:db8:85a3::8a2e:370:7334");
+    });
+
+    it("should accept compressed IPv6 address", () => {
+      const parser = ipv6();
+      const result = parser.parse("2001:db8::8a2e:370:7334");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "2001:db8::8a2e:370:7334");
+    });
+
+    it("should accept loopback address", () => {
+      const parser = ipv6();
+      const result = parser.parse("::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "::1");
+    });
+
+    it("should accept zero address", () => {
+      const parser = ipv6();
+      const result = parser.parse("::");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "::");
+    });
+
+    it("should normalize to lowercase", () => {
+      const parser = ipv6();
+      const result = parser.parse("2001:DB8:85A3::8A2E:370:7334");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "2001:db8:85a3::8a2e:370:7334");
+    });
+
+    it("should accept link-local address", () => {
+      const parser = ipv6();
+      const result = parser.parse("fe80::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "fe80::1");
+    });
+
+    it("should accept unique local address", () => {
+      const parser = ipv6();
+      const result = parser.parse("fc00::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "fc00::1");
+    });
+
+    it("should accept multicast address", () => {
+      const parser = ipv6();
+      const result = parser.parse("ff02::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "ff02::1");
+    });
+
+    it("should accept IPv4-mapped IPv6 address", () => {
+      const parser = ipv6();
+      const result = parser.parse("::ffff:192.0.2.1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "::ffff:c000:201");
+    });
+  });
+
+  describe("allowLoopback option", () => {
+    it("should reject loopback when allowLoopback is false", () => {
+      const parser = ipv6({ allowLoopback: false });
+      const result = parser.parse("::1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::1" },
+        { type: "text", text: " is a loopback address." },
+      ]);
+    });
+
+    it("should accept loopback when allowLoopback is true", () => {
+      const parser = ipv6({ allowLoopback: true });
+      const result = parser.parse("::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "::1");
+    });
+  });
+
+  describe("allowLinkLocal option", () => {
+    it("should reject link-local when allowLinkLocal is false", () => {
+      const parser = ipv6({ allowLinkLocal: false });
+      const result = parser.parse("fe80::1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "fe80::1" },
+        { type: "text", text: " is a link-local address." },
+      ]);
+    });
+
+    it("should accept link-local when allowLinkLocal is true", () => {
+      const parser = ipv6({ allowLinkLocal: true });
+      const result = parser.parse("fe80::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "fe80::1");
+    });
+  });
+
+  describe("allowUniqueLocal option", () => {
+    it("should reject unique local when allowUniqueLocal is false", () => {
+      const parser = ipv6({ allowUniqueLocal: false });
+      const result = parser.parse("fc00::1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "fc00::1" },
+        { type: "text", text: " is a unique local address." },
+      ]);
+    });
+
+    it("should accept unique local when allowUniqueLocal is true", () => {
+      const parser = ipv6({ allowUniqueLocal: true });
+      const result = parser.parse("fc00::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "fc00::1");
+    });
+  });
+
+  describe("allowMulticast option", () => {
+    it("should reject multicast when allowMulticast is false", () => {
+      const parser = ipv6({ allowMulticast: false });
+      const result = parser.parse("ff02::1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "ff02::1" },
+        { type: "text", text: " is a multicast address." },
+      ]);
+    });
+
+    it("should accept multicast when allowMulticast is true", () => {
+      const parser = ipv6({ allowMulticast: true });
+      const result = parser.parse("ff02::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "ff02::1");
+    });
+  });
+
+  describe("allowZero option", () => {
+    it("should reject zero address when allowZero is false", () => {
+      const parser = ipv6({ allowZero: false });
+      const result = parser.parse("::");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::" },
+        { type: "text", text: " is the zero address." },
+      ]);
+    });
+
+    it("should accept zero address when allowZero is true", () => {
+      const parser = ipv6({ allowZero: true });
+      const result = parser.parse("::");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "::");
+    });
+  });
+
+  describe("invalid formats", () => {
+    it("should reject empty string", () => {
+      const parser = ipv6();
+      const result = parser.parse("");
+      assert.ok(!result.success);
+    });
+
+    it("should reject IPv4 address", () => {
+      const parser = ipv6();
+      const result = parser.parse("192.0.2.1");
+      assert.ok(!result.success);
+    });
+
+    it("should reject invalid characters", () => {
+      const parser = ipv6();
+      const result = parser.parse("2001:db8::g123");
+      assert.ok(!result.success);
+    });
+
+    it("should reject too many groups", () => {
+      const parser = ipv6();
+      const result = parser.parse(
+        "2001:db8:85a3:0:0:8a2e:370:7334:extra",
+      );
+      assert.ok(!result.success);
+    });
+
+    it("should reject multiple :: compressions", () => {
+      const parser = ipv6();
+      const result = parser.parse("2001::db8::1");
+      assert.ok(!result.success);
+    });
+
+    it("should reject zero-width :: compression", () => {
+      const parser = ipv6();
+      const result = parser.parse("1:2:3:4:5:6:7::8");
+      assert.ok(!result.success);
+    });
+
+    it("should reject groups with more than 4 hex digits", () => {
+      const parser = ipv6();
+      const result = parser.parse("2001:0db85:85a3::8a2e:370:7334");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("should use custom invalidIpv6 message", () => {
+      const parser = ipv6({
+        errors: {
+          invalidIpv6: [
+            { type: "text", text: "Not a valid IPv6!" },
+          ],
+        },
+      });
+      const result = parser.parse("invalid");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Not a valid IPv6!" },
+      ]);
+    });
+
+    it("should use custom invalidIpv6 function", () => {
+      const parser = ipv6({
+        errors: {
+          invalidIpv6: (input) => [
+            { type: "text", text: "Bad IP: " },
+            { type: "value", value: input },
+          ],
+        },
+      });
+      const result = parser.parse("bad");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Bad IP: " },
+        { type: "value", value: "bad" },
+      ]);
+    });
+
+    it("should use custom loopbackNotAllowed message", () => {
+      const parser = ipv6({
+        allowLoopback: false,
+        errors: {
+          loopbackNotAllowed: [
+            { type: "text", text: "No loopback!" },
+          ],
+        },
+      });
+      const result = parser.parse("::1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "No loopback!" },
+      ]);
+    });
+
+    it("should use custom linkLocalNotAllowed message", () => {
+      const parser = ipv6({
+        allowLinkLocal: false,
+        errors: {
+          linkLocalNotAllowed: [
+            { type: "text", text: "No link-local!" },
+          ],
+        },
+      });
+      const result = parser.parse("fe80::1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "No link-local!" },
+      ]);
+    });
+
+    it("should use custom uniqueLocalNotAllowed message", () => {
+      const parser = ipv6({
+        allowUniqueLocal: false,
+        errors: {
+          uniqueLocalNotAllowed: [
+            { type: "text", text: "No unique local!" },
+          ],
+        },
+      });
+      const result = parser.parse("fc00::1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "No unique local!" },
+      ]);
+    });
+
+    it("should use custom multicastNotAllowed message", () => {
+      const parser = ipv6({
+        allowMulticast: false,
+        errors: {
+          multicastNotAllowed: [
+            { type: "text", text: "No multicast!" },
+          ],
+        },
+      });
+      const result = parser.parse("ff02::1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "No multicast!" },
+      ]);
+    });
+
+    it("should use custom zeroNotAllowed message", () => {
+      const parser = ipv6({
+        allowZero: false,
+        errors: {
+          zeroNotAllowed: [
+            { type: "text", text: "No zero address!" },
+          ],
+        },
+      });
+      const result = parser.parse("::");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "No zero address!" },
+      ]);
+    });
+  });
+
+  describe("metavar", () => {
+    it("should return default metavar", () => {
+      const parser = ipv6();
+      assert.strictEqual(parser.metavar, "IPV6");
+    });
+
+    it("should return custom metavar", () => {
+      const parser = ipv6({ metavar: "IPv6_ADDR" });
+      assert.strictEqual(parser.metavar, "IPv6_ADDR");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should compress leading zeros", () => {
+      const parser = ipv6();
+      const result = parser.parse(
+        "2001:0db8:0000:0000:0000:0000:0000:0001",
+      );
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "2001:db8::1");
+    });
+
+    it("should handle maximum compression", () => {
+      const parser = ipv6();
+      const result = parser.parse("0000:0000:0000:0000:0000:0000:0000:0001");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "::1");
+    });
+
+    it("should handle compression at start", () => {
+      const parser = ipv6();
+      const result = parser.parse("::8a2e:370:7334");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "::8a2e:370:7334");
+    });
+
+    it("should handle compression at end", () => {
+      const parser = ipv6();
+      const result = parser.parse("2001:db8::");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "2001:db8::");
+    });
+
+    it("should handle compression in middle", () => {
+      const parser = ipv6();
+      const result = parser.parse("2001:db8::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "2001:db8::1");
+    });
+
+    it("should reject IPv4-mapped addresses with leading zeros", () => {
+      const parser = ipv6();
+
+      const withLeadingZeros = [
+        "::ffff:01.02.03.04",
+        "::ffff:192.168.001.1",
+        "::ffff:010.0.0.1",
+        "::ffff:192.168.1.01",
+        "::ffff:01.01.01.01",
+      ];
+
+      for (const addr of withLeadingZeros) {
+        const result = parser.parse(addr);
+        assert.ok(
+          !result.success,
+          `Should reject IPv4-mapped IPv6 with leading zeros: ${addr}`,
+        );
+      }
+    });
+  });
+});
+
+describe("ip()", () => {
+  describe("basic validation (both versions)", () => {
+    it("should accept IPv4 address", () => {
+      const parser = ip();
+      const result = parser.parse("192.0.2.1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "192.0.2.1");
+    });
+
+    it("should accept IPv6 address", () => {
+      const parser = ip();
+      const result = parser.parse("2001:db8::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "2001:db8::1");
+    });
+
+    it("should reject invalid input", () => {
+      const parser = ip();
+      const result = parser.parse("not-an-ip");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("version option", () => {
+    it("should accept only IPv4 when version is 4", () => {
+      const parser = ip({ version: 4 });
+      const result4 = parser.parse("192.0.2.1");
+      assert.ok(result4.success);
+      assert.strictEqual(result4.value, "192.0.2.1");
+
+      const result6 = parser.parse("2001:db8::1");
+      assert.ok(!result6.success);
+    });
+
+    it("should accept only IPv6 when version is 6", () => {
+      const parser = ip({ version: 6 });
+      const result6 = parser.parse("2001:db8::1");
+      assert.ok(result6.success);
+      assert.strictEqual(result6.value, "2001:db8::1");
+
+      const result4 = parser.parse("192.0.2.1");
+      assert.ok(!result4.success);
+    });
+
+    it("should accept both when version is 'both'", () => {
+      const parser = ip({ version: "both" });
+      const result4 = parser.parse("192.0.2.1");
+      assert.ok(result4.success);
+      assert.strictEqual(result4.value, "192.0.2.1");
+
+      const result6 = parser.parse("2001:db8::1");
+      assert.ok(result6.success);
+      assert.strictEqual(result6.value, "2001:db8::1");
+    });
+  });
+
+  describe("ipv4 options passthrough", () => {
+    it("should pass through allowPrivate option", () => {
+      const parser = ip({ ipv4: { allowPrivate: false } });
+      const result = parser.parse("192.168.1.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.1.1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should pass through allowLoopback option", () => {
+      const parser = ip({ ipv4: { allowLoopback: false } });
+      const result = parser.parse("127.0.0.1");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("ipv6 options passthrough", () => {
+    it("should pass through allowLoopback option", () => {
+      const parser = ip({ ipv6: { allowLoopback: false } });
+      const result = parser.parse("::1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::1" },
+        { type: "text", text: " is a loopback address." },
+      ]);
+    });
+
+    it("should pass through allowLinkLocal option", () => {
+      const parser = ip({ ipv6: { allowLinkLocal: false } });
+      const result = parser.parse("fe80::1");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("shared error options", () => {
+    it("should use shared loopbackNotAllowed for IPv4", () => {
+      const parser = ip({
+        errors: {
+          loopbackNotAllowed: [
+            { type: "text", text: "No loopback allowed!" },
+          ],
+        },
+        ipv4: { allowLoopback: false },
+      });
+      const result = parser.parse("127.0.0.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "No loopback allowed!" },
+      ]);
+    });
+
+    it("should use shared loopbackNotAllowed for IPv6", () => {
+      const parser = ip({
+        errors: {
+          loopbackNotAllowed: [
+            { type: "text", text: "No loopback allowed!" },
+          ],
+        },
+        ipv6: { allowLoopback: false },
+      });
+      const result = parser.parse("::1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "No loopback allowed!" },
+      ]);
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("should use custom invalidIP message", () => {
+      const parser = ip({
+        errors: {
+          invalidIP: [
+            { type: "text", text: "Not a valid IP!" },
+          ],
+        },
+      });
+      const result = parser.parse("invalid");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Not a valid IP!" },
+      ]);
+    });
+
+    it("should use custom invalidIP function", () => {
+      const parser = ip({
+        errors: {
+          invalidIP: (input) => [
+            { type: "text", text: "Bad: " },
+            { type: "value", value: input },
+          ],
+        },
+      });
+      const result = parser.parse("bad");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Bad: " },
+        { type: "value", value: "bad" },
+      ]);
+    });
+  });
+
+  describe("metavar", () => {
+    it("should return default metavar", () => {
+      const parser = ip();
+      assert.strictEqual(parser.metavar, "IP");
+    });
+
+    it("should return custom metavar", () => {
+      const parser = ip({ metavar: "IP_ADDR" });
+      assert.strictEqual(parser.metavar, "IP_ADDR");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should try IPv4 first when both versions allowed", () => {
+      const parser = ip();
+      // IPv4-mapped IPv6 should be parsed as IPv6
+      const result = parser.parse("::ffff:192.0.2.1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "::ffff:c000:201");
+    });
+
+    it("should normalize IPv4 addresses", () => {
+      const parser = ip();
+      const result = parser.parse("192.0.2.1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "192.0.2.1");
+    });
+
+    it("should normalize IPv6 addresses", () => {
+      const parser = ip();
+      const result = parser.parse("2001:0db8:0000:0000:0000:0000:0000:0001");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "2001:db8::1");
+    });
+
+    it("should reject IPv4-mapped addresses with leading zeros", () => {
+      const parser = ip();
+
+      const withLeadingZeros = [
+        "::ffff:01.02.03.04",
+        "::ffff:192.168.001.1",
+      ];
+
+      for (const addr of withLeadingZeros) {
+        const result = parser.parse(addr);
+        assert.ok(
+          !result.success,
+          `Should reject IPv4-mapped IPv6 with leading zeros in ip(): ${addr}`,
+        );
+      }
+    });
+  });
+
+  describe("IPv4-mapped IPv6 restrictions", () => {
+    it("should reject IPv4-mapped private address when allowPrivate is false", () => {
+      const parser = ip({ ipv4: { allowPrivate: false } });
+      const result = parser.parse("::ffff:192.168.0.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:c0a8:1" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should reject IPv4-mapped loopback address when allowLoopback is false", () => {
+      const parser = ip({ ipv4: { allowLoopback: false } });
+      const result = parser.parse("::ffff:127.0.0.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:7f00:1" },
+        { type: "text", text: " is a loopback address." },
+      ]);
+    });
+
+    it("should reject IPv4-mapped link-local address when allowLinkLocal is false", () => {
+      const parser = ip({ ipv4: { allowLinkLocal: false } });
+      const result = parser.parse("::ffff:169.254.1.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:a9fe:101" },
+        { type: "text", text: " is a link-local address." },
+      ]);
+    });
+
+    it("should reject IPv4-mapped multicast address when allowMulticast is false", () => {
+      const parser = ip({ ipv4: { allowMulticast: false } });
+      const result = parser.parse("::ffff:224.0.0.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:e000:1" },
+        { type: "text", text: " is a multicast address." },
+      ]);
+    });
+
+    it("should reject IPv4-mapped broadcast address when allowBroadcast is false", () => {
+      const parser = ip({ ipv4: { allowBroadcast: false } });
+      const result = parser.parse("::ffff:255.255.255.255");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:ffff:ffff" },
+        { type: "text", text: " is the broadcast address." },
+      ]);
+    });
+
+    it("should reject IPv4-mapped zero address when allowZero is false", () => {
+      const parser = ip({ ipv4: { allowZero: false } });
+      const result = parser.parse("::ffff:0.0.0.0");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:0:0" },
+        { type: "text", text: " is the zero address." },
+      ]);
+    });
+
+    it("should accept IPv4-mapped public address when allowPrivate is false", () => {
+      const parser = ip({ ipv4: { allowPrivate: false } });
+      const result = parser.parse("::ffff:203.0.113.1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "::ffff:cb00:7101");
+    });
+
+    it("should accept non-mapped IPv6 with IPv4 restrictions", () => {
+      const parser = ip({ ipv4: { allowPrivate: false } });
+      const result = parser.parse("2001:db8::1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "2001:db8::1");
+    });
+
+    it("should use custom error callback for IPv4-mapped restriction", () => {
+      const parser = ip({
+        ipv4: { allowPrivate: false },
+        errors: {
+          privateNotAllowed: (addr) =>
+            message`Private address ${addr} not allowed.`,
+        },
+      });
+      const result = parser.parse("::ffff:10.0.0.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Private address " },
+        { type: "value", value: "::ffff:a00:1" },
+        { type: "text", text: " not allowed." },
+      ]);
+    });
+
+    it("should not apply IPv4-mapped checks when version is 6", () => {
+      const parser = ip({ version: 6, ipv4: { allowPrivate: false } });
+      // ::ffff:192.168.0.1 is a valid IPv6 address; no IPv4 restrictions
+      const result = parser.parse("::ffff:192.168.0.1");
+      assert.ok(result.success);
+      assert.strictEqual(result.value, "::ffff:c0a8:1");
+    });
+
+    it("should snapshot IPv4 restrictions at construction time", () => {
+      const ipv4Opts = { allowPrivate: false };
+      const parser = ip({ ipv4: ipv4Opts });
+      // Mutate nested field after construction—should have no effect
+      ipv4Opts.allowPrivate = true;
+      const result = parser.parse("::ffff:192.168.0.1");
+      assert.ok(!result.success);
+    });
+
+    it("should snapshot error callbacks at construction time", () => {
+      const errors = {
+        privateNotAllowed: () => message`original mapped error`,
+      };
+      const parser = ip({
+        ipv4: { allowPrivate: false },
+        errors,
+      });
+      errors.privateNotAllowed = () => message`mutated mapped error`;
+      const result = parser.parse("::ffff:10.0.0.1");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "original mapped error" },
+      ]);
+    });
+  });
+});
+
+describe("cidr()", () => {
+  describe("basic validation", () => {
+    it("should accept IPv4 CIDR", () => {
+      const parser = cidr();
+      const result = parser.parse("192.0.2.0/24");
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, {
+        address: "192.0.2.0",
+        prefix: 24,
+        version: 4,
+      });
+    });
+
+    it("should accept IPv6 CIDR", () => {
+      const parser = cidr();
+      const result = parser.parse("2001:db8::/32");
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, {
+        address: "2001:db8::",
+        prefix: 32,
+        version: 6,
+      });
+    });
+
+    it("should reject invalid format (no slash)", () => {
+      const parser = cidr();
+      const result = parser.parse("192.0.2.0");
+      assert.ok(!result.success);
+    });
+
+    it("should reject invalid format (empty prefix)", () => {
+      const parser = cidr();
+      const result = parser.parse("192.0.2.0/");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("version option", () => {
+    it("should accept only IPv4 CIDR when version is 4", () => {
+      const parser = cidr({ version: 4 });
+      const result4 = parser.parse("192.0.2.0/24");
+      assert.ok(result4.success);
+      assert.strictEqual(result4.value.version, 4);
+
+      const result6 = parser.parse("2001:db8::/32");
+      assert.ok(!result6.success);
+    });
+
+    it("should accept only IPv6 CIDR when version is 6", () => {
+      const parser = cidr({ version: 6 });
+      const result6 = parser.parse("2001:db8::/32");
+      assert.ok(result6.success);
+      assert.strictEqual(result6.value.version, 6);
+
+      const result4 = parser.parse("192.0.2.0/24");
+      assert.ok(!result4.success);
+    });
+  });
+
+  describe("prefix validation", () => {
+    it("should accept valid IPv4 prefix (0-32)", () => {
+      const parser = cidr();
+      const result0 = parser.parse("192.0.2.0/0");
+      assert.ok(result0.success);
+      assert.strictEqual(result0.value.prefix, 0);
+
+      const result32 = parser.parse("192.0.2.0/32");
+      assert.ok(result32.success);
+      assert.strictEqual(result32.value.prefix, 32);
+    });
+
+    it("should reject invalid IPv4 prefix (>32)", () => {
+      const parser = cidr();
+      const result = parser.parse("192.0.2.0/33");
+      assert.ok(!result.success);
+    });
+
+    it("should accept valid IPv6 prefix (0-128)", () => {
+      const parser = cidr();
+      const result0 = parser.parse("2001:db8::/0");
+      assert.ok(result0.success);
+      assert.strictEqual(result0.value.prefix, 0);
+
+      const result128 = parser.parse("2001:db8::/128");
+      assert.ok(result128.success);
+      assert.strictEqual(result128.value.prefix, 128);
+    });
+
+    it("should reject invalid IPv6 prefix (>128)", () => {
+      const parser = cidr();
+      const result = parser.parse("2001:db8::/129");
+      assert.ok(!result.success);
+    });
+
+    it("should reject non-integer prefix", () => {
+      const parser = cidr();
+      const result = parser.parse("192.0.2.0/24.5");
+      assert.ok(!result.success);
+    });
+
+    it("should reject negative prefix", () => {
+      const parser = cidr();
+      const result = parser.parse("192.0.2.0/-1");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("minPrefix option", () => {
+    it("should reject prefix below minimum", () => {
+      const parser = cidr({ minPrefix: 16 });
+      const result = parser.parse("192.0.2.0/8");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a prefix length greater than or equal to ",
+        },
+        { type: "text", text: "16" },
+        { type: "text", text: ", but got " },
+        { type: "text", text: "8" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should accept prefix at minimum", () => {
+      const parser = cidr({ minPrefix: 16 });
+      const result = parser.parse("192.0.2.0/16");
+      assert.ok(result.success);
+    });
+  });
+
+  describe("maxPrefix option", () => {
+    it("should reject prefix above maximum", () => {
+      const parser = cidr({ maxPrefix: 24 });
+      const result = parser.parse("192.0.2.0/32");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a prefix length less than or equal to ",
+        },
+        { type: "text", text: "24" },
+        { type: "text", text: ", but got " },
+        { type: "text", text: "32" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should accept prefix at maximum", () => {
+      const parser = cidr({ maxPrefix: 24 });
+      const result = parser.parse("192.0.2.0/24");
+      assert.ok(result.success);
+    });
+  });
+
+  describe("IP address normalization", () => {
+    it("should normalize IPv4 address", () => {
+      const parser = cidr();
+      const result = parser.parse("192.0.2.0/24");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.address, "192.0.2.0");
+    });
+
+    it("should normalize IPv6 address", () => {
+      const parser = cidr();
+      const result = parser.parse("2001:0db8:0000:0000:0000:0000:0000:0000/32");
+      assert.ok(result.success);
+      assert.strictEqual(result.value.address, "2001:db8::");
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("should use custom invalidCidr message", () => {
+      const parser = cidr({
+        errors: {
+          invalidCidr: [
+            { type: "text", text: "Not a valid CIDR!" },
+          ],
+        },
+      });
+      const result = parser.parse("invalid");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Not a valid CIDR!" },
+      ]);
+    });
+
+    it("should use custom invalidPrefix message", () => {
+      const parser = cidr({
+        errors: {
+          invalidPrefix: (prefix, version) => [
+            { type: "text", text: `Bad prefix ${prefix} for IPv${version}` },
+          ],
+        },
+      });
+      const result = parser.parse("192.0.2.0/33");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Bad prefix 33 for IPv4" },
+      ]);
+    });
+
+    it("should use custom prefixBelowMinimum message", () => {
+      const parser = cidr({
+        minPrefix: 16,
+        errors: {
+          prefixBelowMinimum: [
+            { type: "text", text: "Too small!" },
+          ],
+        },
+      });
+      const result = parser.parse("192.0.2.0/8");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Too small!" },
+      ]);
+    });
+
+    it("should use custom prefixAboveMaximum message", () => {
+      const parser = cidr({
+        maxPrefix: 24,
+        errors: {
+          prefixAboveMaximum: [
+            { type: "text", text: "Too large!" },
+          ],
+        },
+      });
+      const result = parser.parse("192.0.2.0/32");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Too large!" },
+      ]);
+    });
+  });
+
+  describe("metavar", () => {
+    it("should return default metavar", () => {
+      const parser = cidr();
+      assert.strictEqual(parser.metavar, "CIDR");
+    });
+
+    it("should return custom metavar", () => {
+      const parser = cidr({ metavar: "IP_CIDR" });
+      assert.strictEqual(parser.metavar, "IP_CIDR");
+    });
+  });
+
+  describe("contradictory minPrefix > maxPrefix", () => {
+    it("should throw RangeError when minPrefix > maxPrefix", () => {
+      assert.throws(
+        () => cidr({ minPrefix: 30, maxPrefix: 20 }),
+        RangeError,
+      );
+    });
+
+    it("should not throw when minPrefix equals maxPrefix", () => {
+      assert.doesNotThrow(() => cidr({ minPrefix: 24, maxPrefix: 24 }));
+    });
+
+    it("should throw RangeError when minPrefix exceeds IPv4 max", () => {
+      assert.throws(
+        () => cidr({ version: 4, minPrefix: 64 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when maxPrefix is negative", () => {
+      assert.throws(
+        () => cidr({ maxPrefix: -1 }),
+        RangeError,
+      );
+    });
+
+    it("should not throw when minPrefix is at IPv4 max", () => {
+      assert.doesNotThrow(() => cidr({ version: 4, minPrefix: 32 }));
+    });
+
+    it("should not throw when minPrefix is within IPv6 range", () => {
+      assert.doesNotThrow(() => cidr({ version: 6, minPrefix: 64 }));
+    });
+
+    it("should throw RangeError when minPrefix exceeds IPv6 max", () => {
+      assert.throws(
+        () => cidr({ version: 6, minPrefix: 129 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when minPrefix is negative", () => {
+      assert.throws(
+        () => cidr({ minPrefix: -5 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when maxPrefix exceeds IPv4 max", () => {
+      assert.throws(
+        () => cidr({ version: 4, maxPrefix: 33 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when maxPrefix exceeds IPv6 max", () => {
+      assert.throws(
+        () => cidr({ version: 6, maxPrefix: 200 }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when minPrefix is NaN", () => {
+      assert.throws(
+        () => cidr({ minPrefix: NaN as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when maxPrefix is NaN", () => {
+      assert.throws(
+        () => cidr({ maxPrefix: NaN as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when minPrefix is Infinity", () => {
+      assert.throws(
+        () => cidr({ minPrefix: Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when minPrefix is -Infinity", () => {
+      assert.throws(
+        () => cidr({ minPrefix: -Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when maxPrefix is Infinity", () => {
+      assert.throws(
+        () => cidr({ maxPrefix: Infinity as never }),
+        RangeError,
+      );
+    });
+
+    it("should throw RangeError when maxPrefix is -Infinity", () => {
+      assert.throws(
+        () => cidr({ maxPrefix: -Infinity as never }),
+        RangeError,
+      );
+    });
+  });
+
+  describe("nested IP validation error propagation", () => {
+    it("should preserve private IP error from IPv4", () => {
+      const parser = cidr({ ipv4: { allowPrivate: false } });
+      const result = parser.parse("192.168.0.0/24");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "192.168.0.0" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should preserve loopback error from IPv4", () => {
+      const parser = cidr({ ipv4: { allowLoopback: false } });
+      const result = parser.parse("127.0.0.0/8");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "127.0.0.0" },
+        { type: "text", text: " is a loopback address." },
+      ]);
+    });
+
+    it("should preserve multicast error from IPv6", () => {
+      const parser = cidr({
+        version: 6,
+        ipv6: { allowMulticast: false },
+      });
+      const result = parser.parse("ff00::/8");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "ff00::" },
+        { type: "text", text: " is a multicast address." },
+      ]);
+    });
+
+    it("should preserve loopback error from IPv6", () => {
+      const parser = cidr({ ipv6: { allowLoopback: false } });
+      const result = parser.parse("::1/128");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::1" },
+        { type: "text", text: " is a loopback address." },
+      ]);
+    });
+
+    it("should return generic CIDR error for structurally invalid IP", () => {
+      const parser = cidr({ ipv4: { allowPrivate: false } });
+      const result = parser.parse("not-an-ip/24");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a valid CIDR notation, but got " },
+        { type: "value", value: "not-an-ip/24" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should still succeed when no restrictions are violated", () => {
+      const parser = cidr({ version: 4 });
+      const result = parser.parse("192.168.0.0/24");
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, {
+        address: "192.168.0.0",
+        prefix: 24,
+        version: 4,
+      });
+    });
+
+    it("should use custom privateNotAllowed error", () => {
+      const parser = cidr({
+        ipv4: { allowPrivate: false },
+        errors: {
+          privateNotAllowed: (ip) =>
+            message`Private IP ${ip} not allowed in CIDR.`,
+        },
+      });
+      const result = parser.parse("192.168.0.0/24");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Private IP " },
+        { type: "value", value: "192.168.0.0" },
+        { type: "text", text: " not allowed in CIDR." },
+      ]);
+    });
+
+    it("should use custom loopbackNotAllowed error", () => {
+      const parser = cidr({
+        ipv4: { allowLoopback: false },
+        errors: {
+          loopbackNotAllowed: message`Loopback denied.`,
+        },
+      });
+      const result = parser.parse("127.0.0.0/8");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Loopback denied." },
+      ]);
+    });
+
+    it("should use custom multicastNotAllowed error for IPv6", () => {
+      const parser = cidr({
+        version: 6,
+        ipv6: { allowMulticast: false },
+        errors: {
+          multicastNotAllowed: (ip) => message`Multicast ${ip} rejected.`,
+        },
+      });
+      const result = parser.parse("ff00::/8");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Multicast " },
+        { type: "value", value: "ff00::" },
+        { type: "text", text: " rejected." },
+      ]);
+    });
+
+    it("should use custom uniqueLocalNotAllowed error for IPv6", () => {
+      const parser = cidr({
+        version: 6,
+        ipv6: { allowUniqueLocal: false },
+        errors: {
+          uniqueLocalNotAllowed: message`Unique local denied.`,
+        },
+      });
+      const result = parser.parse("fd00::/8");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Unique local denied." },
+      ]);
+    });
+
+    it("should use custom linkLocalNotAllowed error", () => {
+      const parser = cidr({
+        ipv4: { allowLinkLocal: false },
+        errors: {
+          linkLocalNotAllowed: message`Link-local denied.`,
+        },
+      });
+      const result = parser.parse("169.254.1.0/24");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Link-local denied." },
+      ]);
+    });
+
+    it("should use custom broadcastNotAllowed error", () => {
+      const parser = cidr({
+        ipv4: { allowBroadcast: false },
+        errors: {
+          broadcastNotAllowed: message`Broadcast denied.`,
+        },
+      });
+      const result = parser.parse("255.255.255.255/32");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Broadcast denied." },
+      ]);
+    });
+
+    it("should use custom zeroNotAllowed error", () => {
+      const parser = cidr({
+        ipv4: { allowZero: false },
+        errors: {
+          zeroNotAllowed: message`Zero denied.`,
+        },
+      });
+      const result = parser.parse("0.0.0.0/32");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Zero denied." },
+      ]);
+    });
+
+    it("should not misclassify custom error containing 'Expected'", () => {
+      const parser = cidr({
+        ipv4: { allowPrivate: false },
+        errors: {
+          privateNotAllowed: (ip) =>
+            message`Expected a public IP, but got ${ip}.`,
+        },
+      });
+      const result = parser.parse("192.168.0.0/24");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a public IP, but got " },
+        { type: "value", value: "192.168.0.0" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should report invalidPrefix over private restriction for IPv4", () => {
+      const parser = cidr({ ipv4: { allowPrivate: false } });
+      const result = parser.parse("192.168.0.0/33");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a prefix length between 0 and ",
+        },
+        { type: "text", text: "32" },
+        { type: "text", text: " for IPv4, but got " },
+        { type: "text", text: "33" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should report invalidPrefix over loopback restriction for IPv6", () => {
+      const parser = cidr({
+        version: 6,
+        ipv6: { allowLoopback: false },
+      });
+      const result = parser.parse("::1/129");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a prefix length between 0 and ",
+        },
+        { type: "text", text: "128" },
+        { type: "text", text: " for IPv6, but got " },
+        { type: "text", text: "129" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should report prefixBelowMinimum over restriction error", () => {
+      const parser = cidr({
+        ipv4: { allowPrivate: false },
+        minPrefix: 16,
+      });
+      const result = parser.parse("192.168.0.0/8");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a prefix length greater than or equal to ",
+        },
+        { type: "text", text: "16" },
+        { type: "text", text: ", but got " },
+        { type: "text", text: "8" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should report prefixAboveMaximum over restriction error", () => {
+      const parser = cidr({
+        ipv4: { allowLoopback: false },
+        maxPrefix: 24,
+      });
+      const result = parser.parse("127.0.0.0/32");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a prefix length less than or equal to ",
+        },
+        { type: "text", text: "24" },
+        { type: "text", text: ", but got " },
+        { type: "text", text: "32" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should use custom prefixBelowMinimum over restriction error", () => {
+      const parser = cidr({
+        ipv4: { allowPrivate: false },
+        minPrefix: 16,
+        errors: {
+          prefixBelowMinimum: (actual, minimum) =>
+            message`prefix ${text(String(actual))} below ${
+              text(String(minimum))
+            }.`,
+        },
+      });
+      const result = parser.parse("192.168.0.0/8");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "prefix " },
+        { type: "text", text: "8" },
+        { type: "text", text: " below " },
+        { type: "text", text: "16" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should use custom prefixAboveMaximum over restriction error", () => {
+      const parser = cidr({
+        ipv4: { allowLoopback: false },
+        maxPrefix: 24,
+        errors: {
+          prefixAboveMaximum: (actual, maximum) =>
+            message`prefix ${text(String(actual))} above ${
+              text(String(maximum))
+            }.`,
+        },
+      });
+      const result = parser.parse("127.0.0.0/32");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "prefix " },
+        { type: "text", text: "32" },
+        { type: "text", text: " above " },
+        { type: "text", text: "24" },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("IPv4-mapped IPv6 CIDR restrictions", () => {
+    it("should not apply IPv4-mapped checks when version is 6", () => {
+      const parser = cidr({ version: 6, ipv4: { allowPrivate: false } });
+      const result = parser.parse("::ffff:192.168.0.0/120");
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, {
+        address: "::ffff:c0a8:0",
+        prefix: 120,
+        version: 6,
+      });
+    });
+
+    it("should reject IPv4-mapped private CIDR when allowPrivate is false", () => {
+      const parser = cidr({ ipv4: { allowPrivate: false } });
+      const result = parser.parse("::ffff:192.168.0.0/120");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:c0a8:0" },
+        { type: "text", text: " is a private IP address." },
+      ]);
+    });
+
+    it("should reject IPv4-mapped loopback CIDR when allowLoopback is false", () => {
+      const parser = cidr({ ipv4: { allowLoopback: false } });
+      const result = parser.parse("::ffff:127.0.0.1/128");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:7f00:1" },
+        { type: "text", text: " is a loopback address." },
+      ]);
+    });
+
+    it("should accept IPv4-mapped public CIDR when allowPrivate is false", () => {
+      const parser = cidr({ ipv4: { allowPrivate: false } });
+      const result = parser.parse("::ffff:203.0.113.0/120");
+      assert.ok(result.success);
+      assert.deepStrictEqual(result.value, {
+        address: "::ffff:cb00:7100",
+        prefix: 120,
+        version: 6,
+      });
+    });
+
+    it("should use custom error for IPv4-mapped CIDR restriction", () => {
+      const parser = cidr({
+        ipv4: { allowPrivate: false },
+        errors: {
+          privateNotAllowed: (addr) =>
+            message`Private ${addr} not allowed in CIDR.`,
+        },
+      });
+      const result = parser.parse("::ffff:10.0.0.0/104");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Private " },
+        { type: "value", value: "::ffff:a00:0" },
+        { type: "text", text: " not allowed in CIDR." },
+      ]);
+    });
+
+    it("should report invalidPrefix over mapped restriction", () => {
+      const parser = cidr({ ipv4: { allowPrivate: false } });
+      const result = parser.parse("::ffff:10.0.0.0/129");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a prefix length between 0 and ",
+        },
+        { type: "text", text: "128" },
+        { type: "text", text: " for IPv6, but got " },
+        { type: "text", text: "129" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should report prefixBelowMinimum over mapped restriction", () => {
+      const parser = cidr({
+        ipv4: { allowPrivate: false },
+        minPrefix: 112,
+      });
+      const result = parser.parse("::ffff:10.0.0.0/96");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a prefix length greater than or equal to ",
+        },
+        { type: "text", text: "112" },
+        { type: "text", text: ", but got " },
+        { type: "text", text: "96" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should report prefixAboveMaximum over mapped restriction", () => {
+      const parser = cidr({
+        ipv4: { allowLoopback: false },
+        maxPrefix: 120,
+      });
+      const result = parser.parse("::ffff:127.0.0.1/128");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        {
+          type: "text",
+          text: "Expected a prefix length less than or equal to ",
+        },
+        { type: "text", text: "120" },
+        { type: "text", text: ", but got " },
+        { type: "text", text: "128" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should check base address regardless of prefix length", () => {
+      // Consistent with how ipv4() checks regular IPv4 CIDRs:
+      // the base address is validated, not the network range.
+      const parser = cidr({ ipv4: { allowPrivate: false } });
+
+      // Broad prefix—base address 10.0.0.0 is still private
+      const r1 = parser.parse("::ffff:10.0.0.0/97");
+      assert.ok(!r1.success);
+
+      // Prefix at /96—base address is still checked
+      const r2 = parser.parse("::ffff:10.0.0.0/96");
+      assert.ok(!r2.success);
+
+      // Prefix below /96—base address is still checked
+      const r3 = parser.parse("::ffff:10.0.0.0/80");
+      assert.ok(!r3.success);
+
+      // Non-private base address with same broad prefix → accepted
+      const r4 = parser.parse("::ffff:203.0.113.0/97");
+      assert.ok(r4.success);
+    });
+
+    it("should reject mapped broadcast CIDR regardless of prefix", () => {
+      const parser = cidr({ ipv4: { allowBroadcast: false } });
+      const result = parser.parse("::ffff:255.255.255.255/127");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:ffff:ffff" },
+        { type: "text", text: " is the broadcast address." },
+      ]);
+    });
+
+    it("should reject IPv4-mapped link-local CIDR when allowLinkLocal is false", () => {
+      const parser = cidr({ ipv4: { allowLinkLocal: false } });
+      const result = parser.parse("::ffff:169.254.0.0/120");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:a9fe:0" },
+        { type: "text", text: " is a link-local address." },
+      ]);
+    });
+
+    it("should reject IPv4-mapped multicast CIDR when allowMulticast is false", () => {
+      const parser = cidr({ ipv4: { allowMulticast: false } });
+      const result = parser.parse("::ffff:224.0.0.0/120");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:e000:0" },
+        { type: "text", text: " is a multicast address." },
+      ]);
+    });
+
+    it("should reject IPv4-mapped zero CIDR when allowZero is false", () => {
+      const parser = cidr({ ipv4: { allowZero: false } });
+      const result = parser.parse("::ffff:0.0.0.0/120");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "value", value: "::ffff:0:0" },
+        { type: "text", text: " is the zero address." },
+      ]);
+    });
+
+    it("should reject IPv4-mapped CIDR with leading zeros", () => {
+      const parser = cidr();
+
+      const withLeadingZeros = [
+        "::ffff:01.02.03.04/96",
+        "::ffff:192.168.001.1/128",
+      ];
+
+      for (const addr of withLeadingZeros) {
+        const result = parser.parse(addr);
+        assert.ok(
+          !result.success,
+          `Should reject IPv4-mapped CIDR with leading zeros: ${addr}`,
+        );
+      }
+    });
+
+    it("should snapshot IPv4 restrictions at construction time", () => {
+      const ipv4Opts = { allowPrivate: false };
+      const parser = cidr({ ipv4: ipv4Opts });
+      // Mutate nested field after construction—should have no effect
+      ipv4Opts.allowPrivate = true;
+      const result = parser.parse("::ffff:192.168.0.0/120");
+      assert.ok(!result.success);
+    });
+
+    it("should snapshot error callbacks at construction time", () => {
+      const errors = {
+        privateNotAllowed: () => message`original mapped cidr error`,
+      };
+      const parser = cidr({
+        ipv4: { allowPrivate: false },
+        errors,
+      });
+      errors.privateNotAllowed = () => message`mutated mapped cidr error`;
+      const result = parser.parse("::ffff:10.0.0.0/104");
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "original mapped cidr error" },
+      ]);
+    });
+  });
+});
+
+describe("branch coverage regressions", () => {
+  it("covers bigint-only custom port error branches", () => {
+    const parser = port({
+      type: "bigint",
+      min: 2000n,
+      max: 9000n,
+      disallowWellKnown: true,
+      errors: {
+        invalidPort: message`invalid bigint port`,
+        belowMinimum: message`too small bigint port`,
+        aboveMaximum: message`too large bigint port`,
+        wellKnownNotAllowed: message`well-known bigint port denied`,
+      },
+    });
+
+    const invalid = parser.parse("abc");
+    assert.ok(!invalid.success);
+    if (!invalid.success) {
+      assert.deepStrictEqual(invalid.error, [
+        { type: "text", text: "invalid bigint port" },
+      ]);
+    }
+
+    const below = parser.parse("1024");
+    assert.ok(!below.success);
+    if (!below.success) {
+      assert.deepStrictEqual(below.error, [
+        { type: "text", text: "too small bigint port" },
+      ]);
+    }
+
+    const above = parser.parse("10000");
+    assert.ok(!above.success);
+    if (!above.success) {
+      assert.deepStrictEqual(above.error, [
+        { type: "text", text: "too large bigint port" },
+      ]);
+    }
+
+    // Use a separate parser with no min constraint so well-known port
+    // check is reached before belowMinimum:
+    const wkParser = port({
+      type: "bigint",
+      disallowWellKnown: true,
+      errors: {
+        wellKnownNotAllowed: message`well-known bigint port denied`,
+      },
+    });
+    const wellKnown = wkParser.parse("80");
+    assert.ok(!wellKnown.success);
+    if (!wellKnown.success) {
+      assert.deepStrictEqual(wellKnown.error, [
+        { type: "text", text: "well-known bigint port denied" },
+      ]);
+    }
+  });
+
+  it("covers hostname wildcard and label custom invalid branches", () => {
+    const parser = hostname({
+      allowWildcard: true,
+      errors: {
+        invalidHostname: (input) => message`invalid host: ${input}`,
+      },
+    });
+
+    const wildcard = parser.parse("*.*.example.com");
+    assert.ok(!wildcard.success);
+
+    const emptyLabel = parser.parse("example..com");
+    assert.ok(!emptyLabel.success);
+
+    const longLabel = parser.parse(`${"a".repeat(64)}.example.com`);
+    assert.ok(!longLabel.success);
+  });
+
+  it("covers email quoted/local/domain edge branches", () => {
+    const parser = email();
+
+    const unclosedQuote = parser.parse('"abc@example.com');
+    assert.ok(!unclosedQuote.success);
+
+    const hyphenLabel = parser.parse("user@-example.com");
+    assert.ok(!hyphenLabel.success);
+
+    const badLabelChar = parser.parse("user@exam_ple.com");
+    assert.ok(!badLabelChar.success);
+
+    const longLabel = parser.parse(`user@${"a".repeat(64)}.com`);
+    assert.ok(!longLabel.success);
+  });
+
+  it("covers email allowMultiple domainNotAllowed function branch", () => {
+    const parser = email({
+      allowMultiple: true,
+      allowedDomains: ["example.com"],
+      errors: {
+        domainNotAllowed: (addr, domains) =>
+          message`${addr} not in ${text(domains.join(","))}`,
+      },
+    });
+
+    const result = parser.parse("one@example.com,two@other.com");
+    assert.ok(!result.success);
+  });
+
+  it("covers socketAddress missingPort function branches", () => {
+    const required = socketAddress({
+      requirePort: true,
+      errors: {
+        missingPort: (input) => message`missing port from ${input}`,
+      },
+    });
+    const requiredResult = required.parse("localhost");
+    assert.ok(!requiredResult.success);
+
+    const noDefault = socketAddress({
+      requirePort: false,
+      errors: {
+        missingPort: (input) => message`still missing: ${input}`,
+      },
+    });
+    const noDefaultResult = noDefault.parse("example.com");
+    assert.ok(!noDefaultResult.success);
+  });
+
+  it("covers portRange allowSingle failure and bigint invalidRange", () => {
+    const allowSingle = portRange({ allowSingle: true });
+    const singleInvalid = allowSingle.parse("abc");
+    assert.ok(!singleInvalid.success);
+
+    const bigintRange = portRange({
+      type: "bigint",
+      errors: {
+        invalidRange: (start, end) =>
+          message`${text(start.toString())} > ${text(end.toString())}`,
+      },
+    });
+    const reversed = bigintRange.parse("9000-8000");
+    assert.ok(!reversed.success);
+  });
+
+  it("covers domain invalidDomain function branches", () => {
+    const parser = domain({
+      errors: {
+        invalidDomain: (input) => message`invalid domain: ${input}`,
+      },
+    });
+
+    const empty = parser.parse("");
+    assert.ok(!empty.success);
+
+    const invalidLabel = parser.parse("foo_.example.com");
+    assert.ok(!invalidLabel.success);
+  });
+
+  it("covers ipv6 custom function error branches", () => {
+    const invalid = ipv6({
+      errors: {
+        invalidIpv6: (input) => message`invalid ipv6: ${input}`,
+      },
+    });
+    const invalidResult = invalid.parse("::ffff:1.2.3");
+    assert.ok(!invalidResult.success);
+
+    const zero = ipv6({
+      allowZero: false,
+      errors: {
+        zeroNotAllowed: (addr) => message`zero denied: ${addr}`,
+      },
+    });
+    const zeroResult = zero.parse("::");
+    assert.ok(!zeroResult.success);
+
+    const loopback = ipv6({
+      allowLoopback: false,
+      errors: {
+        loopbackNotAllowed: (addr) => message`loopback denied: ${addr}`,
+      },
+    });
+    const loopbackResult = loopback.parse("::1");
+    assert.ok(!loopbackResult.success);
+
+    const linkLocal = ipv6({
+      allowLinkLocal: false,
+      errors: {
+        linkLocalNotAllowed: (addr) => message`link-local denied: ${addr}`,
+      },
+    });
+    const linkLocalResult = linkLocal.parse("fe80::1");
+    assert.ok(!linkLocalResult.success);
+
+    const uniqueLocal = ipv6({
+      allowUniqueLocal: false,
+      errors: {
+        uniqueLocalNotAllowed: (addr) => message`ula denied: ${addr}`,
+      },
+    });
+    const uniqueLocalResult = uniqueLocal.parse("fc00::1");
+    assert.ok(!uniqueLocalResult.success);
+
+    const multicast = ipv6({
+      allowMulticast: false,
+      errors: {
+        multicastNotAllowed: (addr) => message`multicast denied: ${addr}`,
+      },
+    });
+    const multicastResult = multicast.parse("ff02::1");
+    assert.ok(!multicastResult.success);
+  });
+
+  it("covers cidr custom function branches", () => {
+    const invalidCidr = cidr({
+      errors: {
+        invalidCidr: (input) => message`bad cidr: ${input}`,
+      },
+    });
+
+    const noSlash = invalidCidr.parse("192.0.2.0");
+    assert.ok(!noSlash.success);
+
+    const nonNumericPrefix = invalidCidr.parse("192.0.2.0/abc");
+    assert.ok(!nonNumericPrefix.success);
+
+    const invalidAddress = invalidCidr.parse("999.0.2.0/24");
+    assert.ok(!invalidAddress.success);
+
+    const invalidPrefix = cidr({
+      errors: {
+        invalidPrefix: (prefix, version) =>
+          message`prefix ${text(prefix.toString())} invalid for v${
+            text(version.toString())
+          }`,
+      },
+    });
+    const ipv6TooWide = invalidPrefix.parse("2001:db8::/129");
+    assert.ok(!ipv6TooWide.success);
+
+    const constrained = cidr({
+      minPrefix: 16,
+      maxPrefix: 24,
+      errors: {
+        prefixBelowMinimum: (prefix, min) =>
+          message`${text(prefix.toString())} < ${text(min.toString())}`,
+        prefixAboveMaximum: (prefix, max) =>
+          message`${text(prefix.toString())} > ${text(max.toString())}`,
+      },
+    });
+    const below = constrained.parse("192.0.2.0/8");
+    assert.ok(!below.success);
+
+    const above = constrained.parse("192.0.2.0/30");
+    assert.ok(!above.success);
+  });
+
+  it("covers integer/float/url/locale/uuid uncovered branches", () => {
+    const bigintInteger = integer({
+      type: "bigint",
+      min: 10n,
+      max: 20n,
+      errors: {
+        invalidInteger: (input) => message`bad bigint integer: ${input}`,
+        belowMinimum: (value, min) =>
+          message`${text(value.toString())} < ${text(min.toString())}`,
+        aboveMaximum: (value, max) =>
+          message`${text(value.toString())} > ${text(max.toString())}`,
+      },
+    });
+    assert.ok(!bigintInteger.parse("abc").success);
+    assert.ok(!bigintInteger.parse("9").success);
+    assert.ok(!bigintInteger.parse("21").success);
+    assert.equal(bigintInteger.format(12n), "12");
+
+    const numberInteger = integer({
+      min: 10,
+      max: 20,
+      errors: {
+        invalidInteger: (input) => message`bad integer: ${input}`,
+        belowMinimum: message`below min`,
+        aboveMaximum: message`above max`,
+      },
+    });
+    assert.ok(!numberInteger.parse("abc").success);
+    assert.ok(!numberInteger.parse("9").success);
+    assert.ok(!numberInteger.parse("21").success);
+    assert.equal(numberInteger.format(12), "12");
+
+    const floatParser = float({
+      min: 1,
+      max: 2,
+      errors: {
+        invalidNumber: (input) => message`bad float: ${input}`,
+        belowMinimum: (value, min) =>
+          message`${text(value.toString())} < ${text(min.toString())}`,
+        aboveMaximum: (value, max) =>
+          message`${text(value.toString())} > ${text(max.toString())}`,
+      },
+    });
+    assert.ok(!floatParser.parse("abc").success);
+    assert.ok(!floatParser.parse("0.5").success);
+    assert.ok(!floatParser.parse("2.5").success);
+    assert.equal(floatParser.format(1.5), "1.5");
+
+    const urlParser = url({
+      allowedProtocols: ["https:"],
+      errors: {
+        invalidUrl: (input) => message`bad url: ${input}`,
+        disallowedProtocol: message`protocol blocked`,
+      },
+    });
+    assert.ok(!urlParser.parse("not-a-url").success);
+    assert.ok(!urlParser.parse("http://example.com").success);
+    assert.equal(
+      urlParser.format(new URL("https://example.com/path")),
+      "https://example.com/path",
+    );
+
+    const localeParser = locale({
+      errors: {
+        invalidLocale: message`bad locale`,
+      },
+    });
+    assert.ok(!localeParser.parse("xyz-INVALID-123").success);
+    assert.equal(localeParser.format(new Intl.Locale("en-US")), "en-US");
+    assert.equal(
+      localeParser.format(new Intl.Locale("en-US-u-ca-buddhist")),
+      "en-US-u-ca-buddhist",
+    );
+    assert.equal(
+      localeParser.format(new Intl.Locale("zh-Hant-TW-u-nu-hanidec")),
+      "zh-Hant-TW-u-nu-hanidec",
+    );
+
+    const uuidParser = uuid({
+      allowedVersions: [4],
+      errors: {
+        invalidUuid: (input) => message`bad uuid: ${input}`,
+        disallowedVersion: message`version blocked`,
+      },
+    });
+    assert.ok(!uuidParser.parse("not-a-uuid").success);
+    assert.ok(
+      !uuidParser.parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8").success,
+    );
+    assert.equal(
+      uuidParser.format("550e8400-e29b-41d4-a716-446655440000"),
+      "550e8400-e29b-41d4-a716-446655440000",
+    );
+  });
+
+  it("covers port and ipv4 uncovered custom function branches", () => {
+    const bigintPort = port({
+      type: "bigint",
+      min: 2000n,
+      max: 9000n,
+      disallowWellKnown: true,
+      errors: {
+        invalidPort: (input) => message`bad bigint port: ${input}`,
+        belowMinimum: (value, min) =>
+          message`${text(value.toString())} < ${text(min.toString())}`,
+        aboveMaximum: (value, max) =>
+          message`${text(value.toString())} > ${text(max.toString())}`,
+        wellKnownNotAllowed: (value) =>
+          message`well-known denied: ${text(value.toString())}`,
+      },
+    });
+    assert.ok(!bigintPort.parse("abc").success);
+    assert.ok(!bigintPort.parse("1024").success);
+    assert.ok(!bigintPort.parse("10000").success);
+    assert.equal(bigintPort.format(8080n), "8080");
+
+    const bigintWellKnownOnly = port({
+      type: "bigint",
+      disallowWellKnown: true,
+      errors: {
+        wellKnownNotAllowed: (value) =>
+          message`wk denied: ${text(value.toString())}`,
+      },
+    });
+    assert.ok(!bigintWellKnownOnly.parse("80").success);
+
+    const numberPort = port({
+      min: 2000,
+      max: 9000,
+      disallowWellKnown: true,
+      errors: {
+        invalidPort: message`bad number port`,
+        belowMinimum: (value, min) =>
+          message`${text(value.toString())} < ${text(min.toString())}`,
+        aboveMaximum: (value, max) =>
+          message`${text(value.toString())} > ${text(max.toString())}`,
+        wellKnownNotAllowed: (value) =>
+          message`wk denied: ${text(value.toString())}`,
+      },
+    });
+    assert.ok(!numberPort.parse("abc").success);
+    assert.ok(!numberPort.parse("1024").success);
+    assert.ok(!numberPort.parse("10000").success);
+    assert.equal(numberPort.format(8080), "8080");
+
+    const numberWellKnownOnly = port({
+      disallowWellKnown: true,
+      errors: {
+        wellKnownNotAllowed: (value) =>
+          message`wk denied: ${text(value.toString())}`,
+      },
+    });
+    assert.ok(!numberWellKnownOnly.parse("80").success);
+
+    const invalidIpv4 = ipv4({
+      errors: {
+        invalidIpv4: (input) => message`bad ipv4: ${input}`,
+      },
+    });
+    assert.ok(!invalidIpv4.parse("1..2.3").success);
+    assert.ok(!invalidIpv4.parse("1. 2.3.4").success);
+    assert.ok(!invalidIpv4.parse("01.2.3.4").success);
+    assert.ok(!invalidIpv4.parse("300.2.3.4").success);
+
+    assert.ok(
+      !ipv4({
+        allowPrivate: false,
+        errors: {
+          privateNotAllowed: (ip) => message`private denied: ${ip}`,
+        },
+      }).parse("192.168.1.1").success,
+    );
+    assert.ok(
+      !ipv4({
+        allowLinkLocal: false,
+        errors: {
+          linkLocalNotAllowed: (ip) => message`link-local denied: ${ip}`,
+        },
+      }).parse("169.254.1.1").success,
+    );
+    assert.ok(
+      !ipv4({
+        allowMulticast: false,
+        errors: {
+          multicastNotAllowed: (ip) => message`multicast denied: ${ip}`,
+        },
+      }).parse("224.0.0.1").success,
+    );
+    assert.ok(
+      !ipv4({
+        allowBroadcast: false,
+        errors: {
+          broadcastNotAllowed: (ip) => message`broadcast denied: ${ip}`,
+        },
+      }).parse("255.255.255.255").success,
+    );
+    assert.ok(
+      !ipv4({
+        allowZero: false,
+        errors: {
+          zeroNotAllowed: (ip) => message`zero denied: ${ip}`,
+        },
+      }).parse("0.0.0.0").success,
+    );
+  });
+
+  it("covers hostname/email/ipv6/socket/mac/domain uncovered branches", () => {
+    const host = hostname({
+      allowLocalhost: false,
+      allowUnderscore: false,
+      errors: {
+        localhostNotAllowed: (input) => message`localhost blocked: ${input}`,
+        underscoreNotAllowed: (input) => message`underscore blocked: ${input}`,
+        invalidHostname: (input) => message`invalid host: ${input}`,
+      },
+    });
+    assert.ok(!host.parse("localhost").success);
+    assert.ok(!host.parse("a_b.example.com").success);
+    assert.ok(!host.parse("").success);
+    assert.ok(!host.parse("example..com").success);
+    assert.ok(!host.parse("exa$mple.com").success);
+
+    const emailParser = email({
+      allowMultiple: true,
+      errors: {
+        invalidEmail: (input) => message`invalid email: ${input}`,
+      },
+    });
+    assert.ok(!emailParser.parse("user@-example.com").success);
+    assert.ok(!emailParser.parse("user@example-.com").success);
+    assert.ok(!emailParser.parse("good@example.com,bad@-example.com").success);
+
+    const socket = socketAddress({
+      errors: {
+        invalidFormat: (input) => message`bad socket: ${input}`,
+      },
+    });
+    assert.ok(!socket.parse("localhost:99999").success);
+    assert.ok(!socket.parse("localhost:not-port").success);
+
+    const mac = macAddress({ separator: "none" });
+    const macResult = mac.parse("aabbccddeeff");
+    assert.ok(macResult.success);
+    assert.equal(mac.format("aa:bb:cc:dd:ee:ff"), "aa:bb:cc:dd:ee:ff");
+
+    const dom = domain();
+    assert.equal(dom.format("example.com"), "example.com");
+
+    const ipv6Parser = ipv6({
+      errors: {
+        invalidIpv6: (input) => message`invalid ipv6: ${input}`,
+      },
+    });
+    assert.ok(!ipv6Parser.parse("::ffff:300.1.2.3").success);
+    assert.ok(!ipv6Parser.parse("1:2:3:4:5:6:7:8:9").success);
+    assert.ok(!ipv6Parser.parse("2001::db8::1").success);
+    assert.ok(ipv6Parser.parse("2001:0:0:1:0:0:0:1").success);
+    assert.equal(ipv6Parser.format("::1"), "::1");
+  });
+
+  it("covers ip/cidr format and ipv6 normalization edge branches", () => {
+    const ipParser = ip({
+      errors: {
+        invalidIP: (input) => message`invalid ip literal: ${input}`,
+      },
+    });
+    const ipFailure = ipParser.parse("not-an-ip");
+    assert.ok(!ipFailure.success);
+    assert.equal(ipParser.format("203.0.113.10"), "203.0.113.10");
+
+    const cidrParser = cidr();
+    const cidrResult = cidrParser.parse("192.0.2.0/24");
+    assert.ok(cidrResult.success);
+    assert.equal(
+      cidrParser.format({ address: "192.0.2.0", prefix: 24, version: 4 }),
+      "192.0.2.0/24",
+    );
+
+    const ipv6Parser = ipv6();
+    const noCompression = ipv6Parser.parse("2001:db8:1:2:3:4:5:6");
+    assert.ok(noCompression.success);
+    if (noCompression.success) {
+      assert.equal(noCompression.value, "2001:db8:1:2:3:4:5:6");
+    }
+
+    const badMappedLength = ipv6Parser.parse("::ffff:192.0.2");
+    assert.ok(!badMappedLength.success);
+
+    const badMappedRange = ipv6Parser.parse("::ffff:192.0.2.999");
+    assert.ok(!badMappedRange.success);
+  });
+
+  it("covers rethrow branches for non-standard constructor errors", () => {
+    const originalBigInt = globalThis.BigInt;
+    const originalLocale = Intl.Locale;
+
+    // Construct localeParser before mocking Intl.Locale, since the
+    // placeholder eagerly creates new Intl.Locale("und").
+    const localeParser = locale();
+
+    try {
+      (globalThis as unknown as { BigInt: typeof BigInt }).BigInt = ((
+        _input: string,
+      ) => {
+        throw new TypeError("bigint boom");
+      }) as unknown as typeof BigInt;
+
+      Object.defineProperty(Intl, "Locale", {
+        value: class FakeLocale {
+          constructor(_input: string) {
+            throw new TypeError("locale boom");
+          }
+        },
+        configurable: true,
+      });
+
+      const bigintParser = integer({ type: "bigint" });
+      assert.throws(
+        () => bigintParser.parse("123"),
+        TypeError,
+        "bigint boom",
+      );
+
+      const bigintPortParser = port({ type: "bigint" });
+      assert.throws(
+        () => bigintPortParser.parse("8080"),
+        TypeError,
+        "bigint boom",
+      );
+
+      assert.throws(
+        () => localeParser.parse("en-US"),
+        TypeError,
+        "locale boom",
+      );
+    } finally {
+      (globalThis as unknown as { BigInt: typeof BigInt }).BigInt =
+        originalBigInt;
+      Object.defineProperty(Intl, "Locale", {
+        value: originalLocale,
+        configurable: true,
+      });
+    }
+  });
+
+  it("covers number-choice custom invalidChoice callback for numeric choices", () => {
+    const parser = choice([10, 20], {
+      errors: {
+        invalidChoice: (input, choices) =>
+          message`bad ${input}; valid count ${text(String(choices.length))}`,
+      },
+    });
+
+    const result = parser.parse("abc");
+    assert.ok(!result.success);
+    if (!result.success) {
+      assert.deepEqual(result.error, [
+        { type: "text", text: "bad " },
+        { type: "value", value: "abc" },
+        { type: "text", text: "; valid count " },
+        { type: "text", text: "2" },
+      ]);
+    }
+  });
+
+  it("accepts equivalent scientific notation for numeric choices", () => {
+    const parser = choice([1e21, -0]);
+
+    const exponential = parser.parse("1e21");
+    assert.ok(exponential.success);
+    if (exponential.success) {
+      assert.equal(exponential.value, 1e21);
+    }
+
+    const negativeZero = parser.parse("-0");
+    assert.ok(negativeZero.success);
+    if (negativeZero.success) {
+      assert.ok(Object.is(negativeZero.value, -0));
+    }
+  });
+
+  it("covers static custom invalidChoice for numeric choice parser", () => {
+    const parser = choice([1, 2, 3], {
+      errors: {
+        invalidChoice: message`pick one of the numeric choices`,
+      },
+    });
+
+    const result = parser.parse("999");
+    assert.ok(!result.success);
+    if (!result.success) {
+      assert.deepEqual(result.error, [
+        { type: "text", text: "pick one of the numeric choices" },
+      ]);
+    }
+  });
+
+  it("covers bigint integer static custom error branches", () => {
+    const parser = integer({
+      type: "bigint",
+      min: 10n,
+      max: 20n,
+      errors: {
+        invalidInteger: message`bigint parse failed`,
+        belowMinimum: message`bigint is too small`,
+        aboveMaximum: message`bigint is too large`,
+      },
+    });
+
+    const invalid = parser.parse("not-a-bigint");
+    assert.ok(!invalid.success);
+    const tooSmall = parser.parse("9");
+    assert.ok(!tooSmall.success);
+    const tooLarge = parser.parse("21");
+    assert.ok(!tooLarge.success);
+  });
+
+  it("covers float parser function custom min/max errors", () => {
+    const parser = float({
+      min: 10,
+      max: 20,
+      errors: {
+        belowMinimum: (value, min) =>
+          message`num ${text(String(value))} < ${text(String(min))}`,
+        aboveMaximum: (value, max) =>
+          message`num ${text(String(value))} > ${text(String(max))}`,
+      },
+    });
+
+    assert.ok(!parser.parse("9").success);
+    assert.ok(!parser.parse("21").success);
+  });
+
+  it("rejects invalid UUID allowedVersions values by value type", () => {
+    assert.throws(
+      () => uuid({ allowedVersions: [Symbol("version")] as never }),
+      {
+        name: "TypeError",
+        message:
+          'Expected every element of allowedVersions to be an integer, but got value "Symbol(version)" of type "symbol".',
+      },
+    );
+    assert.throws(
+      () => uuid({ allowedVersions: [[4]] as never }),
+      {
+        name: "TypeError",
+        message:
+          'Expected every element of allowedVersions to be an integer, but got value "4" of type "array".',
+      },
+    );
+  });
+
+  it("uses UUID version policy errors for otherwise well-formed UUIDs", () => {
+    const strictParser = uuid({
+      errors: {
+        disallowedVersion: (version, allowedVersions) =>
+          message`version ${text(String(version))} not in ${
+            text(allowedVersions.join(","))
+          }`,
+      },
+    });
+    const strictResult = strictParser.parse(
+      "550e8400-e29b-91d4-a716-446655440000",
+    );
+
+    assert.ok(!strictResult.success);
+    if (!strictResult.success) {
+      assert.deepEqual(strictResult.error, [
+        { type: "text", text: "version " },
+        { type: "text", text: "9" },
+        { type: "text", text: " not in " },
+        { type: "text", text: "1,2,3,4,5,6,7,8" },
+      ]);
+    }
+  });
+
+  it("covers port number static and function error branches", () => {
+    const staticParser = port({
+      min: 2000,
+      max: 3000,
+      disallowWellKnown: true,
+      errors: {
+        belowMinimum: message`port too small`,
+        aboveMaximum: message`port too large`,
+        wellKnownNotAllowed: message`well-known port denied`,
+      },
+    });
+    assert.ok(!staticParser.parse("1024").success);
+    assert.ok(!staticParser.parse("4000").success);
+    assert.ok(!staticParser.parse("80").success);
+
+    const functionParser = port({
+      min: 2000,
+      max: 3000,
+      disallowWellKnown: true,
+      errors: {
+        belowMinimum: (value, min) =>
+          message`port ${text(String(value))} < ${text(String(min))}`,
+        aboveMaximum: (value, max) =>
+          message`port ${text(String(value))} > ${text(String(max))}`,
+        wellKnownNotAllowed: (value) =>
+          message`port ${text(String(value))} is reserved`,
+      },
+    });
+    assert.ok(!functionParser.parse("1024").success);
+    assert.ok(!functionParser.parse("4000").success);
+    assert.ok(!functionParser.parse("80").success);
+  });
+
+  it("covers portRange placeholders and static range errors", () => {
+    assert.deepEqual(portRange().placeholder, { start: 1, end: 1 });
+    assert.deepEqual(portRange({ type: "bigint" }).placeholder, {
+      start: 1n,
+      end: 1n,
+    });
+
+    const numberParser = portRange({
+      errors: { invalidRange: message`number range is reversed` },
+    });
+    const numberResult = numberParser.parse("9000-8000");
+    assert.ok(!numberResult.success);
+    assert.deepEqual(numberResult.error, [
+      { type: "text", text: "number range is reversed" },
+    ]);
+
+    const bigintParser = portRange({
+      type: "bigint",
+      errors: { invalidRange: message`bigint range is reversed` },
+    });
+    const bigintResult = bigintParser.parse("9000-8000");
+    assert.ok(!bigintResult.success);
+    assert.deepEqual(bigintResult.error, [
+      { type: "text", text: "bigint range is reversed" },
+    ]);
+  });
+
+  it("covers socketAddress placeholders and callback format errors", () => {
+    assert.deepEqual(socketAddress({ host: { type: "ip" } }).placeholder, {
+      host: "0.0.0.0",
+      port: 1,
+    });
+    assert.deepEqual(socketAddress({ defaultPort: 443 }).placeholder, {
+      host: "localhost",
+      port: 443,
+    });
+
+    const invalidNumericPort = socketAddress({
+      separator: "-",
+      defaultPort: 80,
+      errors: {
+        invalidFormat: (input) => message`bad endpoint: ${input}`,
+      },
+    });
+    const portResult = invalidNumericPort.parse("db-70000");
+    assert.ok(!portResult.success);
+    assert.deepEqual(portResult.error, [
+      { type: "text", text: "bad endpoint: " },
+      { type: "value", value: "db-70000" },
+    ]);
+
+    const invalidIpSplit = socketAddress({
+      separator: "-",
+      defaultPort: 80,
+      host: { type: "both", ip: { allowPrivate: false } },
+      errors: {
+        invalidFormat: (input) => message`invalid endpoint: ${input}`,
+      },
+    });
+    const ipResult = invalidIpSplit.parse("192.168.0.1-80");
+    assert.ok(!ipResult.success);
+    assert.deepEqual(ipResult.error, [
+      { type: "text", text: "invalid endpoint: " },
+      { type: "value", value: "192.168.0.1-80" },
+    ]);
+  });
+
+  it("covers IPv6 callback errors for address policy failures", () => {
+    const invalid = ipv6({
+      errors: {
+        invalidIpv6: (input) => message`bad IPv6: ${input}`,
+      },
+    }).parse("not-ipv6");
+    assert.ok(!invalid.success);
+    assert.deepEqual(invalid.error, [
+      { type: "text", text: "bad IPv6: " },
+      { type: "value", value: "not-ipv6" },
+    ]);
+
+    const cases = [
+      {
+        parser: ipv6({
+          allowZero: false,
+          errors: { zeroNotAllowed: (value) => message`zero: ${value}` },
+        }),
+        input: "::",
+        label: "zero",
+      },
+      {
+        parser: ipv6({
+          allowLoopback: false,
+          errors: { loopbackNotAllowed: (value) => message`loop: ${value}` },
+        }),
+        input: "::1",
+        label: "loop",
+      },
+      {
+        parser: ipv6({
+          allowLinkLocal: false,
+          errors: { linkLocalNotAllowed: (value) => message`link: ${value}` },
+        }),
+        input: "fe80::1",
+        label: "link",
+      },
+      {
+        parser: ipv6({
+          allowUniqueLocal: false,
+          errors: {
+            uniqueLocalNotAllowed: (value) => message`unique: ${value}`,
+          },
+        }),
+        input: "fc00::1",
+        label: "unique",
+      },
+      {
+        parser: ipv6({
+          allowMulticast: false,
+          errors: { multicastNotAllowed: (value) => message`multi: ${value}` },
+        }),
+        input: "ff00::1",
+        label: "multi",
+      },
+    ] as const;
+
+    for (const { parser, input, label } of cases) {
+      const result = parser.parse(input);
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [
+        { type: "text", text: `${label}: ` },
+        { type: "value", value: parser.normalize!(input) },
+      ]);
+    }
+  });
+
+  it("covers ip invalidIP function branch when both sub-parsers are generic", () => {
+    const parser = ip({
+      errors: {
+        invalidIP: (input) => message`invalid ip via callback: ${input}`,
+      },
+    });
+
+    const result = parser.parse("not-an-ip-literal");
+    assert.ok(!result.success);
+    if (!result.success) {
+      assert.equal(
+        formatMessage(result.error),
+        'invalid ip via callback: "not-an-ip-literal"',
+      );
+    }
+  });
+
+  it("covers IPv4-mapped IP restriction callbacks", () => {
+    const cases = [
+      {
+        input: "::ffff:127.0.0.1",
+        ipv4: { allowLoopback: false },
+        errors: {
+          loopbackNotAllowed: (addr: string) =>
+            message`mapped loopback ${text(addr)}`,
+        },
+        expected: "mapped loopback ::ffff:7f00:1",
+      },
+      {
+        input: "::ffff:169.254.1.1",
+        ipv4: { allowLinkLocal: false },
+        errors: {
+          linkLocalNotAllowed: (addr: string) =>
+            message`mapped link-local ${text(addr)}`,
+        },
+        expected: "mapped link-local ::ffff:a9fe:101",
+      },
+      {
+        input: "::ffff:224.0.0.1",
+        ipv4: { allowMulticast: false },
+        errors: {
+          multicastNotAllowed: (addr: string) =>
+            message`mapped multicast ${text(addr)}`,
+        },
+        expected: "mapped multicast ::ffff:e000:1",
+      },
+      {
+        input: "::ffff:255.255.255.255",
+        ipv4: { allowBroadcast: false },
+        errors: {
+          broadcastNotAllowed: (addr: string) =>
+            message`mapped broadcast ${text(addr)}`,
+        },
+        expected: "mapped broadcast ::ffff:ffff:ffff",
+      },
+      {
+        input: "::ffff:0.0.0.0",
+        ipv4: { allowZero: false },
+        errors: {
+          zeroNotAllowed: (addr: string) => message`mapped zero ${text(addr)}`,
+        },
+        expected: "mapped zero ::ffff:0:0",
+      },
+    ] as const;
+
+    for (const { input, ipv4: ipv4Options, errors, expected } of cases) {
+      const result = ip({ ipv4: ipv4Options, errors }).parse(input);
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.equal(formatMessage(result.error), expected);
+      }
+    }
+  });
+
+  it("covers CIDR placeholders and parser-specific fallback paths", () => {
+    assert.deepEqual(cidr({ version: 6 }).placeholder, {
+      address: "::",
+      prefix: 0,
+      version: 6,
+    });
+    assert.deepEqual(cidr({ minPrefix: 64 }).placeholder, {
+      address: "::",
+      prefix: 64,
+      version: 6,
+    });
+    assert.deepEqual(cidr({ version: 4, minPrefix: 24 }).placeholder, {
+      address: "0.0.0.0",
+      prefix: 24,
+      version: 4,
+    });
+
+    const invalidPrefix = cidr({
+      errors: {
+        invalidCidr: (input) => message`bad cidr ${text(input)}`,
+      },
+    }).parse("192.0.2.0/+24");
+    assert.ok(!invalidPrefix.success);
+    if (!invalidPrefix.success) {
+      assert.equal(
+        formatMessage(invalidPrefix.error),
+        "bad cidr 192.0.2.0/+24",
+      );
+    }
+
+    const prefixCallback = cidr({
+      ipv4: { allowPrivate: false },
+      errors: {
+        invalidPrefix: (prefix, version) =>
+          message`bad prefix ${text(prefix.toString())} for version ${
+            text(version.toString())
+          }`,
+      },
+    }).parse("192.168.0.0/33");
+    assert.ok(!prefixCallback.success);
+    if (!prefixCallback.success) {
+      assert.equal(
+        formatMessage(prefixCallback.error),
+        "bad prefix 33 for version 4",
+      );
+    }
+  });
+});
+
+describe("format() for network-address value parsers", () => {
+  it("macAddress().format() should return the value, not metavar", () => {
+    const mac = macAddress();
+    assert.equal(mac.format("00:1a:2b:3c:4d:5e"), "00:1a:2b:3c:4d:5e");
+  });
+
+  it("macAddress() parse-format round-trips for all separator styles", () => {
+    const mac = macAddress();
+    for (
+      const input of [
+        "aa:bb:cc:dd:ee:ff",
+        "aa-bb-cc-dd-ee-ff",
+        "aabb.ccdd.eeff",
+        "aabbccddeeff",
+      ]
+    ) {
+      const parsed = mac.parse(input);
+      assert.ok(parsed.success);
+      if (parsed.success) {
+        assert.equal(mac.format(parsed.value), parsed.value);
+      }
+    }
+  });
+
+  it("macAddress().format() should normalize with configured options", () => {
+    const mac = macAddress({ case: "upper", outputSeparator: ":" });
+    assert.equal(mac.format("aa-bb-cc-dd-ee-ff"), "AA:BB:CC:DD:EE:FF");
+  });
+
+  it("domain().format() should return the value, not metavar", () => {
+    const dom = domain();
+    assert.equal(dom.format("Example.COM"), "Example.COM");
+  });
+
+  it("domain().format() should lowercase when configured", () => {
+    const dom = domain({ lowercase: true });
+    assert.equal(dom.format("Example.COM"), "example.com");
+  });
+
+  it("domain() parse-format round-trips with lowercase", () => {
+    const dom = domain({ lowercase: true });
+    const parsed = dom.parse("Example.COM");
+    assert.ok(parsed.success);
+    if (parsed.success) {
+      assert.equal(dom.format(parsed.value), parsed.value);
+    }
+  });
+
+  it("ipv6().format() should return the value, not metavar", () => {
+    const v6 = ipv6();
+    assert.equal(v6.format("2001:db8::1"), "2001:db8::1");
+  });
+
+  it("ip().format() should return the value, not metavar", () => {
+    const ipParser = ip();
+    assert.equal(ipParser.format("192.0.2.1"), "192.0.2.1");
+    assert.equal(ipParser.format("2001:db8::1"), "2001:db8::1");
+  });
+
+  it("cidr().format() should return CIDR notation, not metavar", () => {
+    const cidrParser = cidr();
+    assert.equal(
+      cidrParser.format({ address: "192.0.2.0", prefix: 24, version: 4 }),
+      "192.0.2.0/24",
+    );
+    assert.equal(
+      cidrParser.format({ address: "2001:db8::", prefix: 48, version: 6 }),
+      "2001:db8::/48",
+    );
+  });
+});
+
+describe("ValueParser.normalize()", () => {
+  it("macAddress().normalize() applies case and separator", () => {
+    const mac = macAddress({ case: "upper", outputSeparator: ":" });
+    assert.equal(mac.normalize!("aa-bb-cc-dd-ee-ff"), "AA:BB:CC:DD:EE:FF");
+  });
+
+  it("macAddress().normalize() preserves separator when separator is any", () => {
+    const mac = macAddress();
+    assert.equal(mac.normalize!("aa-bb-cc-dd-ee-ff"), "aa-bb-cc-dd-ee-ff");
+    assert.equal(mac.normalize!("aabb.ccdd.eeff"), "aabb.ccdd.eeff");
+  });
+
+  it("macAddress().normalize() pads shorthand octets", () => {
+    const mac = macAddress({ outputSeparator: "." });
+    assert.equal(mac.normalize!("0:1:2:3:4:5"), "0001.0203.0405");
+  });
+
+  it("macAddress().normalize() preserves non-MAC strings unchanged", () => {
+    const mac = macAddress({ outputSeparator: ":" });
+    assert.equal(mac.normalize!("local"), "local");
+    assert.equal(mac.normalize!("auto"), "auto");
+    assert.equal(mac.normalize!("foo.bar.baz"), "foo.bar.baz");
+    // Non-Cisco dotted hex strings are preserved
+    assert.equal(mac.normalize!("aaa.bbb.ccc"), "aaa.bbb.ccc");
+    // 3-char octets are invalid—should not be rewritten
+    assert.equal(
+      mac.normalize!("aaa:bbb:ccc:ddd:eee:fff"),
+      "aaa:bbb:ccc:ddd:eee:fff",
+    );
+    // 11-digit bare hex is invalid (need exactly 12)—should not be rewritten
+    assert.equal(mac.normalize!("aabbccddeef"), "aabbccddeef");
+  });
+
+  it("macAddress().format() preserves non-MAC strings unchanged", () => {
+    const mac = macAddress({ outputSeparator: ":" });
+    assert.equal(mac.format("local"), "local");
+  });
+
+  it("macAddress().format() falls back for non-string and throwing validation", () => {
+    const basic = macAddress();
+    assert.equal(basic.format(42 as never), "MAC");
+
+    const throwing = macAddress({
+      errors: {
+        invalidMacAddress: () => {
+          throw new TypeError("bad mac callback.");
+        },
+      },
+    });
+    assert.equal(throwing.format("not-a-mac"), "not-a-mac");
+  });
+
+  it("macAddress().format() and normalize() avoid recursive validation", () => {
+    const formatParser = macAddress({
+      errors: {
+        invalidMacAddress: (input) =>
+          message`invalid after ${text(formatParser.format(input))}`,
+      },
+    });
+    assert.equal(formatParser.format("not-a-mac"), "not-a-mac");
+
+    const normalizeParser = macAddress({
+      errors: {
+        invalidMacAddress: (input) =>
+          message`invalid after ${text(normalizeParser.normalize!(input))}`,
+      },
+    });
+    assert.equal(normalizeParser.normalize!("not-a-mac"), "not-a-mac");
+  });
+
+  it("macAddress().normalize() preserves values when validation throws", () => {
+    const throwing = macAddress({
+      errors: {
+        invalidMacAddress: () => {
+          throw new TypeError("bad mac callback.");
+        },
+      },
+    });
+
+    assert.equal(throwing.normalize!("not-a-mac"), "not-a-mac");
+  });
+
+  it("domain().normalize() applies lowercase when configured", () => {
+    const dom = domain({ lowercase: true });
+    assert.equal(dom.normalize!("Example.COM"), "example.com");
+  });
+
+  it("domain().normalize() preserves non-domain sentinels", () => {
+    const dom = domain({ lowercase: true });
+    assert.equal(dom.normalize!("LOCAL"), "LOCAL");
+    assert.equal(dom.normalize!("AUTO"), "AUTO");
+  });
+
+  it("domain() has no normalize when lowercase is false", () => {
+    const dom = domain();
+    assert.equal(dom.normalize, undefined);
+  });
+
+  it("domain().format() falls back for non-string and throwing validation", () => {
+    const basic = domain({ lowercase: true });
+    assert.equal(basic.format(42 as never), "DOMAIN");
+
+    const throwing = domain({
+      lowercase: true,
+      errors: {
+        invalidDomain: () => {
+          throw new TypeError("bad domain callback.");
+        },
+      },
+    });
+    assert.equal(throwing.format("not a domain"), "not a domain");
+  });
+
+  it("ipv6().normalize() compresses non-canonical addresses", () => {
+    const v6 = ipv6();
+    assert.equal(
+      v6.normalize!("2001:0db8:0000:0000:0000:0000:0000:0001"),
+      "2001:db8::1",
+    );
+  });
+
+  it("ipv6().normalize() preserves rejected addresses unchanged", () => {
+    const v6 = ipv6({ allowLoopback: false });
+    assert.equal(v6.normalize!("0:0:0:0:0:0:0:1"), "0:0:0:0:0:0:0:1");
+  });
+
+  it("ipv6().format() and normalize() preserve non-string sentinels", () => {
+    const v6 = ipv6();
+    assert.equal(v6.format({ kind: "auto" } as never), "IPV6");
+    assert.deepEqual(v6.normalize!({ kind: "auto" } as never), {
+      kind: "auto",
+    });
+  });
+
+  it("ip().normalize() compresses IPv6 addresses", () => {
+    const ipParser = ip();
+    assert.equal(
+      ipParser.normalize!("2001:0db8:0000:0000:0000:0000:0000:0001"),
+      "2001:db8::1",
+    );
+    assert.equal(ipParser.normalize!("192.0.2.1"), "192.0.2.1");
+  });
+
+  it("ip().format() and normalize() preserve non-string sentinels", () => {
+    const ipParser = ip();
+    assert.equal(ipParser.format({ kind: "auto" } as never), "IP");
+    assert.deepEqual(ipParser.normalize!({ kind: "auto" } as never), {
+      kind: "auto",
+    });
+  });
+
+  it("ip().format() and normalize() preserve values when validation throws", () => {
+    const ipParser = ip({
+      errors: {
+        invalidIP: () => {
+          throw new TypeError("bad ip callback.");
+        },
+      },
+    });
+
+    assert.equal(ipParser.format("not-an-ip"), "not-an-ip");
+    assert.equal(ipParser.normalize!("not-an-ip"), "not-an-ip");
+  });
+
+  it("cidr().normalize() compresses IPv6 CIDR addresses", () => {
+    const cidrParser = cidr();
+    const result = cidrParser.normalize!({
+      address: "2001:0db8:0000:0000:0000:0000:0000:0000",
+      prefix: 32,
+      version: 6,
+    });
+    assert.deepEqual(result, {
+      address: "2001:db8::",
+      prefix: 32,
+      version: 6,
+    });
+  });
+
+  it("cidr().format() and normalize() preserve invalid sentinels", () => {
+    const cidrParser = cidr();
+    assert.equal(cidrParser.format({ kind: "auto" } as never), "CIDR");
+    assert.deepEqual(cidrParser.normalize!({ kind: "auto" } as never), {
+      kind: "auto",
+    });
+
+    const versionMismatch = { address: "192.0.2.0", prefix: 24, version: 6 };
+    assert.equal(cidrParser.format(versionMismatch as never), "192.0.2.0/24");
+    assert.deepEqual(cidrParser.normalize!(versionMismatch as never), {
+      address: "192.0.2.0",
+      prefix: 24,
+      version: 6,
+    });
+  });
+
+  it("cidr().format() and normalize() preserve values when validation throws", () => {
+    const cidrParser = cidr({
+      errors: {
+        invalidCidr: () => {
+          throw new TypeError("bad cidr callback.");
+        },
+      },
+    });
+    const invalid = { address: "not-an-ip", prefix: 24, version: 4 } as const;
+
+    assert.equal(cidrParser.format(invalid), "not-an-ip/24");
+    assert.deepEqual(cidrParser.normalize!(invalid), invalid);
+  });
+});
+
+describe("checkBooleanOption", () => {
+  it("should not throw when options is undefined", () => {
+    assert.doesNotThrow(() =>
+      checkBooleanOption<{ foo?: boolean }>(undefined, "foo")
+    );
+  });
+
+  it("should not throw when the key is absent", () => {
+    assert.doesNotThrow(() => checkBooleanOption<{ foo?: boolean }>({}, "foo"));
+  });
+
+  it("should not throw when the value is true", () => {
+    assert.doesNotThrow(() => checkBooleanOption({ foo: true }, "foo"));
+  });
+
+  it("should not throw when the value is false", () => {
+    assert.doesNotThrow(() => checkBooleanOption({ foo: false }, "foo"));
+  });
+
+  it("should throw TypeError for a string value", () => {
+    assert.throws(
+      () => checkBooleanOption({ foo: "yes" }, "foo"),
+      {
+        name: "TypeError",
+        message: "Expected foo to be a boolean, but got string: yes.",
+      },
+    );
+  });
+
+  it("should throw TypeError for a number value", () => {
+    assert.throws(
+      () => checkBooleanOption({ foo: 1 }, "foo"),
+      {
+        name: "TypeError",
+        message: "Expected foo to be a boolean, but got number: 1.",
+      },
+    );
+  });
+});
+
+describe("checkEnumOption", () => {
+  const allowed = ["a", "b", "c"] as const;
+
+  it("should not throw when options is undefined", () => {
+    assert.doesNotThrow(() =>
+      checkEnumOption<{ foo?: string }>(undefined, "foo", allowed)
+    );
+  });
+
+  it("should not throw when the key is absent", () => {
+    assert.doesNotThrow(() =>
+      checkEnumOption<{ foo?: string }>({}, "foo", allowed)
+    );
+  });
+
+  it("should not throw when the value is one of the allowed values", () => {
+    for (const v of allowed) {
+      assert.doesNotThrow(() => checkEnumOption({ foo: v }, "foo", allowed));
+    }
+  });
+
+  it("should throw TypeError for an invalid string value", () => {
+    assert.throws(
+      () => checkEnumOption({ foo: "x" }, "foo", allowed),
+      {
+        name: "TypeError",
+        message:
+          'Expected foo to be one of "a", "b", "c", but got string: "x".',
+      },
+    );
+  });
+
+  it("should throw TypeError for a non-string value", () => {
+    assert.throws(
+      () => checkEnumOption({ foo: 42 }, "foo", allowed),
+      {
+        name: "TypeError",
+        message: 'Expected foo to be one of "a", "b", "c", but got number: 42.',
+      },
+    );
+  });
+
+  it("should render symbol values in TypeError messages", () => {
+    assert.throws(
+      () => checkEnumOption({ foo: Symbol("x") }, "foo", allowed),
+      {
+        name: "TypeError",
+        message:
+          'Expected foo to be one of "a", "b", "c", but got symbol: Symbol(x).',
+      },
+    );
+  });
+});
+
+describe("fileSize()", () => {
+  describe("basic byte parsing", () => {
+    it("parses bare bytes with B suffix", () => {
+      const parser = fileSize();
+      const r = parser.parse("512B");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 512);
+    });
+
+    it("parses zero bytes", () => {
+      const parser = fileSize();
+      const r = parser.parse("0B");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 0);
+    });
+  });
+
+  describe("SI units (powers of 1000)", () => {
+    it("parses 1KB as 1000", () => {
+      const r = fileSize().parse("1KB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000);
+    });
+
+    it("parses 1MB as 1_000_000", () => {
+      const r = fileSize().parse("1MB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000);
+    });
+
+    it("parses 1GB as 1_000_000_000", () => {
+      const r = fileSize().parse("1GB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000_000);
+    });
+
+    it("parses 1TB as 1_000_000_000_000", () => {
+      const r = fileSize().parse("1TB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000_000_000);
+    });
+
+    it("parses 1PB as 1_000_000_000_000_000", () => {
+      const r = fileSize().parse("1PB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000_000_000_000);
+    });
+  });
+
+  describe("IEC units (powers of 1024)", () => {
+    it("parses 1KiB as 1024", () => {
+      const r = fileSize().parse("1KiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_024);
+    });
+
+    it("parses 1MiB as 1_048_576", () => {
+      const r = fileSize().parse("1MiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_048_576);
+    });
+
+    it("parses 1GiB as 1_073_741_824", () => {
+      const r = fileSize().parse("1GiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_073_741_824);
+    });
+
+    it("parses 1TiB as 1_099_511_627_776", () => {
+      const r = fileSize().parse("1TiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_099_511_627_776);
+    });
+
+    it("parses 1PiB as 1_125_899_906_842_624", () => {
+      const r = fileSize().parse("1PiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_125_899_906_842_624);
+    });
+  });
+
+  describe("floating-point values", () => {
+    it("parses 1.5MB as 1_500_000", () => {
+      const r = fileSize().parse("1.5MB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_500_000);
+    });
+
+    it("parses 1.5GiB as 1_610_612_736", () => {
+      const r = fileSize().parse("1.5GiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_610_612_736);
+    });
+
+    it("parses .5KB as 500", () => {
+      const r = fileSize().parse(".5KB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 500);
+    });
+  });
+
+  describe("case-insensitive units", () => {
+    it("parses lowercase kb as KB", () => {
+      const r = fileSize().parse("1kb");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000);
+    });
+
+    it("parses uppercase KIB as KiB", () => {
+      const r = fileSize().parse("1KIB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_024);
+    });
+
+    it("parses mixed case Gib as GiB", () => {
+      const r = fileSize().parse("1Gib");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_073_741_824);
+    });
+
+    it("parses mixed case Mb as MB", () => {
+      const r = fileSize().parse("2Mb");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 2_000_000);
+    });
+  });
+
+  describe("optional whitespace between number and unit", () => {
+    it("parses '1 MB' with a space", () => {
+      const r = fileSize().parse("1 MB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000);
+    });
+
+    it("parses '1  KiB' with multiple spaces", () => {
+      const r = fileSize().parse("1  KiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_024);
+    });
+  });
+
+  describe("defaultUnit option", () => {
+    it("uses defaultUnit when no unit is in input", () => {
+      const parser = fileSize({ defaultUnit: "MB" });
+      const r = parser.parse("100");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 100_000_000);
+    });
+
+    it("uses defaultUnit B to treat bare number as bytes", () => {
+      const parser = fileSize({ defaultUnit: "B" });
+      const r = parser.parse("1024");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_024);
+    });
+
+    it("ignores defaultUnit when unit is present in input", () => {
+      const parser = fileSize({ defaultUnit: "MB" });
+      const r = parser.parse("1KB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000);
+    });
+
+    it("rejects bare number when defaultUnit is absent", () => {
+      const r = fileSize().parse("100");
+      assert.ok(!r.success);
+    });
+  });
+
+  describe("negative values", () => {
+    it("rejects negative values by default", () => {
+      const r = fileSize().parse("-100B");
+      assert.ok(!r.success);
+    });
+
+    it("allows negative values when allowNegative is true", () => {
+      const parser = fileSize({ allowNegative: true });
+      const r = parser.parse("-1MB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, -1_000_000);
+    });
+
+    it("allows negative IEC values when allowNegative is true", () => {
+      const parser = fileSize({ allowNegative: true });
+      const r = parser.parse("-1GiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, -1_073_741_824);
+    });
+  });
+
+  describe("siAsBinary option", () => {
+    it("treats KB as 1000 by default (siAsBinary: false)", () => {
+      const r = fileSize().parse("1KB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000);
+    });
+
+    it("treats KB as 1024 when siAsBinary is true", () => {
+      const parser = fileSize({ siAsBinary: true });
+      const r = parser.parse("1KB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_024);
+    });
+
+    it("treats MB as 1_000_000 by default", () => {
+      const r = fileSize().parse("1MB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000);
+    });
+
+    it("treats MB as 1_048_576 when siAsBinary is true", () => {
+      const parser = fileSize({ siAsBinary: true });
+      const r = parser.parse("1MB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_048_576);
+    });
+
+    it("treats GB as 1_000_000_000 by default", () => {
+      const r = fileSize().parse("1GB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000_000);
+    });
+
+    it("treats GB as 1_073_741_824 when siAsBinary is true", () => {
+      const parser = fileSize({ siAsBinary: true });
+      const r = parser.parse("1GB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_073_741_824);
+    });
+
+    it("does not affect IEC units when siAsBinary is true", () => {
+      const parser = fileSize({ siAsBinary: true });
+      const r = parser.parse("1KiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_024);
+    });
+  });
+
+  describe("error cases", () => {
+    it("rejects unknown unit", () => {
+      const r = fileSize().parse("100XB");
+      assert.ok(!r.success);
+    });
+
+    it("rejects pure text", () => {
+      const r = fileSize().parse("abc");
+      assert.ok(!r.success);
+    });
+
+    it("rejects empty string", () => {
+      const r = fileSize().parse("");
+      assert.ok(!r.success);
+    });
+
+    it("rejects number with leading plus and no unit (no defaultUnit)", () => {
+      const r = fileSize().parse("+100");
+      assert.ok(!r.success);
+    });
+
+    it("rejects fractional byte values (0.1B)", () => {
+      const r = fileSize().parse("0.1B");
+      assert.ok(!r.success);
+    });
+
+    it("rejects fractional byte values (1.5B)", () => {
+      const r = fileSize().parse("1.5B");
+      assert.ok(!r.success);
+    });
+
+    it("rejects values beyond Number.MAX_SAFE_INTEGER", () => {
+      const r = fileSize().parse(`${Number.MAX_SAFE_INTEGER + 1}B`);
+      assert.ok(!r.success);
+    });
+
+    it("rejects input whose float64 conversion silently rounds to integer (1.0000000000000001B)", () => {
+      const r = fileSize().parse("1.0000000000000001B");
+      assert.ok(!r.success);
+    });
+
+    it("rejects input whose float64 conversion silently rounds near MAX_SAFE_INTEGER (0.99999999999999999B)", () => {
+      const r = fileSize().parse("0.99999999999999999B");
+      assert.ok(!r.success);
+    });
+
+    it("rejects byte counts exceeding Number.MAX_SAFE_INTEGER for any unit", () => {
+      const parser = fileSize();
+      fc.assert(
+        fc.property(
+          fc.bigInt({
+            min: BigInt(Number.MAX_SAFE_INTEGER) + 1n,
+            max: 100_000_000_000_000_000_000n,
+          }),
+          (n) => !parser.parse(`${n}B`).success,
+        ),
+        propertyParameters,
+      );
+    });
+  });
+
+  describe("type discriminator", () => {
+    it("type: 'number' explicit returns number", () => {
+      const parser = fileSize({ type: "number" });
+      const r = parser.parse("1MB");
+      assert.ok(r.success);
+      if (r.success) {
+        assert.equal(typeof r.value, "number");
+        assert.equal(r.value, 1_000_000);
+      }
+    });
+
+    it("type: 'number' explicit has same placeholder as default", () => {
+      assert.equal(fileSize({ type: "number" }).placeholder, 0);
+    });
+  });
+
+  describe("metavar", () => {
+    it("defaults to SIZE", () => {
+      assert.equal(fileSize().metavar, "SIZE");
+    });
+
+    it("uses custom metavar", () => {
+      assert.equal(fileSize({ metavar: "BYTES" }).metavar, "BYTES");
+    });
+  });
+
+  describe("placeholder", () => {
+    it("defaults to 0", () => {
+      assert.equal(fileSize().placeholder, 0);
+    });
+
+    it("uses custom placeholder", () => {
+      assert.equal(fileSize({ placeholder: 1024 }).placeholder, 1024);
+    });
+  });
+
+  describe("format()", () => {
+    it("formats 512 as 512B", () => {
+      assert.equal(fileSize().format(512), "512B");
+    });
+
+    it("formats 1000 as 1KB", () => {
+      assert.equal(fileSize().format(1_000), "1KB");
+    });
+
+    it("formats 1_000_000 as 1MB", () => {
+      assert.equal(fileSize().format(1_000_000), "1MB");
+    });
+
+    it("formats 1_000_000_000 as 1GB", () => {
+      assert.equal(fileSize().format(1_000_000_000), "1GB");
+    });
+
+    it("formats 1_073_741_824 (1 GiB) as 1GiB", () => {
+      assert.equal(fileSize().format(1_073_741_824), "1GiB");
+    });
+
+    it("formats 1_500_000 as 1.5MB", () => {
+      assert.equal(fileSize().format(1_500_000), "1.5MB");
+    });
+
+    it("formats 1_572_864 (1.5 MiB) as 1.5MiB", () => {
+      assert.equal(fileSize().format(1_572_864), "1.5MiB");
+    });
+
+    it("formats 0 as 0B", () => {
+      assert.equal(fileSize().format(0), "0B");
+    });
+
+    it("formats 1KB as 1KB when siAsBinary is true", () => {
+      assert.equal(fileSize({ siAsBinary: true }).format(1_024), "1KB");
+    });
+
+    it("round-trips representative byte values through format and parse", () => {
+      const parser = fileSize();
+      for (
+        const bytes of [0, 512, 1000, 1024, 1_500_000, 1_048_576, 1_073_741_824]
+      ) {
+        const formatted = parser.format(bytes);
+        const result = parser.parse(formatted);
+        assert.ok(
+          result.success,
+          `format(${bytes}) = ${formatted} did not parse`,
+        );
+        if (result.success) assert.equal(result.value, bytes);
+      }
+    });
+
+    it("round-trips with siAsBinary: true", () => {
+      const parser = fileSize({ siAsBinary: true });
+      for (const bytes of [0, 512, 1_024, 1_048_576, 1_073_741_824]) {
+        const formatted = parser.format(bytes);
+        const result = parser.parse(formatted);
+        assert.ok(
+          result.success,
+          `format(${bytes}) = ${formatted} did not parse`,
+        );
+        if (result.success) assert.equal(result.value, bytes);
+      }
+    });
+
+    it("round-trips any non-negative safe integer via fast-check", () => {
+      const parser = fileSize();
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
+          (bytes) => {
+            const formatted = parser.format(bytes);
+            const r = parser.parse(formatted);
+            return r.success && r.value === bytes;
+          },
+        ),
+        propertyParameters,
+      );
+    });
+
+    it("round-trips negative values with allowNegative via fast-check", () => {
+      const parser = fileSize({ allowNegative: true });
+      fc.assert(
+        fc.property(
+          fc.integer({ min: -Number.MAX_SAFE_INTEGER, max: -1 }),
+          (bytes) => {
+            const formatted = parser.format(bytes);
+            const r = parser.parse(formatted);
+            return r.success && r.value === bytes;
+          },
+        ),
+        propertyParameters,
+      );
+    });
+
+    it("parse(n × unit) gives n × multiplier for any integer n", () => {
+      const units: readonly [string, number][] = [
+        ["B", 1],
+        ["KB", 1_000],
+        ["MB", 1_000_000],
+        ["GB", 1_000_000_000],
+        ["KiB", 1_024],
+        ["MiB", 1_048_576],
+        ["GiB", 1_073_741_824],
+      ];
+      const parser = fileSize();
+      fc.assert(
+        fc.property(
+          fc.constantFrom(...units),
+          fc.nat({ max: 9_000 }),
+          ([unit, multiplier], n) => {
+            const bytes = n * multiplier;
+            const r = parser.parse(`${n}${unit}`);
+            return r.success && r.value === bytes;
+          },
+        ),
+        propertyParameters,
+      );
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("uses static invalidFormat error message", () => {
+      const customError = message`Bad size: ${"example"}`;
+      const parser = fileSize({ errors: { invalidFormat: customError } });
+      const r = parser.parse("bad");
+      assert.ok(!r.success);
+      if (!r.success) assert.deepEqual(r.error, customError);
+    });
+
+    it("uses function invalidFormat error message", () => {
+      const parser = fileSize({
+        errors: {
+          invalidFormat: (input) => message`Not a size: ${input}`,
+        },
+      });
+      const r = parser.parse("bad");
+      assert.ok(!r.success);
+      if (!r.success) {
+        const expected = message`Not a size: ${"bad"}`;
+        assert.deepEqual(r.error, expected);
+      }
+    });
+
+    it("uses static negativeNotAllowed error message", () => {
+      const customError = message`No negatives!`;
+      const parser = fileSize({ errors: { negativeNotAllowed: customError } });
+      const r = parser.parse("-1MB");
+      assert.ok(!r.success);
+      if (!r.success) assert.deepEqual(r.error, customError);
+    });
+
+    it("uses function negativeNotAllowed error message", () => {
+      const parser = fileSize({
+        errors: {
+          negativeNotAllowed: (value) =>
+            message`Negative size ${text(String(value))} not allowed`,
+        },
+      });
+      const r = parser.parse("-1MB");
+      assert.ok(!r.success);
+      if (!r.success) {
+        const expected = message`Negative size ${
+          text(String(-1_000_000))
+        } not allowed`;
+        assert.deepEqual(r.error, expected);
+      }
+    });
+  });
+});
+
+describe("fileSize()—bigint mode", () => {
+  const bigintParser = fileSize({ type: "bigint" });
+
+  describe("type inference", () => {
+    it("returns bigint values", () => {
+      const r = bigintParser.parse("512B");
+      assert.ok(r.success);
+      if (r.success) assert.equal(typeof r.value, "bigint");
+    });
+
+    it("accepts FileSizeOptionsBigInt type", () => {
+      const opts: FileSizeOptionsBigInt = { type: "bigint" };
+      const parser = fileSize(opts);
+      assert.ok(isValueParser(parser));
+    });
+  });
+
+  describe("SI units", () => {
+    it("parses 512B → 512n", () => {
+      const r = bigintParser.parse("512B");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 512n);
+    });
+
+    it("parses 1KB → 1000n", () => {
+      const r = bigintParser.parse("1KB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000n);
+    });
+
+    it("parses 1MB → 1_000_000n", () => {
+      const r = bigintParser.parse("1MB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000n);
+    });
+
+    it("parses 1GB → 1_000_000_000n", () => {
+      const r = bigintParser.parse("1GB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000_000n);
+    });
+  });
+
+  describe("IEC units", () => {
+    it("parses 1KiB → 1024n", () => {
+      const r = bigintParser.parse("1KiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_024n);
+    });
+
+    it("parses 1GiB → 1_073_741_824n", () => {
+      const r = bigintParser.parse("1GiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_073_741_824n);
+    });
+  });
+
+  describe("large values (beyond Number.MAX_SAFE_INTEGER)", () => {
+    it("parses 1EB → 1_000_000_000_000_000_000n", () => {
+      const r = bigintParser.parse("1EB");
+      assert.ok(r.success);
+      if (r.success) {
+        assert.equal(r.value, 1_000_000_000_000_000_000n);
+        assert.equal(typeof r.value, "bigint");
+      }
+    });
+
+    it("parses 1EiB → 1_152_921_504_606_846_976n", () => {
+      const r = bigintParser.parse("1EiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_152_921_504_606_846_976n);
+    });
+
+    it("parses 100EB", () => {
+      const r = bigintParser.parse("100EB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 100_000_000_000_000_000_000n);
+    });
+  });
+
+  describe("floating-point inputs", () => {
+    it("parses 1.5GB → 1_500_000_000n", () => {
+      const r = bigintParser.parse("1.5GB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_500_000_000n);
+    });
+
+    it("parses 1.5EiB → 1_729_382_256_910_270_464n", () => {
+      const r = bigintParser.parse("1.5EiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_729_382_256_910_270_464n);
+    });
+  });
+
+  describe("case-insensitive units", () => {
+    it("parses 1KIB → 1024n", () => {
+      const r = bigintParser.parse("1KIB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_024n);
+    });
+
+    it("parses 1eb → 1_000_000_000_000_000_000n", () => {
+      const r = bigintParser.parse("1eb");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000_000_000_000_000n);
+    });
+  });
+
+  describe("defaultUnit option", () => {
+    it("uses defaultUnit when no unit is in input", () => {
+      const parser = fileSize({ type: "bigint", defaultUnit: "MB" });
+      const r = parser.parse("100");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 100_000_000n);
+    });
+
+    it("rejects bare number when defaultUnit is absent", () => {
+      const r = bigintParser.parse("100");
+      assert.ok(!r.success);
+    });
+  });
+
+  describe("allowNegative option", () => {
+    it("rejects negative by default", () => {
+      const r = bigintParser.parse("-1MB");
+      assert.ok(!r.success);
+    });
+
+    it("allows negative when allowNegative is true", () => {
+      const parser = fileSize({ type: "bigint", allowNegative: true });
+      const r = parser.parse("-1EB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, -1_000_000_000_000_000_000n);
+    });
+  });
+
+  describe("siAsBinary option", () => {
+    it("treats KB as 1024n when siAsBinary is true", () => {
+      const parser = fileSize({ type: "bigint", siAsBinary: true });
+      const r = parser.parse("1KB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_024n);
+    });
+
+    it("treats EB as 1024^6 when siAsBinary is true", () => {
+      const parser = fileSize({ type: "bigint", siAsBinary: true });
+      const r = parser.parse("1EB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_152_921_504_606_846_976n);
+    });
+
+    it("round-trips with siAsBinary: true", () => {
+      const parser = fileSize({ type: "bigint", siAsBinary: true });
+      for (
+        const bytes of [
+          0n,
+          512n,
+          1_024n,
+          1_048_576n,
+          1_073_741_824n,
+          1_152_921_504_606_846_976n,
+        ]
+      ) {
+        const formatted = parser.format(bytes);
+        const result = parser.parse(formatted);
+        assert.ok(
+          result.success,
+          `format(${bytes}) = ${formatted} did not parse`,
+        );
+        if (result.success) assert.equal(result.value, bytes);
+      }
+    });
+  });
+
+  describe("metavar", () => {
+    it("defaults to SIZE", () => {
+      assert.equal(fileSize({ type: "bigint" }).metavar, "SIZE");
+    });
+
+    it("uses custom metavar", () => {
+      assert.equal(
+        fileSize({ type: "bigint", metavar: "BYTES" }).metavar,
+        "BYTES",
+      );
+    });
+  });
+
+  describe("option validation", () => {
+    it("throws TypeError for invalid type", () => {
+      assert.throws(
+        // @ts-ignore intentionally invalid
+        () => fileSize({ type: "bytes" }),
+        (e: unknown) =>
+          e instanceof TypeError &&
+          e.message ===
+            'Expected type to be "number" or "bigint", but got: bytes.',
+      );
+    });
+
+    it("throws TypeError for empty metavar", () => {
+      assert.throws(
+        // @ts-ignore intentionally invalid
+        () => fileSize({ type: "bigint", metavar: "" }),
+        (e: unknown) =>
+          e instanceof TypeError &&
+          e.message === "Expected a non-empty string.",
+      );
+    });
+
+    it("throws TypeError for non-boolean allowNegative", () => {
+      assert.throws(
+        // @ts-ignore intentionally invalid
+        () => fileSize({ type: "bigint", allowNegative: "yes" }),
+        (e: unknown) =>
+          e instanceof TypeError &&
+          e.message ===
+            "Expected allowNegative to be a boolean, but got string: yes.",
+      );
+    });
+
+    it("throws TypeError for non-boolean siAsBinary", () => {
+      assert.throws(
+        // @ts-ignore intentionally invalid
+        () => fileSize({ type: "bigint", siAsBinary: 1 }),
+        (e: unknown) =>
+          e instanceof TypeError &&
+          e.message ===
+            "Expected siAsBinary to be a boolean, but got number: 1.",
+      );
+    });
+
+    it("throws TypeError for invalid defaultUnit", () => {
+      assert.throws(
+        // @ts-ignore intentionally invalid
+        () => fileSize({ type: "bigint", defaultUnit: "XB" }),
+        (e: unknown) =>
+          e instanceof TypeError &&
+          e.message ===
+            'Expected defaultUnit to be one of "B", "KB", "MB", "GB", ' +
+              '"TB", "PB", "EB", "KiB", "MiB", "GiB", "TiB", "PiB", ' +
+              '"EiB", but got string: "XB".',
+      );
+    });
+  });
+
+  describe("optional whitespace between number and unit", () => {
+    it("parses '1 EB' with a space", () => {
+      const r = bigintParser.parse("1 EB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_000_000_000_000_000_000n);
+    });
+
+    it("parses '1  EiB' with multiple spaces", () => {
+      const r = bigintParser.parse("1  EiB");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value, 1_152_921_504_606_846_976n);
+    });
+  });
+
+  describe("placeholder", () => {
+    it("defaults to 0n", () => {
+      assert.equal(bigintParser.placeholder, 0n);
+    });
+
+    it("uses custom placeholder", () => {
+      const parser = fileSize({ type: "bigint", placeholder: 1024n });
+      assert.equal(parser.placeholder, 1024n);
+    });
+  });
+
+  describe("format()", () => {
+    it("formats 512n as 512B", () => {
+      assert.equal(bigintParser.format(512n), "512B");
+    });
+
+    it("formats 1_000n as 1KB", () => {
+      assert.equal(bigintParser.format(1_000n), "1KB");
+    });
+
+    it("formats 1_073_741_824n (1GiB) as 1GiB", () => {
+      assert.equal(bigintParser.format(1_073_741_824n), "1GiB");
+    });
+
+    it("formats 1_000_000_000_000_000_000n (1EB) as 1EB", () => {
+      assert.equal(
+        bigintParser.format(1_000_000_000_000_000_000n),
+        "1EB",
+      );
+    });
+
+    it("formats 1_152_921_504_606_846_976n (1EiB) as 1EiB", () => {
+      assert.equal(
+        bigintParser.format(1_152_921_504_606_846_976n),
+        "1EiB",
+      );
+    });
+
+    it("formats 1_729_382_256_910_270_464n (1.5EiB) as 1.5EiB", () => {
+      assert.equal(
+        bigintParser.format(1_729_382_256_910_270_464n),
+        "1.5EiB",
+      );
+    });
+
+    it("formats 0n as 0B", () => {
+      assert.equal(bigintParser.format(0n), "0B");
+    });
+
+    it("formats 1_500_000_000_000_000_000n (1.5EB) as 1.5EB", () => {
+      assert.equal(bigintParser.format(1_500_000_000_000_000_000n), "1.5EB");
+    });
+
+    it("formats negative values (allowNegative: true)", () => {
+      const parser = fileSize({ type: "bigint", allowNegative: true });
+      assert.equal(parser.format(-1_000_000_000n), "-1GB");
+      assert.equal(parser.format(-1_073_741_824n), "-1GiB");
+      assert.equal(parser.format(-1_000_000_000_000_000_000n), "-1EB");
+    });
+
+    it("round-trips representative values", () => {
+      const values = [
+        0n,
+        512n,
+        1_000n,
+        1_024n,
+        1_073_741_824n,
+        1_000_000_000_000_000_000n,
+        1_152_921_504_606_846_976n,
+      ];
+      for (const v of values) {
+        const formatted = bigintParser.format(v);
+        const result = bigintParser.parse(formatted);
+        assert.ok(result.success, `format(${v}) = ${formatted} did not parse`);
+        if (result.success) assert.equal(result.value, v);
+      }
+    });
+
+    it("round-trips any non-negative bigint up to 1000 EB via fast-check", () => {
+      const maxBytes = 1_000n * 1_000_000_000_000_000_000n;
+      fc.assert(
+        fc.property(
+          fc.bigInt({ min: 0n, max: maxBytes }),
+          (bytes) => {
+            const formatted = bigintParser.format(bytes);
+            const r = bigintParser.parse(formatted);
+            return r.success && r.value === bytes;
+          },
+        ),
+        propertyParameters,
+      );
+    });
+
+    it("parse(n × unit) gives n × multiplier for any integer n", () => {
+      const units: readonly [string, bigint][] = [
+        ["B", 1n],
+        ["KB", 1_000n],
+        ["MB", 1_000_000n],
+        ["EB", 1_000_000_000_000_000_000n],
+        ["KiB", 1_024n],
+        ["EiB", 1_152_921_504_606_846_976n],
+      ];
+      fc.assert(
+        fc.property(
+          fc.constantFrom(...units),
+          fc.bigInt({ min: 1n, max: 999n }),
+          ([unit, multiplier], n) => {
+            const bytes = n * multiplier;
+            const r = bigintParser.parse(`${n}${unit}`);
+            return r.success && r.value === bytes;
+          },
+        ),
+        propertyParameters,
+      );
+    });
+  });
+
+  describe("error cases", () => {
+    it("rejects fractional byte values (0.1B)", () => {
+      assert.ok(!bigintParser.parse("0.1B").success);
+    });
+
+    it("rejects unknown unit", () => {
+      assert.ok(!bigintParser.parse("100XB").success);
+    });
+
+    it("rejects empty string", () => {
+      assert.ok(!bigintParser.parse("").success);
+    });
+
+    it("rejects float64-precision rounding input (1.0000000000000001B)", () => {
+      assert.ok(!bigintParser.parse("1.0000000000000001B").success);
+    });
+  });
+
+  describe("custom error messages", () => {
+    it("uses static invalidFormat error message", () => {
+      const customError = message`Bad size: ${"example"}`;
+      const parser = fileSize({
+        type: "bigint",
+        errors: { invalidFormat: customError },
+      });
+      const r = parser.parse("bad");
+      assert.ok(!r.success);
+      if (!r.success) assert.deepEqual(r.error, customError);
+    });
+
+    it("uses function invalidFormat error message", () => {
+      const parser = fileSize({
+        type: "bigint",
+        errors: { invalidFormat: (input) => message`Not a size: ${input}` },
+      });
+      const r = parser.parse("bad");
+      assert.ok(!r.success);
+      if (!r.success) {
+        const expected = message`Not a size: ${"bad"}`;
+        assert.deepEqual(r.error, expected);
+      }
+    });
+
+    it("uses static negativeNotAllowed error message", () => {
+      const customError = message`No negatives!`;
+      const parser = fileSize({
+        type: "bigint",
+        errors: { negativeNotAllowed: customError },
+      });
+      const r = parser.parse("-1EB");
+      assert.ok(!r.success);
+      if (!r.success) assert.deepEqual(r.error, customError);
+    });
+
+    it("negativeNotAllowed function receives bigint argument", () => {
+      let received: bigint | undefined;
+      const parser = fileSize({
+        type: "bigint",
+        errors: {
+          negativeNotAllowed: (value) => {
+            received = value;
+            return message`Negative: ${String(value)}`;
+          },
+        },
+      });
+      parser.parse("-1EB");
+      assert.equal(received, -1_000_000_000_000_000_000n);
+    });
+  });
+});
+
+describe("color()", () => {
+  describe("constructor", () => {
+    it("default metavar is COLOR", () => {
+      const parser = color();
+      assert.equal(parser.metavar, "COLOR");
+    });
+
+    it("accepts custom metavar", () => {
+      const parser = color({ metavar: "FG" });
+      assert.equal(parser.metavar, "FG");
+    });
+
+    it("throws TypeError for empty metavar", () => {
+      assert.throws(
+        () => color({ metavar: "" as NonEmptyString }),
+        (e: unknown) =>
+          e instanceof TypeError &&
+          e.message === "Expected a non-empty string.",
+      );
+    });
+
+    it("mode is sync", () => {
+      assert.equal(color().mode, "sync");
+    });
+
+    it("default placeholder is opaque black", () => {
+      assert.deepEqual(color().placeholder, { r: 0, g: 0, b: 0, a: 1 });
+    });
+
+    it("accepts custom placeholder", () => {
+      const p: Color = { r: 255, g: 0, b: 0, a: 1 };
+      assert.deepEqual(color({ placeholder: p }).placeholder, p);
+    });
+
+    it("throws TypeError for invalid format in formats array", () => {
+      assert.throws(
+        () => color({ formats: ["hex", "invalid" as never] }),
+        (e: unknown) =>
+          e instanceof TypeError &&
+          e.message ===
+            `Expected formats to contain only "hex", "rgb", "hsl", "named", but got: "invalid".`,
+      );
+    });
+
+    it("accepts empty formats array", () => {
+      const parser = color({ formats: [] });
+      const r = parser.parse("#ff0000");
+      assert.ok(!r.success);
+    });
+  });
+
+  describe("hex format", () => {
+    it("parses 6-digit lowercase #rrggbb", () => {
+      const r = color().parse("#ff8000");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 255, g: 128, b: 0, a: 1 });
+    });
+
+    it("parses 6-digit uppercase #RRGGBB", () => {
+      const r = color().parse("#FF8000");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 255, g: 128, b: 0, a: 1 });
+    });
+
+    it("parses 3-digit shorthand #rgb", () => {
+      const r = color().parse("#f80");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 255, g: 136, b: 0, a: 1 });
+    });
+
+    it("parses 8-digit #rrggbbaa", () => {
+      const r = color().parse("#ff000080");
+      assert.ok(r.success);
+      if (r.success) {
+        assert.equal(r.value.r, 255);
+        assert.equal(r.value.g, 0);
+        assert.equal(r.value.b, 0);
+        assert.ok(Math.abs(r.value.a - 128 / 255) < 1e-9);
+      }
+    });
+
+    it("parses 4-digit shorthand #rgba", () => {
+      const r = color().parse("#f00f");
+      assert.ok(r.success);
+      if (r.success) {
+        assert.equal(r.value.r, 255);
+        assert.equal(r.value.g, 0);
+        assert.equal(r.value.b, 0);
+        assert.equal(r.value.a, 1);
+      }
+    });
+
+    it("parses #000000 as black", () => {
+      const r = color().parse("#000000");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 0, b: 0, a: 1 });
+    });
+
+    it("parses #ffffff as white", () => {
+      const r = color().parse("#ffffff");
+      assert.ok(r.success);
+      if (r.success) {
+        assert.deepEqual(r.value, { r: 255, g: 255, b: 255, a: 1 });
+      }
+    });
+
+    it("rejects #gg0000—invalid hex digit", () => {
+      const r = color().parse("#gg0000");
+      assert.ok(!r.success);
+    });
+
+    it("rejects 5-digit hex", () => {
+      const r = color().parse("#ff000");
+      assert.ok(!r.success);
+    });
+
+    it("rejects 7-digit hex", () => {
+      const r = color().parse("#ff00000");
+      assert.ok(!r.success);
+    });
+
+    it("trims leading/trailing whitespace", () => {
+      const r = color().parse("  #ff0000  ");
+      assert.ok(r.success);
+    });
+
+    it("round-trip: parse(format(x)) for opaque hex color", () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 0, max: 255 }),
+          fc.integer({ min: 0, max: 255 }),
+          fc.integer({ min: 0, max: 255 }),
+          (r, g, b) => {
+            const parser = color();
+            const original: Color = { r, g, b, a: 1 };
+            const formatted = parser.format(original);
+            const result = parser.parse(formatted);
+            if (!result.success) return false;
+            return (
+              result.value.r === r &&
+              result.value.g === g &&
+              result.value.b === b &&
+              result.value.a === 1
+            );
+          },
+        ),
+        propertyParameters,
+      );
+    });
+  });
+
+  describe("rgb/rgba format", () => {
+    it("parses rgb(255, 0, 0) as red", () => {
+      const r = color().parse("rgb(255, 0, 0)");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 255, g: 0, b: 0, a: 1 });
+    });
+
+    it("parses rgb(0, 0, 0) as black", () => {
+      const r = color().parse("rgb(0, 0, 0)");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 0, b: 0, a: 1 });
+    });
+
+    it("parses rgba(255, 128, 0, 0.5)", () => {
+      const r = color().parse("rgba(255, 128, 0, 0.5)");
+      assert.ok(r.success);
+      if (r.success) {
+        assert.equal(r.value.r, 255);
+        assert.equal(r.value.g, 128);
+        assert.equal(r.value.b, 0);
+        assert.equal(r.value.a, 128 / 255); // quantized to 8-bit
+      }
+    });
+
+    it("parses rgba(0, 0, 0, 0) as fully transparent", () => {
+      const r = color().parse("rgba(0, 0, 0, 0)");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 0, b: 0, a: 0 });
+    });
+
+    it("rejects rgb(256, 0, 0)—r > 255", () => {
+      const r = color().parse("rgb(256, 0, 0)");
+      assert.ok(!r.success);
+    });
+
+    it("rejects rgba(0, 0, 0, 1.5)—alpha > 1", () => {
+      const r = color().parse("rgba(0, 0, 0, 1.5)");
+      assert.ok(!r.success);
+    });
+
+    it("rejects rgba(0, 0, 0, -0.1)—alpha < 0", () => {
+      const r = color().parse("rgba(0, 0, 0, -0.1)");
+      assert.ok(!r.success);
+    });
+
+    it("accepts extra whitespace: rgb( 255 , 0 , 0 )", () => {
+      const r = color().parse("rgb( 255 , 0 , 0 )");
+      assert.ok(r.success);
+    });
+
+    it("case-insensitive: RGB(255, 0, 0)", () => {
+      const r = color().parse("RGB(255, 0, 0)");
+      assert.ok(r.success);
+    });
+
+    it("case-insensitive: RGBA(255, 0, 0, 1)", () => {
+      const r = color().parse("RGBA(255, 0, 0, 1)");
+      assert.ok(r.success);
+    });
+  });
+
+  describe("hsl/hsla format", () => {
+    it("parses hsl(0, 100%, 50%) as red", () => {
+      const r = color().parse("hsl(0, 100%, 50%)");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 255, g: 0, b: 0, a: 1 });
+    });
+
+    it("parses hsl(120, 100%, 50%) as lime", () => {
+      const r = color().parse("hsl(120, 100%, 50%)");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 255, b: 0, a: 1 });
+    });
+
+    it("parses hsl(240, 100%, 50%) as blue", () => {
+      const r = color().parse("hsl(240, 100%, 50%)");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 0, b: 255, a: 1 });
+    });
+
+    it("parses hsl(0, 0%, 0%) as black", () => {
+      const r = color().parse("hsl(0, 0%, 0%)");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 0, b: 0, a: 1 });
+    });
+
+    it("parses hsl(0, 0%, 100%) as white", () => {
+      const r = color().parse("hsl(0, 0%, 100%)");
+      assert.ok(r.success);
+      if (r.success) {
+        assert.deepEqual(r.value, { r: 255, g: 255, b: 255, a: 1 });
+      }
+    });
+
+    it("parses hsla(120, 100%, 50%, 0.5)", () => {
+      const r = color().parse("hsla(120, 100%, 50%, 0.5)");
+      assert.ok(r.success);
+      if (r.success) {
+        assert.equal(r.value.r, 0);
+        assert.equal(r.value.g, 255);
+        assert.equal(r.value.b, 0);
+        assert.equal(r.value.a, 128 / 255); // quantized to 8-bit
+      }
+    });
+
+    it("accepts hsl(360, 100%, 50%)—hue wraps to same as 0°", () => {
+      const r = color().parse("hsl(360, 100%, 50%)");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 255, g: 0, b: 0, a: 1 });
+    });
+
+    it("accepts hsl(361, 100%, 50%)—out-of-range hue wraps", () => {
+      const r = color().parse("hsl(361, 100%, 50%)");
+      assert.ok(r.success);
+    });
+
+    it("accepts hsl(-120, 100%, 50%)—negative hue wraps to 240°", () => {
+      const r = color().parse("hsl(-120, 100%, 50%)");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 0, b: 255, a: 1 });
+    });
+
+    it("rejects hsl(0, 101%, 50%)—saturation > 100%", () => {
+      const r = color().parse("hsl(0, 101%, 50%)");
+      assert.ok(!r.success);
+    });
+
+    it("rejects hsl(0, 100%, 101%)—lightness > 100%", () => {
+      const r = color().parse("hsl(0, 100%, 101%)");
+      assert.ok(!r.success);
+    });
+
+    it("rejects hsla(0, 100%, 50%, 1.1)—alpha > 1", () => {
+      const r = color().parse("hsla(0, 100%, 50%, 1.1)");
+      assert.ok(!r.success);
+    });
+
+    it("case-insensitive: HSL(0, 100%, 50%)", () => {
+      const r = color().parse("HSL(0, 100%, 50%)");
+      assert.ok(r.success);
+    });
+
+    it("case-insensitive: HSLA(0, 100%, 50%, 1)", () => {
+      const r = color().parse("HSLA(0, 100%, 50%, 1)");
+      assert.ok(r.success);
+    });
+  });
+
+  describe("named colors", () => {
+    it("parses 'red'", () => {
+      const r = color().parse("red");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 255, g: 0, b: 0, a: 1 });
+    });
+
+    it("parses 'green' as #008000", () => {
+      const r = color().parse("green");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 128, b: 0, a: 1 });
+    });
+
+    it("parses 'blue'", () => {
+      const r = color().parse("blue");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 0, b: 255, a: 1 });
+    });
+
+    it("parses 'white'", () => {
+      const r = color().parse("white");
+      assert.ok(r.success);
+      if (r.success) {
+        assert.deepEqual(r.value, { r: 255, g: 255, b: 255, a: 1 });
+      }
+    });
+
+    it("parses 'black'", () => {
+      const r = color().parse("black");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 0, b: 0, a: 1 });
+    });
+
+    it("parses 'transparent' as fully transparent black", () => {
+      const r = color().parse("transparent");
+      assert.ok(r.success);
+      if (r.success) assert.deepEqual(r.value, { r: 0, g: 0, b: 0, a: 0 });
+    });
+
+    it("parses 'rebeccapurple' (#663399)", () => {
+      const r = color().parse("rebeccapurple");
+      assert.ok(r.success);
+      if (r.success) {
+        assert.equal(r.value.r, 102);
+        assert.equal(r.value.g, 51);
+        assert.equal(r.value.b, 153);
+        assert.equal(r.value.a, 1);
+      }
+    });
+
+    it("case-insensitive: 'RED', 'Red', 'rEd'", () => {
+      const red = { r: 255, g: 0, b: 0, a: 1 };
+      for (const name of ["RED", "Red", "rEd"]) {
+        const r = color().parse(name);
+        assert.ok(r.success, `Expected ${name} to parse`);
+        if (r.success) assert.deepEqual(r.value, red);
+      }
+    });
+
+    it("'aqua' and 'cyan' are the same color", () => {
+      const a = color().parse("aqua");
+      const c = color().parse("cyan");
+      assert.ok(a.success && c.success);
+      if (a.success && c.success) assert.deepEqual(a.value, c.value);
+    });
+
+    it("'fuchsia' and 'magenta' are the same color", () => {
+      const a = color().parse("fuchsia");
+      const b = color().parse("magenta");
+      assert.ok(a.success && b.success);
+      if (a.success && b.success) assert.deepEqual(a.value, b.value);
+    });
+
+    it("'gray' and 'grey' are the same color", () => {
+      const a = color().parse("gray");
+      const b = color().parse("grey");
+      assert.ok(a.success && b.success);
+      if (a.success && b.success) assert.deepEqual(a.value, b.value);
+    });
+
+    it("rejects unknown name 'notacolor'", () => {
+      const r = color().parse("notacolor");
+      assert.ok(!r.success);
+    });
+
+    it("rejects empty string", () => {
+      const r = color().parse("");
+      assert.ok(!r.success);
+    });
+
+    it("rejects prototype-inherited keys like 'constructor'", () => {
+      assert.ok(!color().parse("constructor").success);
+    });
+
+    it("rejects prototype-inherited keys like 'toString'", () => {
+      assert.ok(!color().parse("toString").success);
+    });
+
+    it("rejects '__proto__'", () => {
+      assert.ok(!color().parse("__proto__").success);
+    });
+  });
+
+  describe("formats option", () => {
+    it("formats: ['hex'] accepts hex", () => {
+      const r = color({ formats: ["hex"] }).parse("#ff0000");
+      assert.ok(r.success);
+    });
+
+    it("formats: ['hex'] rejects rgb", () => {
+      const r = color({ formats: ["hex"] }).parse("rgb(255, 0, 0)");
+      assert.ok(!r.success);
+    });
+
+    it("formats: ['hex'] rejects hsl", () => {
+      const r = color({ formats: ["hex"] }).parse("hsl(0, 100%, 50%)");
+      assert.ok(!r.success);
+    });
+
+    it("formats: ['hex'] rejects named", () => {
+      const r = color({ formats: ["hex"] }).parse("red");
+      assert.ok(!r.success);
+    });
+
+    it("formats: ['rgb'] accepts rgb", () => {
+      const r = color({ formats: ["rgb"] }).parse("rgb(255, 0, 0)");
+      assert.ok(r.success);
+    });
+
+    it("formats: ['rgb'] rejects hex", () => {
+      const r = color({ formats: ["rgb"] }).parse("#ff0000");
+      assert.ok(!r.success);
+    });
+
+    it("formats: ['hsl'] accepts hsl", () => {
+      const r = color({ formats: ["hsl"] }).parse("hsl(0, 100%, 50%)");
+      assert.ok(r.success);
+    });
+
+    it("formats: ['hsl'] rejects hex", () => {
+      const r = color({ formats: ["hsl"] }).parse("#ff0000");
+      assert.ok(!r.success);
+    });
+
+    it("formats: ['named'] accepts named colors", () => {
+      const r = color({ formats: ["named"] }).parse("red");
+      assert.ok(r.success);
+    });
+
+    it("formats: ['named'] rejects hex", () => {
+      const r = color({ formats: ["named"] }).parse("#ff0000");
+      assert.ok(!r.success);
+    });
+
+    it("formats: ['hex', 'named'] accepts hex and named", () => {
+      assert.ok(color({ formats: ["hex", "named"] }).parse("#ff0000").success);
+      assert.ok(color({ formats: ["hex", "named"] }).parse("red").success);
+    });
+
+    it("formats: ['hex', 'named'] rejects rgb and hsl", () => {
+      assert.ok(
+        !color({ formats: ["hex", "named"] }).parse("rgb(255, 0, 0)").success,
+      );
+      assert.ok(
+        !color({ formats: ["hex", "named"] }).parse("hsl(0, 100%, 50%)")
+          .success,
+      );
+    });
+  });
+
+  describe("NaN/malformed input rejection", () => {
+    it("rejects rgba with dot-only alpha: rgba(0,0,0,.)", () => {
+      assert.ok(!color().parse("rgba(0,0,0,.)").success);
+    });
+
+    it("rejects rgba with double-dot alpha: rgba(0,0,0,1..)", () => {
+      assert.ok(!color().parse("rgba(0,0,0,1..)").success);
+    });
+
+    it("accepts rgba with leading-dot alpha: rgba(0,0,0,.5)", () => {
+      const r = color().parse("rgba(0,0,0,.5)");
+      assert.ok(r.success);
+      if (r.success) assert.equal(r.value.a, 128 / 255); // quantized to 8-bit
+    });
+
+    it("rejects hsl with dot-only hue: hsl(.,50%,50%)", () => {
+      assert.ok(!color().parse("hsl(.,50%,50%)").success);
+    });
+
+    it("rejects hsl with double-dot hue: hsl(1..,50%,50%)", () => {
+      assert.ok(!color().parse("hsl(1..,50%,50%)").success);
+    });
+
+    it("rejects hsl with dot-only saturation: hsl(0,.%,50%)", () => {
+      assert.ok(!color().parse("hsl(0,.%,50%)").success);
+    });
+  });
+
+  describe("named color immutability", () => {
+    it("returns a fresh object each time for named colors", () => {
+      const r1 = color().parse("red");
+      const r2 = color().parse("red");
+      assert.ok(r1.success && r2.success);
+      if (r1.success && r2.success) {
+        assert.notStrictEqual(r1.value, r2.value);
+        assert.deepEqual(r1.value, r2.value);
+      }
+    });
+  });
+
+  describe("format()", () => {
+    it("formats opaque color as #rrggbb", () => {
+      assert.equal(
+        color().format({ r: 255, g: 0, b: 0, a: 1 }),
+        "#ff0000",
+      );
+    });
+
+    it("formats #000000", () => {
+      assert.equal(
+        color().format({ r: 0, g: 0, b: 0, a: 1 }),
+        "#000000",
+      );
+    });
+
+    it("formats #ffffff", () => {
+      assert.equal(
+        color().format({ r: 255, g: 255, b: 255, a: 1 }),
+        "#ffffff",
+      );
+    });
+
+    it("formats transparent as #00000000", () => {
+      assert.equal(
+        color().format({ r: 0, g: 0, b: 0, a: 0 }),
+        "#00000000",
+      );
+    });
+
+    it("formats 50% alpha as #rrggbb80", () => {
+      const formatted = color().format({ r: 255, g: 0, b: 0, a: 0.5 });
+      assert.equal(formatted, "#ff000080");
+    });
+
+    it("property: parse(format(x)) round-trips for integer r/g/b", () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 0, max: 255 }),
+          fc.integer({ min: 0, max: 255 }),
+          fc.integer({ min: 0, max: 255 }),
+          (r, g, b) => {
+            const parser = color();
+            const original: Color = { r, g, b, a: 1 };
+            const result = parser.parse(parser.format(original));
+            return result.success &&
+              result.value.r === r &&
+              result.value.g === g &&
+              result.value.b === b &&
+              result.value.a === 1;
+          },
+        ),
+        propertyParameters,
+      );
+    });
+
+    it("throws RangeError for r > 255", () => {
+      assert.throws(
+        () => color().format({ r: 300, g: 0, b: 0, a: 1 }),
+        RangeError,
+      );
+    });
+
+    it("throws RangeError for a > 1", () => {
+      assert.throws(
+        () => color().format({ r: 0, g: 0, b: 0, a: 1.5 }),
+        RangeError,
+      );
+    });
+
+    it("throws RangeError for NaN in a field", () => {
+      assert.throws(
+        () => color().format({ r: 0, g: 0, b: 0, a: Number.NaN }),
+        RangeError,
+      );
+    });
+
+    it("throws RangeError for fractional r", () => {
+      assert.throws(
+        () => color().format({ r: 0.5, g: 0, b: 0, a: 1 }),
+        RangeError,
+      );
+    });
+
+    it("throws RangeError for fractional g", () => {
+      assert.throws(
+        () => color().format({ r: 0, g: 128.7, b: 0, a: 1 }),
+        RangeError,
+      );
+    });
+
+    it("throws RangeError for fractional b", () => {
+      assert.throws(
+        () => color().format({ r: 0, g: 0, b: 0.1, a: 1 }),
+        RangeError,
+      );
+    });
+
+    it("formats as rgb() when hex is not in formats", () => {
+      const parser = color({ formats: ["rgb"] });
+      assert.equal(
+        parser.format({ r: 255, g: 0, b: 0, a: 1 }),
+        "rgb(255, 0, 0)",
+      );
+    });
+
+    it("formats as rgba() with alpha when hex is not in formats", () => {
+      const parser = color({ formats: ["rgb"] });
+      const formatted = parser.format({ r: 255, g: 0, b: 0, a: 128 / 255 });
+      assert.ok(formatted.startsWith("rgba(255, 0, 0,"), formatted);
+      const r = parser.parse(formatted);
+      assert.ok(r.success);
+    });
+
+    it("formats as hsl() when only hsl is in formats", () => {
+      const parser = color({ formats: ["hsl"] });
+      const formatted = parser.format({ r: 255, g: 0, b: 0, a: 1 });
+      assert.equal(formatted, "hsl(0, 100%, 50%)");
+      assert.ok(parser.parse(formatted).success);
+    });
+
+    it("formats as named color when only named is in formats and a match exists", () => {
+      const parser = color({ formats: ["named"] });
+      assert.equal(parser.format({ r: 255, g: 0, b: 0, a: 1 }), "red");
+    });
+
+    it("throws RangeError for named-only parser when no name matches", () => {
+      assert.throws(
+        () =>
+          color({ formats: ["named"] }).format({ r: 128, g: 64, b: 32, a: 1 }),
+        RangeError,
+      );
+    });
+
+    it("hsl format() round-trips near-black color {r:0,g:0,b:1}", () => {
+      const parser = color({ formats: ["hsl"] });
+      const original: Color = { r: 0, g: 0, b: 1, a: 1 };
+      const formatted = parser.format(original);
+      const result = parser.parse(formatted);
+      assert.ok(result.success, `Expected success but got: ${formatted}`);
+      if (result.success) assert.deepEqual(result.value, original);
+    });
+  });
+
+  describe("normalize()", () => {
+    it("quantizes non-integer alpha to 8-bit precision", () => {
+      const normalized = color().normalize!({ r: 0, g: 0, b: 0, a: 0.5 });
+      assert.equal(normalized.a, 128 / 255);
+    });
+
+    it("leaves already-quantized alpha unchanged", () => {
+      const original: Color = { r: 0, g: 0, b: 0, a: 128 / 255 };
+      const normalized = color().normalize!(original);
+      assert.strictEqual(normalized, original);
+    });
+
+    it("leaves opaque colors with a === 1 unchanged", () => {
+      const original: Color = { r: 255, g: 0, b: 0, a: 1 };
+      const normalized = color().normalize!(original);
+      assert.strictEqual(normalized, original);
+    });
+
+    it("returns invalid Color unchanged without throwing", () => {
+      const invalid = { r: 300, g: 0, b: 0, a: 1 } as Color;
+      assert.deepEqual(color().normalize!(invalid), invalid);
+    });
+  });
+
+  describe("error messages", () => {
+    it("default error message on invalid input mentions the input", () => {
+      const r = color().parse("notacolor");
+      assert.ok(!r.success);
+      if (!r.success) {
+        const mentionsInput = r.error.some(
+          (t: MessageTerm) => t.type === "value" && t.value === "notacolor",
+        );
+        assert.ok(mentionsInput, "Error should mention input");
+      }
+    });
+
+    it("uses static invalidFormat error message", () => {
+      const customError = message`Must be a valid color.`;
+      const parser = color({ errors: { invalidFormat: customError } });
+      const r = parser.parse("notacolor");
+      assert.ok(!r.success);
+      if (!r.success) assert.deepEqual(r.error, customError);
+    });
+
+    it("uses function invalidFormat receiving raw input", () => {
+      let received: string | undefined;
+      const parser = color({
+        errors: {
+          invalidFormat: (input: string) => {
+            received = input;
+            return message`Bad color: ${input}`;
+          },
+        },
+      });
+      parser.parse("  notacolor  ");
+      assert.equal(received, "  notacolor  ");
+    });
+  });
+
+  describe("suggest()", () => {
+    it("suggests named colors matching prefix", () => {
+      const suggestions = [...color().suggest!("re")]
+        .filter((s) => s.kind === "literal")
+        .map((s) => s.kind === "literal" ? s.text : "");
+      assert.ok(suggestions.includes("red"), "should include 'red'");
+      assert.ok(
+        suggestions.includes("rebeccapurple"),
+        "should include 'rebeccapurple'",
+      );
+    });
+
+    it("suggest prefix 're' does not include 'blue'", () => {
+      const suggestions = [...color().suggest!("re")]
+        .filter((s) => s.kind === "literal")
+        .map((s) => s.kind === "literal" ? s.text : "");
+      assert.ok(!suggestions.includes("blue"));
+    });
+
+    it("no suggestions when formats excludes named", () => {
+      const suggestions = [...color({ formats: ["hex"] }).suggest!("re")];
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("case-insensitive prefix: 'RE' matches named colors", () => {
+      const suggestions = [...color().suggest!("RE")]
+        .filter((s) => s.kind === "literal")
+        .map((s) => s.kind === "literal" ? s.text : "");
+      assert.ok(suggestions.includes("red"));
+    });
+
+    it("empty prefix yields all named colors", () => {
+      const suggestions = [...color().suggest!("")];
+      assert.equal(suggestions.length, 149);
+    });
+
+    it("no suggestions for unmatched prefix", () => {
+      const suggestions = [...color().suggest!("zzz")];
+      assert.deepEqual(suggestions, []);
+    });
+  });
+});
+
+describe("cron()", () => {
+  describe("constructor", () => {
+    it("default mode is sync", () => {
+      assert.equal(cron().mode, "sync");
+    });
+
+    it("default metavar is CRON", () => {
+      assert.equal(cron().metavar, "CRON");
+    });
+
+    it("custom metavar is respected", () => {
+      assert.equal(cron({ metavar: "SCHEDULE" }).metavar, "SCHEDULE");
+    });
+
+    it("empty metavar throws TypeError", () => {
+      assert.throws(
+        () => cron({ metavar: "" as NonEmptyString }),
+        {
+          name: "TypeError",
+          message: "Expected a non-empty string.",
+        },
+      );
+    });
+
+    it("non-boolean seconds throws TypeError", () => {
+      assert.throws(
+        () => cron({ seconds: "yes" as never }),
+        {
+          name: "TypeError",
+          message: "Expected seconds to be a boolean, but got string: yes.",
+        },
+      );
+    });
+
+    it("non-boolean years throws TypeError", () => {
+      assert.throws(
+        () => cron({ years: "yes" as never }),
+        {
+          name: "TypeError",
+          message: "Expected years to be a boolean, but got string: yes.",
+        },
+      );
+    });
+
+    it("non-boolean quartz throws TypeError", () => {
+      assert.throws(
+        () => cron({ quartz: "yes" as never }),
+        {
+          name: "TypeError",
+          message: "Expected quartz to be a boolean, but got string: yes.",
+        },
+      );
+    });
+
+    it("default placeholder is midnight daily", () => {
+      assert.deepEqual(cron().placeholder, {
+        minute: "0",
+        hour: "0",
+        dayOfMonth: "*",
+        month: "*",
+        dayOfWeek: "*",
+      });
+    });
+  });
+
+  describe("parse()", () => {
+    it("parses a standard five-field expression", () => {
+      const result = cron().parse("*/5 0-23 * JAN MON-FRI");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, {
+        minute: "*/5",
+        hour: "0-23",
+        dayOfMonth: "*",
+        month: "JAN",
+        dayOfWeek: "MON-FRI",
+      });
+    });
+
+    it("rejects six fields by default", () => {
+      const result = cron().parse("0 */5 0-23 * JAN MON-FRI");
+
+      assert.ok(!result.success);
+    });
+
+    it("parses a leading seconds field when seconds is true", () => {
+      const result = cron({ seconds: true }).parse("0 */5 0-23 * JAN MON-FRI");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, {
+        second: "0",
+        minute: "*/5",
+        hour: "0-23",
+        dayOfMonth: "*",
+        month: "JAN",
+        dayOfWeek: "MON-FRI",
+      });
+    });
+
+    it("parses a trailing year field when years is true", () => {
+      const result = cron({ years: true }).parse("*/5 0-23 * JAN MON-FRI 2026");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, {
+        minute: "*/5",
+        hour: "0-23",
+        dayOfMonth: "*",
+        month: "JAN",
+        dayOfWeek: "MON-FRI",
+        year: "2026",
+      });
+    });
+
+    it("parses both seconds and years when enabled", () => {
+      const result = cron({ seconds: true, years: true }).parse(
+        "0 */5 0-23 * JAN MON-FRI 2026",
+      );
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, {
+        second: "0",
+        minute: "*/5",
+        hour: "0-23",
+        dayOfMonth: "*",
+        month: "JAN",
+        dayOfWeek: "MON-FRI",
+        year: "2026",
+      });
+    });
+
+    it("accepts lists, ranges, and intervals", () => {
+      const result = cron().parse("0,15,30,45 9-17/2 1,15 JAN,MAR MON-FRI/2");
+
+      assert.ok(result.success);
+    });
+
+    it("accepts numeric Sunday at weekday range ends", () => {
+      assert.ok(cron().parse("0 0 * * MON-0").success);
+      assert.ok(cron().parse("0 0 * * 1-0").success);
+    });
+
+    it("rejects field values outside their range", () => {
+      assert.ok(!cron().parse("60 * * * *").success);
+      assert.ok(!cron().parse("* 24 * * *").success);
+      assert.ok(!cron().parse("* * 32 * *").success);
+      assert.ok(!cron().parse("* * * 13 *").success);
+      assert.ok(!cron().parse("* * * * 8").success);
+    });
+
+    it("rejects descending ranges", () => {
+      const result = cron().parse("* 23-0 * * *");
+
+      assert.ok(!result.success);
+    });
+
+    it("rejects empty list members", () => {
+      const result = cron().parse("0,,15 * * * *");
+
+      assert.ok(!result.success);
+    });
+
+    it("rejects zero intervals", () => {
+      const result = cron().parse("*/0 * * * *");
+
+      assert.ok(!result.success);
+    });
+
+    it("accepts month and weekday names case-insensitively", () => {
+      const result = cron().parse("0 0 * jan mon-fri");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, {
+        minute: "0",
+        hour: "0",
+        dayOfMonth: "*",
+        month: "jan",
+        dayOfWeek: "mon-fri",
+      });
+    });
+
+    it("accepts names that contain Quartz marker letters", () => {
+      const result = cron().parse("0 0 * JUL WED");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, {
+        minute: "0",
+        hour: "0",
+        dayOfMonth: "*",
+        month: "JUL",
+        dayOfWeek: "WED",
+      });
+    });
+
+    it("rejects Quartz tokens by default", () => {
+      assert.ok(!cron().parse("0 0 ? * MON").success);
+      assert.ok(!cron().parse("0 0 L * *").success);
+      assert.ok(!cron().parse("0 0 15W * *").success);
+      assert.ok(!cron().parse("0 0 ? * MON#2").success);
+    });
+
+    it("accepts Quartz day tokens when quartz is true", () => {
+      assert.ok(cron({ quartz: true }).parse("0 0 ? * MON").success);
+      assert.ok(cron({ quartz: true }).parse("0 0 L * *").success);
+      assert.ok(cron({ quartz: true }).parse("0 0 LW * *").success);
+      assert.ok(cron({ quartz: true }).parse("0 0 15W * *").success);
+      assert.ok(cron({ quartz: true }).parse("0 0 ? * MON#2").success);
+      assert.ok(cron({ quartz: true }).parse("0 0 ? * 5L").success);
+      assert.ok(cron({ quartz: true }).parse("0 0 ? * 7#2").success);
+    });
+
+    it("rejects Quartz expressions with both day fields unspecified", () => {
+      const result = cron({ quartz: true }).parse("0 0 ? * ?");
+
+      assert.ok(!result.success);
+    });
+
+    it("rejects zero in Quartz day-of-week suffixes", () => {
+      assert.ok(!cron({ quartz: true }).parse("0 0 ? * 0L").success);
+      assert.ok(!cron({ quartz: true }).parse("0 0 ? * 0#2").success);
+    });
+
+    it("rejects Quartz tokens in non-day fields", () => {
+      assert.ok(!cron({ quartz: true }).parse("? 0 * * *").success);
+      assert.ok(!cron({ quartz: true }).parse("0 L * * *").success);
+      assert.ok(!cron({ quartz: true }).parse("0 0 * L *").success);
+    });
+
+    it("uses a custom invalidCron error", () => {
+      const result = cron({
+        errors: { invalidCron: [text("bad schedule")] },
+      }).parse("not cron");
+
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, [{ type: "text", text: "bad schedule" }]);
+    });
+
+    it("passes input to invalidCron callback", () => {
+      const result = cron({
+        errors: {
+          invalidCron: (input) => message`Bad cron: ${input}`,
+        },
+      }).parse("not cron");
+
+      assert.ok(!result.success);
+      assert.equal(formatMessage(result.error), 'Bad cron: "not cron"');
+    });
+  });
+
+  describe("format()", () => {
+    it("formats a five-field expression", () => {
+      const parser = cron();
+      const expression: CronExpression = {
+        minute: "*/10",
+        hour: "9-17",
+        dayOfMonth: "*",
+        month: "*",
+        dayOfWeek: "MON-FRI",
+      };
+
+      assert.equal(parser.format(expression), "*/10 9-17 * * MON-FRI");
+    });
+
+    it("formats expressions with seconds and years", () => {
+      const parser = cron({ seconds: true, years: true });
+      const expression = {
+        second: "0",
+        minute: "*/10",
+        hour: "9-17",
+        dayOfMonth: "*",
+        month: "*",
+        dayOfWeek: "MON-FRI",
+        year: "2026",
+      };
+
+      assert.equal(
+        parser.format(expression),
+        "0 */10 9-17 * * MON-FRI 2026",
+      );
+    });
+
+    it("round-trips parsed expressions", () => {
+      const parser = cron({ seconds: true, years: true });
+      const result = parser.parse("0 0/15 9-17 * JAN MON-FRI 2026");
+
+      assert.ok(result.success);
+      const roundTrip = parser.parse(parser.format(result.value));
+      assert.ok(roundTrip.success);
+      assert.deepEqual(roundTrip.value, result.value);
+    });
+  });
+
+  describe("validate()", () => {
+    it("rejects unsupported seconds and years fields", () => {
+      const withSecond = cron().validate?.({
+        second: "30",
+        minute: "*/10",
+        hour: "9-17",
+        dayOfMonth: "*",
+        month: "*",
+        dayOfWeek: "MON-FRI",
+      } as never);
+      assert.ok(withSecond != null);
+      assert.ok(!withSecond.success);
+
+      const withYear = cron().validate?.({
+        minute: "*/10",
+        hour: "9-17",
+        dayOfMonth: "*",
+        month: "*",
+        dayOfWeek: "MON-FRI",
+        year: "2026",
+      } as never);
+      assert.ok(withYear != null);
+      assert.ok(!withYear.success);
+    });
+
+    it("rejects missing required seconds and years fields", () => {
+      const expression: CronExpression = {
+        minute: "*/10",
+        hour: "9-17",
+        dayOfMonth: "*",
+        month: "*",
+        dayOfWeek: "MON-FRI",
+      };
+
+      const secondsResult = cron({ seconds: true }).validate?.(
+        expression as never,
+      );
+      assert.ok(secondsResult != null);
+      assert.ok(!secondsResult.success);
+
+      const yearsResult = cron({ years: true }).validate?.(
+        expression as never,
+      );
+      assert.ok(yearsResult != null);
+      assert.ok(!yearsResult.success);
+
+      const parser = cron({ seconds: true, years: true });
+      const result = parser.validate?.(expression as never);
+      assert.ok(result != null);
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("type inference", () => {
+    it("infers CronExpression", () => {
+      const result = cron().parse("0 0 * * *");
+      if (result.success) {
+        const _v: CronExpression = result.value;
+        assert.equal(_v.minute, "0");
+      }
+    });
+
+    it("infers configured seconds and years as required fields", () => {
+      const result = cron({ seconds: true, years: true }).parse(
+        "0 0 0 * * * 2026",
+      );
+      if (result.success) {
+        const second: string = result.value.second;
+        const year: string = result.value.year;
+        assert.equal(second, "0");
+        assert.equal(year, "2026");
+      }
+    });
+  });
+});
+
+describe("semVer()", () => {
+  describe("constructor", () => {
+    it("default mode is sync", () => {
+      assert.equal(semVer().mode, "sync");
+    });
+
+    it("default metavar is SEMVER", () => {
+      assert.equal(semVer().metavar, "SEMVER");
+    });
+
+    it("custom metavar is respected", () => {
+      assert.equal(semVer({ metavar: "VERSION" }).metavar, "VERSION");
+    });
+
+    it("empty metavar throws TypeError", () => {
+      assert.throws(
+        () => semVer({ metavar: "" as NonEmptyString }),
+        TypeError,
+        "Expected a non-empty string.",
+      );
+    });
+
+    it("non-boolean allowPrefix throws TypeError", () => {
+      assert.throws(
+        () => semVer({ allowPrefix: "yes" as never }),
+        {
+          name: "TypeError",
+          message: "Expected allowPrefix to be a boolean, but got string: yes.",
+        },
+      );
+    });
+
+    it("invalid type option throws TypeError", () => {
+      assert.throws(
+        () => semVer({ type: "number" as never }),
+        {
+          name: "TypeError",
+          message:
+            'Expected type to be one of "string", "object", but got string: "number".',
+        },
+      );
+    });
+
+    it("placeholder for string mode is 0.0.0", () => {
+      assert.equal(semVer().placeholder, "0.0.0");
+    });
+
+    it("placeholder for object mode has major/minor/patch", () => {
+      assert.deepEqual(semVer({ type: "object" }).placeholder, {
+        major: 0,
+        minor: 0,
+        patch: 0,
+      });
+    });
+  });
+
+  describe("parse()—string mode (default)", () => {
+    it("parses a basic version", () => {
+      const result = semVer().parse("1.2.3");
+      assert.ok(result.success);
+      assert.equal(result.value, "1.2.3");
+    });
+
+    it("parses version with pre-release", () => {
+      const result = semVer().parse("1.0.0-alpha.1");
+      assert.ok(result.success);
+      assert.equal(result.value, "1.0.0-alpha.1");
+    });
+
+    it("parses version with build metadata", () => {
+      const result = semVer().parse("1.0.0+build.42");
+      assert.ok(result.success);
+      assert.equal(result.value, "1.0.0+build.42");
+    });
+
+    it("parses version with pre-release and build metadata", () => {
+      const result = semVer().parse("1.0.0-beta.2+exp.sha.5114f85");
+      assert.ok(result.success);
+      assert.equal(result.value, "1.0.0-beta.2+exp.sha.5114f85");
+    });
+
+    it("parses 0.0.0", () => {
+      const result = semVer().parse("0.0.0");
+      assert.ok(result.success);
+      assert.equal(result.value, "0.0.0");
+    });
+
+    it("rejects leading zeros in major", () => {
+      const result = semVer().parse("01.0.0");
+      assert.ok(!result.success);
+    });
+
+    it("rejects leading zeros in minor", () => {
+      const result = semVer().parse("1.02.0");
+      assert.ok(!result.success);
+    });
+
+    it("rejects leading zeros in patch", () => {
+      const result = semVer().parse("1.0.03");
+      assert.ok(!result.success);
+    });
+
+    it("rejects empty pre-release identifier", () => {
+      const result = semVer().parse("1.0.0-");
+      assert.ok(!result.success);
+    });
+
+    it("rejects empty build metadata identifier", () => {
+      const result = semVer().parse("1.0.0+");
+      assert.ok(!result.success);
+    });
+
+    it("rejects invalid characters in pre-release", () => {
+      const result = semVer().parse("1.0.0-alpha@1");
+      assert.ok(!result.success);
+    });
+
+    it("rejects arbitrary strings", () => {
+      const result = semVer().parse("not-a-version");
+      assert.ok(!result.success);
+    });
+
+    it("rejects two-part version", () => {
+      const result = semVer().parse("1.2");
+      assert.ok(!result.success);
+    });
+
+    it("rejects negative numbers", () => {
+      const result = semVer().parse("-1.0.0");
+      assert.ok(!result.success);
+    });
+
+    it("rejects v-prefixed input by default", () => {
+      const result = semVer().parse("v1.0.0");
+      assert.ok(!result.success);
+    });
+
+    it("rejects leading zeros in numeric pre-release identifier", () => {
+      const result = semVer().parse("1.0.0-01");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("parse()—numeric limits", () => {
+    it("accepts Number.MAX_SAFE_INTEGER as major", () => {
+      const result = semVer({ type: "object" }).parse(
+        `${Number.MAX_SAFE_INTEGER}.0.0`,
+      );
+      assert.ok(result.success);
+      assert.equal(result.value.major, Number.MAX_SAFE_INTEGER);
+    });
+
+    it("rejects components beyond Number.MAX_SAFE_INTEGER in object mode", () => {
+      const unsafe = "9007199254740993"; // MAX_SAFE_INTEGER + 2
+      const result = semVer({ type: "object" }).parse(`${unsafe}.0.0`);
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("parse()—allowPrefix option", () => {
+    it("accepts v-prefixed input when allowPrefix: true", () => {
+      const result = semVer({ allowPrefix: true }).parse("v1.2.3");
+      assert.ok(result.success);
+    });
+
+    it("strips the v prefix from string mode output", () => {
+      const result = semVer({ allowPrefix: true }).parse("v1.2.3");
+      assert.ok(result.success);
+      assert.equal(result.value, "1.2.3");
+    });
+
+    it("still accepts non-prefixed input when allowPrefix: true", () => {
+      const result = semVer({ allowPrefix: true }).parse("1.2.3");
+      assert.ok(result.success);
+      assert.equal(result.value, "1.2.3");
+    });
+
+    it("rejects v-prefixed input when allowPrefix: false (explicit)", () => {
+      const result = semVer({ allowPrefix: false }).parse("v1.0.0");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("parse()—object mode", () => {
+    it("parses basic version into components", () => {
+      const result = semVer({ type: "object" }).parse("1.2.3");
+      assert.ok(result.success);
+      assert.deepEqual(result.value, { major: 1, minor: 2, patch: 3 });
+    });
+
+    it("parses version with pre-release", () => {
+      const result = semVer({ type: "object" }).parse("1.0.0-alpha.1");
+      assert.ok(result.success);
+      assert.deepEqual(result.value, {
+        major: 1,
+        minor: 0,
+        patch: 0,
+        preRelease: "alpha.1",
+      });
+    });
+
+    it("parses version with build metadata", () => {
+      const result = semVer({ type: "object" }).parse("1.0.0+build.42");
+      assert.ok(result.success);
+      assert.deepEqual(result.value, {
+        major: 1,
+        minor: 0,
+        patch: 0,
+        metadata: "build.42",
+      });
+    });
+
+    it("parses version with pre-release and metadata", () => {
+      const result = semVer({ type: "object" }).parse(
+        "2.3.4-rc.1+sha.abc123",
+      );
+      assert.ok(result.success);
+      assert.deepEqual(result.value, {
+        major: 2,
+        minor: 3,
+        patch: 4,
+        preRelease: "rc.1",
+        metadata: "sha.abc123",
+      });
+    });
+
+    it("strips v prefix from object mode output when allowPrefix: true", () => {
+      const result = semVer({ type: "object", allowPrefix: true }).parse(
+        "v3.0.0",
+      );
+      assert.ok(result.success);
+      assert.deepEqual(result.value, { major: 3, minor: 0, patch: 0 });
+    });
+
+    it("rejects invalid input in object mode", () => {
+      const result = semVer({ type: "object" }).parse("not-semver");
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("format()", () => {
+    it("string mode returns the value as-is", () => {
+      const p = semVer();
+      assert.equal(p.format("1.2.3" as SemVerString), "1.2.3");
+    });
+
+    it("string mode with pre-release", () => {
+      const p = semVer();
+      assert.equal(
+        p.format("1.0.0-alpha.1" as SemVerString),
+        "1.0.0-alpha.1",
+      );
+    });
+
+    it("object mode formats major.minor.patch", () => {
+      const p = semVer({ type: "object" });
+      assert.equal(p.format({ major: 1, minor: 2, patch: 3 }), "1.2.3");
+    });
+
+    it("object mode includes pre-release", () => {
+      const p = semVer({ type: "object" });
+      assert.equal(
+        p.format({ major: 1, minor: 0, patch: 0, preRelease: "alpha.1" }),
+        "1.0.0-alpha.1",
+      );
+    });
+
+    it("object mode includes metadata", () => {
+      const p = semVer({ type: "object" });
+      assert.equal(
+        p.format({ major: 1, minor: 0, patch: 0, metadata: "build.42" }),
+        "1.0.0+build.42",
+      );
+    });
+
+    it("object mode includes pre-release and metadata", () => {
+      const p = semVer({ type: "object" });
+      assert.equal(
+        p.format({
+          major: 1,
+          minor: 0,
+          patch: 0,
+          preRelease: "rc.1",
+          metadata: "sha.abc",
+        }),
+        "1.0.0-rc.1+sha.abc",
+      );
+    });
+  });
+
+  describe("format() round-trip", () => {
+    it("string mode parse→format is identity", () => {
+      const p = semVer();
+      const versions = [
+        "1.0.0",
+        "0.0.1",
+        "10.20.30",
+        "1.0.0-alpha",
+        "1.0.0-alpha.1",
+        "1.0.0-0.3.7",
+        "1.0.0+build.1",
+        "1.0.0-beta+exp.sha",
+      ];
+      for (const v of versions) {
+        const result = p.parse(v);
+        assert.ok(result.success, `Expected ${v} to parse successfully`);
+        assert.equal(p.format(result.value), v);
+      }
+    });
+
+    it("object mode parse→format is identity", () => {
+      const p = semVer({ type: "object" });
+      const versions = [
+        "1.0.0",
+        "1.0.0-alpha.1",
+        "1.0.0+build.1",
+        "1.0.0-rc.1+sha.abc",
+      ];
+      for (const v of versions) {
+        const result = p.parse(v);
+        assert.ok(result.success, `Expected ${v} to parse successfully`);
+        assert.equal(p.format(result.value), v);
+      }
+    });
+
+    it("property-based round-trip for string mode", () => {
+      const p = semVer();
+      const semverArbitrary = fc
+        .tuple(
+          fc.nat({ max: 999 }),
+          fc.nat({ max: 999 }),
+          fc.nat({ max: 999 }),
+        )
+        .map(([ma, mi, pa]) => `${ma}.${mi}.${pa}`);
+      fc.assert(
+        fc.property(semverArbitrary, (v) => {
+          const result = p.parse(v);
+          assert.ok(result.success);
+          assert.equal(p.format(result.value), v);
+        }),
+        propertyParameters,
+      );
+    });
+  });
+
+  describe("error messages", () => {
+    it("default error message references the input", () => {
+      const result = semVer().parse("bad-version");
+      assert.ok(!result.success);
+      const msg = result.error;
+      const hasInput = msg.some(
+        (t) => t.type === "value" && t.value === "bad-version",
+      );
+      assert.ok(hasInput);
+    });
+
+    it("static custom error message", () => {
+      const customError = [text("Not a valid version.")] as const;
+      const p = semVer({
+        errors: { invalidSemVer: customError },
+      });
+      const result = p.parse("bad");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, customError);
+    });
+
+    it("function custom error message receives input", () => {
+      const p = semVer({
+        errors: {
+          invalidSemVer: (input) => message`Nope, "${input}" is not semver.`,
+        },
+      });
+      const result = p.parse("xyz");
+      assert.ok(!result.success);
+      const flat = formatMessage(result.error);
+      assert.ok(flat.includes("xyz"));
+    });
+  });
+
+  describe("suggest()", () => {
+    it("has a suggest function", () => {
+      assert.ok(typeof semVer().suggest === "function");
+    });
+
+    it("empty prefix returns non-empty suggestions", () => {
+      const suggestions = [...semVer().suggest!("")];
+      assert.ok(suggestions.length > 0);
+    });
+
+    it("all suggestions are kind=literal", () => {
+      const suggestions = [...semVer().suggest!("")];
+      assert.ok(suggestions.every((s) => s.kind === "literal"));
+    });
+
+    it("filters suggestions by prefix", () => {
+      const suggestions = [...semVer().suggest!("1.")];
+      assert.ok(
+        suggestions.every(
+          (s) => s.kind === "literal" && s.text.startsWith("1."),
+        ),
+      );
+    });
+
+    it("no suggestions for unmatched prefix", () => {
+      const suggestions = [...semVer().suggest!("zzz")];
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("allowPrefix: true includes v-prefixed suggestions", () => {
+      const suggestions = [...semVer({ allowPrefix: true }).suggest!("v")];
+      assert.ok(suggestions.length > 0);
+      assert.ok(
+        suggestions.every(
+          (s) => s.kind === "literal" && s.text.startsWith("v"),
+        ),
+      );
+    });
+
+    it("allowPrefix: false does not include v-prefixed suggestions", () => {
+      const suggestions = [...semVer({ allowPrefix: false }).suggest!("v")];
+      assert.deepEqual(suggestions, []);
+    });
+  });
+
+  describe("type inference", () => {
+    it("string mode infers SemVerString", () => {
+      const p = semVer();
+      const result = p.parse("1.0.0");
+      if (result.success) {
+        const _v: SemVerString = result.value;
+        assert.ok(_v);
+      }
+    });
+
+    it("object mode infers SemVer", () => {
+      const p = semVer({ type: "object" });
+      const result = p.parse("1.0.0");
+      if (result.success) {
+        const _v: SemVer = result.value;
+        assert.ok(_v);
+      }
+    });
+  });
+});
+
+describe("json()", () => {
+  describe("constructor", () => {
+    it("default mode is sync", () => {
+      assert.equal(json().mode, "sync");
+    });
+
+    it("default metavar is JSON", () => {
+      assert.equal(json().metavar, "JSON");
+    });
+
+    it("custom metavar is respected", () => {
+      assert.equal(json({ metavar: "DATA" }).metavar, "DATA");
+    });
+
+    it("empty metavar throws TypeError", () => {
+      assert.throws(
+        () => json({ metavar: "" as NonEmptyString }),
+        {
+          name: "TypeError",
+          message: "Expected a non-empty string.",
+        },
+      );
+    });
+
+    it("accepts a pre-typed JsonOptions variable", () => {
+      const opts: JsonOptions = {
+        rootType: "object",
+      };
+      const parser = json(opts);
+      const result = parser.parse('{"a":1}');
+      assert.ok(result.success);
+    });
+
+    it("throws TypeError when placeholder type mismatches rootType", () => {
+      const opts: JsonOptions = { rootType: "string", placeholder: 123 };
+      assert.throws(() => json(opts), {
+        name: "TypeError",
+        message: "Expected placeholder to be a JSON string, but got number.",
+      });
+    });
+
+    it("rootType: string accepts a typed string placeholder", () => {
+      const parser = json({ rootType: "string", placeholder: "default" });
+      assert.equal(parser.placeholder, "default");
+    });
+
+    it("rootType: number accepts a typed number placeholder", () => {
+      const parser = json({ rootType: "number", placeholder: -1 });
+      assert.equal(parser.placeholder, -1);
+    });
+
+    it("invalid rootType throws TypeError at construction", () => {
+      assert.throws(
+        () => json({ rootType: "invalid" as never }),
+        {
+          name: "TypeError",
+          message:
+            'Expected rootType to be one of "string", "number", "boolean",' +
+            ' "null", "object", "array", but got string: "invalid".',
+        },
+      );
+    });
+
+    it("throws TypeError when placeholder is Infinity", () => {
+      assert.throws(() => json({ placeholder: Infinity }), {
+        name: "TypeError",
+        message:
+          "Expected placeholder to contain only finite numbers, but found Infinity.",
+      });
+    });
+
+    it("throws TypeError when placeholder is NaN", () => {
+      assert.throws(() => json({ placeholder: NaN }), {
+        name: "TypeError",
+        message:
+          "Expected placeholder to contain only finite numbers, but found NaN.",
+      });
+    });
+
+    it("throws TypeError when placeholder contains nested Infinity", () => {
+      assert.throws(() => json({ placeholder: { n: Infinity } }), {
+        name: "TypeError",
+        message:
+          "Expected placeholder to contain only finite numbers, but found Infinity.",
+      });
+    });
+  });
+
+  describe("parse() without rootType", () => {
+    it("parses a JSON object", () => {
+      const result = json().parse('{"a":1}');
+      assert.ok(result.success);
+      if (result.success) assert.deepEqual(result.value, { a: 1 });
+    });
+
+    it("parses a JSON array", () => {
+      const result = json().parse("[1,2,3]");
+      assert.ok(result.success);
+      if (result.success) assert.deepEqual(result.value, [1, 2, 3]);
+    });
+
+    it("parses a JSON string", () => {
+      const result = json().parse('"hello"');
+      assert.ok(result.success);
+      if (result.success) assert.equal(result.value, "hello");
+    });
+
+    it("parses a JSON string with escaped quotes", () => {
+      const result = json().parse('"hello \\"world\\""');
+      assert.ok(result.success);
+      if (result.success) assert.equal(result.value, 'hello "world"');
+    });
+
+    it("parses a JSON string with escape sequences", () => {
+      const result = json().parse('"line1\\nline2"');
+      assert.ok(result.success);
+      if (result.success) assert.equal(result.value, "line1\nline2");
+    });
+
+    it("parses a JSON string with Unicode escapes", () => {
+      const result = json().parse('"\\u00e9"');
+      assert.ok(result.success);
+      if (result.success) assert.equal(result.value, "é");
+    });
+
+    it("parses a JSON number", () => {
+      const result = json().parse("42");
+      assert.ok(result.success);
+      if (result.success) assert.equal(result.value, 42);
+    });
+
+    it("parses a JSON boolean true", () => {
+      const result = json().parse("true");
+      assert.ok(result.success);
+      if (result.success) assert.equal(result.value, true);
+    });
+
+    it("parses a JSON boolean false", () => {
+      const result = json().parse("false");
+      assert.ok(result.success);
+      if (result.success) assert.equal(result.value, false);
+    });
+
+    it("parses JSON null", () => {
+      const result = json().parse("null");
+      assert.ok(result.success);
+      if (result.success) assert.equal(result.value, null);
+    });
+
+    it("parses nested JSON", () => {
+      const result = json().parse('{"a":[1,{"b":true}]}');
+      assert.ok(result.success);
+      if (result.success) {
+        assert.deepEqual(result.value, { a: [1, { b: true }] });
+      }
+    });
+
+    it("handles very deeply nested arrays without stack overflow", () => {
+      const depth = 10_000;
+      const input = "[".repeat(depth) + "]".repeat(depth);
+      const result = json().parse(input);
+      assert.ok(result.success);
+    });
+
+    it("rejects malformed JSON with default error", () => {
+      const result = json().parse("{not json}");
+      assert.ok(!result.success);
+      if (!result.success) {
+        const msg = result.error;
+        const prefix = "Not a valid JSON:";
+        const firstText = Array.isArray(msg) && msg[0]?.type === "text"
+          ? (msg[0].text as string)
+          : "";
+        assert.ok(
+          firstText.startsWith(prefix) && firstText.length > prefix.length,
+          `Expected error to start with "${prefix}" followed by SyntaxError detail, got: ${
+            JSON.stringify(msg)
+          }`,
+        );
+      }
+    });
+
+    it("rejects malformed JSON with static custom error", () => {
+      const parser = json({ errors: { invalidJson: [text("bad JSON")] } });
+      const result = parser.parse("{nope}");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [{ type: "text", text: "bad JSON" }]);
+      }
+    });
+
+    it("rejects malformed JSON with function custom error", () => {
+      const parser = json({
+        errors: { invalidJson: (input) => [text(`bad: ${input}`)] },
+      });
+      const result = parser.parse("{nope}");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [{ type: "text", text: "bad: {nope}" }]);
+      }
+    });
+
+    it("rejects overflowing numbers that parse as Infinity", () => {
+      const result = json().parse("1e309");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Not a valid JSON: number out of range." },
+        ]);
+      }
+    });
+
+    it("uses invalidJson callback for out-of-range numbers", () => {
+      const parser = json({
+        errors: { invalidJson: (input) => [text(`overflow: ${input}`)] },
+      });
+      const result = parser.parse("1e309");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "overflow: 1e309" },
+        ]);
+      }
+    });
+
+    it("rejects objects containing nested Infinity", () => {
+      const result = json().parse('{"n":1e309}');
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Not a valid JSON: number out of range." },
+        ]);
+      }
+    });
+
+    it("rejects arrays containing nested Infinity", () => {
+      const result = json().parse("[1e309]");
+      assert.ok(!result.success);
+    });
+
+    it("rejects deeply nested Infinity", () => {
+      const result = json().parse('{"a":{"b":[1e309]}}');
+      assert.ok(!result.success);
+    });
+  });
+
+  describe('parse() with rootType: "string"', () => {
+    it("accepts a JSON string", () => {
+      const result = json({ rootType: "string" }).parse('"hello"');
+      assert.ok(result.success);
+      if (result.success) {
+        const _v: string = result.value;
+        assert.equal(_v, "hello");
+      }
+    });
+
+    it("rejects a JSON number", () => {
+      const result = json({ rootType: "string" }).parse("42");
+      assert.ok(!result.success);
+    });
+
+    it("rejects a JSON object", () => {
+      const result = json({ rootType: "string" }).parse("{}");
+      assert.ok(!result.success);
+    });
+
+    it("rejects a JSON array", () => {
+      const result = json({ rootType: "string" }).parse("[]");
+      assert.ok(!result.success);
+    });
+
+    it("rejects JSON null", () => {
+      const result = json({ rootType: "string" }).parse("null");
+      assert.ok(!result.success);
+    });
+
+    it("default error for type mismatch", () => {
+      const result = json({ rootType: "string" }).parse("42");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Expected JSON string, but got number." },
+        ]);
+      }
+    });
+  });
+
+  describe('parse() with rootType: "number"', () => {
+    it("accepts a JSON number", () => {
+      const result = json({ rootType: "number" }).parse("3.14");
+      assert.ok(result.success);
+      if (result.success) {
+        const _v: number = result.value;
+        assert.equal(_v, 3.14);
+      }
+    });
+
+    it("rejects a JSON string", () => {
+      assert.ok(!json({ rootType: "number" }).parse('"42"').success);
+    });
+
+    it("rejects a JSON object", () => {
+      assert.ok(!json({ rootType: "number" }).parse("{}").success);
+    });
+  });
+
+  describe('parse() with rootType: "boolean"', () => {
+    it("accepts true", () => {
+      const result = json({ rootType: "boolean" }).parse("true");
+      assert.ok(result.success);
+      if (result.success) {
+        const _v: boolean = result.value;
+        assert.equal(_v, true);
+      }
+    });
+
+    it("accepts false", () => {
+      const result = json({ rootType: "boolean" }).parse("false");
+      assert.ok(result.success);
+      if (result.success) assert.equal(result.value, false);
+    });
+
+    it("rejects a JSON number", () => {
+      assert.ok(!json({ rootType: "boolean" }).parse("1").success);
+    });
+  });
+
+  describe('parse() with rootType: "null"', () => {
+    it("accepts null", () => {
+      const result = json({ rootType: "null" }).parse("null");
+      assert.ok(result.success);
+      if (result.success) {
+        const _v: null = result.value;
+        assert.equal(_v, null);
+      }
+    });
+
+    it("rejects a JSON boolean", () => {
+      assert.ok(!json({ rootType: "null" }).parse("false").success);
+    });
+
+    it("rejects a JSON string", () => {
+      assert.ok(!json({ rootType: "null" }).parse('"null"').success);
+    });
+  });
+
+  describe('parse() with rootType: "object"', () => {
+    it("accepts a JSON object", () => {
+      const result = json({ rootType: "object" }).parse('{"x":1}');
+      assert.ok(result.success);
+      if (result.success) {
+        const _v: { readonly [p: string]: Json } = result.value;
+        assert.deepEqual(_v, { x: 1 });
+      }
+    });
+
+    it("rejects a JSON array", () => {
+      assert.ok(!json({ rootType: "object" }).parse("[1,2]").success);
+    });
+
+    it("rejects a JSON string", () => {
+      assert.ok(!json({ rootType: "object" }).parse('"hi"').success);
+    });
+
+    it("rejects JSON null", () => {
+      assert.ok(!json({ rootType: "object" }).parse("null").success);
+    });
+
+    it("default error for type mismatch", () => {
+      const result = json({ rootType: "object" }).parse("[1]");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Expected JSON object, but got array." },
+        ]);
+      }
+    });
+  });
+
+  describe('parse() with rootType: "array"', () => {
+    it("accepts a JSON array", () => {
+      const result = json({ rootType: "array" }).parse("[1,2]");
+      assert.ok(result.success);
+      if (result.success) {
+        const _v: readonly Json[] = result.value;
+        assert.deepEqual(_v, [1, 2]);
+      }
+    });
+
+    it("rejects a JSON object", () => {
+      assert.ok(!json({ rootType: "array" }).parse("{}").success);
+    });
+
+    it("rejects a JSON number", () => {
+      assert.ok(!json({ rootType: "array" }).parse("42").success);
+    });
+
+    it("default error for type mismatch", () => {
+      const result = json({ rootType: "array" }).parse('{"a":1}');
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "Expected JSON array, but got object." },
+        ]);
+      }
+    });
+  });
+
+  describe("custom invalidRootType error", () => {
+    it("static message error", () => {
+      const parser = json({
+        rootType: "string",
+        errors: { invalidRootType: [text("wrong type")] },
+      });
+      const result = parser.parse("42");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [{ type: "text", text: "wrong type" }]);
+      }
+    });
+
+    it("function error receives value and expected type", () => {
+      const parser = json({
+        rootType: "object",
+        errors: {
+          invalidRootType: (
+            value: Json,
+            expected: string,
+          ) => [text(`want ${expected}, got ${typeof value}`)],
+        },
+      });
+      const result = parser.parse("42");
+      assert.ok(!result.success);
+      if (!result.success) {
+        assert.deepEqual(result.error, [
+          { type: "text", text: "want object, got number" },
+        ]);
+      }
+    });
+  });
+
+  describe("format()", () => {
+    it("formats an object", () => {
+      assert.equal(json().format({ a: 1 }), '{"a":1}');
+    });
+
+    it("formats an array", () => {
+      assert.equal(json().format([1, 2, 3]), "[1,2,3]");
+    });
+
+    it("formats a string", () => {
+      assert.equal(json().format("hello"), '"hello"');
+    });
+
+    it("formats a number", () => {
+      assert.equal(json().format(42), "42");
+    });
+
+    it("formats a boolean", () => {
+      assert.equal(json().format(true), "true");
+    });
+
+    it("formats null", () => {
+      assert.equal(json().format(null), "null");
+    });
+
+    it("throws TypeError for Infinity", () => {
+      assert.throws(() => json().format(Infinity), {
+        name: "TypeError",
+        message: "Expected a finite JSON number, but got Infinity.",
+      });
+    });
+
+    it("throws TypeError for -Infinity", () => {
+      assert.throws(() => json().format(-Infinity), {
+        name: "TypeError",
+        message: "Expected a finite JSON number, but got -Infinity.",
+      });
+    });
+
+    it("throws TypeError for NaN", () => {
+      assert.throws(() => json().format(NaN), {
+        name: "TypeError",
+        message: "Expected a finite JSON number, but got NaN.",
+      });
+    });
+
+    it("throws TypeError for object containing Infinity", () => {
+      assert.throws(() => json().format({ n: Infinity }), {
+        name: "TypeError",
+        message: "Expected a finite JSON number, but got Infinity.",
+      });
+    });
+
+    it("throws TypeError for array containing Infinity", () => {
+      assert.throws(() => json().format([Infinity]), {
+        name: "TypeError",
+        message: "Expected a finite JSON number, but got Infinity.",
+      });
+    });
+
+    it("terminates quickly for circular references", () => {
+      const circular: Record<string, unknown> = {};
+      circular.self = circular;
+      assert.throws(() => json().format(circular as Json), TypeError);
+    });
+  });
+
+  describe("placeholder", () => {
+    it("default placeholder is null (no rootType)", () => {
+      assert.equal(json().placeholder, null);
+    });
+
+    it("default placeholder for rootType: string is empty string", () => {
+      assert.equal(json({ rootType: "string" }).placeholder, "");
+    });
+
+    it("default placeholder for rootType: number is 0", () => {
+      assert.equal(json({ rootType: "number" }).placeholder, 0);
+    });
+
+    it("default placeholder for rootType: boolean is false", () => {
+      assert.equal(json({ rootType: "boolean" }).placeholder, false);
+    });
+
+    it("default placeholder for rootType: null is null", () => {
+      assert.equal(json({ rootType: "null" }).placeholder, null);
+    });
+
+    it("default placeholder for rootType: object is empty object", () => {
+      assert.deepEqual(json({ rootType: "object" }).placeholder, {});
+    });
+
+    it("default placeholder for rootType: array is empty array", () => {
+      assert.deepEqual(json({ rootType: "array" }).placeholder, []);
+    });
+
+    it("custom placeholder is respected", () => {
+      assert.equal(json({ placeholder: 123 }).placeholder, 123);
+    });
+  });
+});
+
+describe("keyValue", () => {
+  describe("parsing", () => {
+    it("should parse KEY=VALUE as a readonly tuple", () => {
+      const parser = keyValue();
+
+      const result = parser.parse("DATABASE_URL=postgres://localhost/app");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, [
+        "DATABASE_URL",
+        "postgres://localhost/app",
+      ]);
+    });
+
+    it("should allow an empty value by default", () => {
+      const parser = keyValue();
+
+      const result = parser.parse("DEBUG=");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, ["DEBUG", ""]);
+    });
+
+    it("should reject an empty key by default", () => {
+      const parser = keyValue();
+
+      const result = parser.parse("=enabled");
+
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a non-empty key in " },
+        { type: "value", value: "=enabled" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject input without the separator", () => {
+      const parser = keyValue();
+
+      const result = parser.parse("DEBUG");
+
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected " },
+        { type: "value", value: "=" },
+        { type: "text", text: " in " },
+        { type: "value", value: "DEBUG" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should support custom separators", () => {
+      const parser = keyValue({ separator: ":" });
+
+      const result = parser.parse("app:web");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, ["app", "web"]);
+      assert.equal(parser.metavar, "KEY:VALUE");
+    });
+
+    it("should split repeated separators at the first separator by default", () => {
+      const parser = keyValue();
+
+      const result = parser.parse("A=B=C");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, ["A", "B=C"]);
+    });
+
+    it("should split repeated separators at the last separator when configured", () => {
+      const parser = keyValue({ split: "last" });
+
+      const result = parser.parse("A=B=C");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, ["A=B", "C"]);
+    });
+
+    it("should preserve whitespace instead of trimming input", () => {
+      const parser = keyValue();
+
+      const result = parser.parse(" KEY = VALUE ");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, [" KEY ", " VALUE "]);
+    });
+
+    it("should validate keys and values with child parsers", () => {
+      const parser = keyValue({
+        key: choice(["host", "port"] as const),
+        value: integer({ min: 1 }),
+      });
+
+      const result = parser.parse("port=5432");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, ["port", 5432]);
+    });
+
+    it("should reject parsed keys that canonicalize to empty strings", () => {
+      const key: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "KEY",
+        placeholder: "KEY",
+        parse: (input) => ({
+          success: true,
+          value: input === "default" ? "" : input,
+        }),
+        format: (input) => input,
+      };
+      const parser = keyValue({ key });
+
+      const result = parser.parse("default=enabled");
+
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a non-empty key in " },
+        { type: "value", value: "default=enabled" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject parsed values that canonicalize to empty strings", () => {
+      const value: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: "VALUE",
+        parse: (input) => ({
+          success: true,
+          value: input === "default" ? "" : input,
+        }),
+        format: (input) => input,
+      };
+      const parser = keyValue({ allowEmptyValue: false, value });
+
+      const result = parser.parse("mode=default");
+
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a non-empty value in " },
+        { type: "value", value: "mode=default" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should reject parsed keys that cannot round-trip", () => {
+      const key: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "KEY",
+        placeholder: "KEY",
+        parse: (input) => ({
+          success: true,
+          value: input === "default" ? "A=B" : input,
+        }),
+        format: (input) => input,
+      };
+      const parser = keyValue({ key });
+
+      const result = parser.parse("default=C");
+
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        'Invalid key: Expected a key without "=", but got "A=B".',
+      );
+    });
+
+    it("should reject parsed values that cannot round-trip", () => {
+      const value: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: "VALUE",
+        parse: (input) => ({
+          success: true,
+          value: input === "default" ? "B=C" : input,
+        }),
+        format: (input) => input,
+      };
+      const parser = keyValue({ split: "last", value });
+
+      const result = parser.parse("A=default");
+
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        'Invalid value: Expected a value without "=", but got "B=C".',
+      );
+    });
+
+    it("should wrap key parser failures as invalid-key errors", () => {
+      const parser = keyValue({
+        key: choice(["host", "port"] as const),
+        value: integer(),
+      });
+
+      const result = parser.parse("user=100");
+
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Invalid key: " },
+        { type: "text", text: "Expected one of " },
+        { type: "value", value: "host" },
+        { type: "text", text: " and " },
+        { type: "value", value: "port" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "user" },
+        { type: "text", text: "." },
+      ]);
+    });
+
+    it("should wrap value parser failures as invalid-value errors", () => {
+      const parser = keyValue({
+        key: choice(["port"] as const),
+        value: integer({ min: 1 }),
+      });
+
+      const result = parser.parse("port=0");
+
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Invalid value: " },
+        {
+          type: "text",
+          text: "Expected a value greater than or equal to ",
+        },
+        { type: "text", text: "1" },
+        { type: "text", text: ", but got " },
+        { type: "value", value: "0" },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("empty fields", () => {
+    it("should allow an empty key when configured", () => {
+      const parser = keyValue({ allowEmptyKey: true });
+
+      const result = parser.parse("=default");
+
+      assert.ok(result.success);
+      assert.deepEqual(result.value, ["", "default"]);
+    });
+
+    it("should reject an empty value when configured", () => {
+      const parser = keyValue({ allowEmptyValue: false });
+
+      const result = parser.parse("DEBUG=");
+
+      assert.ok(!result.success);
+      assert.deepStrictEqual(result.error, [
+        { type: "text", text: "Expected a non-empty value in " },
+        { type: "value", value: "DEBUG=" },
+        { type: "text", text: "." },
+      ]);
+    });
+  });
+
+  describe("format", () => {
+    it("should format through the key and value parsers", () => {
+      const parser = keyValue({
+        key: choice(["port"] as const),
+        value: integer(),
+      });
+
+      assert.equal(parser.format(["port", 5432]), "port=5432");
+    });
+
+    it("should use a custom separator when formatting", () => {
+      const parser = keyValue({ separator: ":" });
+
+      assert.equal(parser.format(["app", "web"]), "app:web");
+    });
+  });
+
+  describe("validate", () => {
+    it("should validate fallback tuples through child parsers", () => {
+      const parser = keyValue({
+        key: choice(["host", "port"] as const),
+        value: integer({ min: 1 }),
+      });
+
+      const result = parser.validate?.(["port", 5432]);
+
+      assert.ok(result?.success);
+      assert.deepEqual(result.value, ["port", 5432]);
+    });
+
+    it("should reject fallback tuples that violate child parsers", () => {
+      const parser = keyValue({
+        key: choice(["port"] as const),
+        value: integer({ min: 1 }),
+      });
+
+      const result = parser.validate?.(["port", 0]);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        "Invalid value: " +
+          'Expected a value greater than or equal to 1, but got "0".',
+      );
+    });
+
+    it("should reject raw empty fallback keys before child validation", () => {
+      const key: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "KEY",
+        placeholder: "KEY",
+        parse: (input) => ({
+          success: true,
+          value: input === "" ? "default" : input,
+        }),
+        format: (input) => input,
+      };
+      const parser = keyValue({ key });
+
+      const result = parser.validate?.(["", "value"]);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        'Expected a non-empty key in "=value".',
+      );
+    });
+
+    it("should reject raw empty fallback values before child validation", () => {
+      const value: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: "VALUE",
+        parse: (input) => ({
+          success: true,
+          value: input === "" ? "default" : input,
+        }),
+        format: (input) => input,
+      };
+      const parser = keyValue({ allowEmptyValue: false, value });
+
+      const result = parser.validate?.(["key", ""]);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        'Expected a non-empty value in "key=".',
+      );
+    });
+
+    it("should reject fallback tuple parts that cannot format as strings", () => {
+      const parser = keyValue();
+
+      const result = parser.validate?.(["PORT", 5432] as never);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+      assert.match(
+        formatMessage(result.error),
+        /^Invalid value: Expected a value formatted as a string/u,
+      );
+    });
+
+    it("should reject validated tuple parts that cannot format as strings", () => {
+      const value: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: "",
+        parse: (input) => ({ success: true, value: input }),
+        format: (input) => input,
+        validate: (input) => ({ success: true, value: input }),
+      };
+      Object.defineProperty(value, "format", {
+        value: () => 5432,
+      });
+      const parser = keyValue({ value });
+
+      const result = parser.validate?.(["PORT", "5432"]);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        "Invalid value: Expected a value formatted as a string.",
+      );
+    });
+
+    it("should reject fallback values that are not key-value tuples", () => {
+      const parser = keyValue();
+
+      for (
+        const value of [
+          "admin",
+          ["key"],
+          ["key", "value", "extra"],
+        ]
+      ) {
+        const result = parser.validate?.(value as never);
+
+        assert.ok(result);
+        assert.ok(!result.success);
+        assert.equal(
+          formatMessage(result.error),
+          "Expected a key-value tuple.",
+        );
+      }
+    });
+
+    it("should reject fallback keys that cannot round-trip with first split", () => {
+      const parser = keyValue();
+
+      const result = parser.validate?.(["A=B", "C"]);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        'Invalid key: Expected a key without "=", but got "A=B".',
+      );
+    });
+
+    it("should reject fallback keys that overlap a multi-character separator", () => {
+      const parser = keyValue({ separator: "==" });
+
+      const result = parser.validate?.(["A=", "B"]);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        'Invalid key: Expected a key that round-trips with "==", but got "A=".',
+      );
+    });
+
+    it("should reject fallback values that cannot round-trip with last split", () => {
+      const parser = keyValue({ split: "last" });
+
+      const result = parser.validate?.(["A", "B=C"]);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        'Invalid value: Expected a value without "=", but got "B=C".',
+      );
+    });
+
+    it("should reject invalid fallback keys when values cannot format", () => {
+      const parser = keyValue({ value: integer() });
+
+      const result = parser.validate?.(["A=B", undefined] as never);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        'Invalid key: Expected a key without "=", but got "A=B".',
+      );
+    });
+
+    it("should reject fallback values that overlap a multi-character separator", () => {
+      const parser = keyValue({ separator: "==", split: "last" });
+
+      const result = parser.validate?.(["A", "=B"]);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+      assert.equal(
+        formatMessage(result.error),
+        'Invalid value: Expected a value that round-trips with "==", but got "=B".',
+      );
+    });
+
+    it("should not throw when a child parser cannot format a fallback", () => {
+      const value: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: "",
+        parse: (input) => ({ success: true, value: input }),
+        format: (input) => {
+          if (input === "sentinel") {
+            throw new TypeError("Sentinel values cannot be formatted.");
+          }
+          return input;
+        },
+      };
+      const parser = keyValue({ value });
+
+      const result = parser.validate?.(["key", "sentinel"]);
+
+      assert.ok(result?.success);
+      assert.deepEqual(result.value, ["key", "sentinel"]);
+    });
+
+    it("should be used by option() fallback validation", () => {
+      const parser = option(
+        "--define",
+        keyValue({
+          key: choice(["port"] as const),
+          value: integer({ min: 1 }),
+        }),
+      );
+
+      const result = parser.validateValue?.(["port", 0]);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+    });
+
+    it("should reject non-string tuple parts through option fallback validation", () => {
+      const parser = option("--define", keyValue());
+
+      const result = parser.validateValue?.(["PORT", 5432] as never);
+
+      assert.ok(result);
+      assert.ok(!result.success);
+    });
+  });
+
+  describe("normalize", () => {
+    it("should preserve non-tuple sentinel values", () => {
+      const value: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: "",
+        parse: (input) => ({ success: true, value: input }),
+        format: (input) => input,
+        normalize: (input) => input,
+      };
+      const parser = keyValue({ value });
+      const sentinel = { kind: "default" } as const;
+
+      const normalized = parser.normalize?.(sentinel as never);
+
+      assert.equal(normalized, sentinel);
+    });
+
+    it("should preserve nullish child-normalized tuple parts", () => {
+      const key: ValueParser<"sync", string | null> = {
+        mode: "sync",
+        metavar: "KEY",
+        placeholder: "",
+        parse: (input) => ({
+          success: true,
+          value: input === "" ? null : input,
+        }),
+        format: (input) => input ?? "",
+        normalize: () => null,
+      };
+      const value: ValueParser<"sync", string | undefined> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: "",
+        parse: (input) => ({
+          success: true,
+          value: input === "" ? undefined : input,
+        }),
+        format: (input) => input ?? "",
+        normalize: () => undefined,
+      };
+      const parser = keyValue({ allowEmptyKey: true, key, value });
+
+      const normalized = parser.normalize?.(["host", "localhost"]);
+
+      assert.deepEqual(normalized, [null, undefined]);
+    });
+
+    it("should preserve tuples when normalized parts fail validation", () => {
+      const key: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "KEY",
+        placeholder: "KEY",
+        parse: (input) => ({ success: true, value: input }),
+        format: (input) => input,
+        normalize: () => "",
+      };
+      const value: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: "VALUE",
+        parse: (input) => ({ success: true, value: input }),
+        format: (input) => input,
+        normalize: (input) => input.trim(),
+      };
+      const parser = keyValue({ key, value });
+      const tuple = ["host", " localhost "] as const;
+
+      const normalized = parser.normalize?.(tuple);
+
+      assert.strictEqual(normalized, tuple);
+    });
+  });
+
+  describe("suggest", () => {
+    it("should suggest keys with the separator appended before the separator", () => {
+      const parser = keyValue({ key: choice(["host", "port"] as const) });
+
+      const suggestions = [...parser.suggest?.("h") ?? []];
+
+      assert.deepEqual(suggestions, [{ kind: "literal", text: "host=" }]);
+    });
+
+    it("should suggest values with the key and separator prepended", () => {
+      const parser = keyValue({
+        key: choice(["mode"] as const),
+        value: choice(["debug", "info"] as const),
+      });
+
+      const suggestions = [...parser.suggest?.("mode=d") ?? []];
+
+      assert.deepEqual(suggestions, [{ kind: "literal", text: "mode=debug" }]);
+    });
+
+    it("should not suggest values when the key parser rejects the key", () => {
+      const parser = keyValue({
+        key: choice(["mode"] as const),
+        value: choice(["debug"] as const),
+      });
+
+      const suggestions = [...parser.suggest?.("moed=d") ?? []];
+
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("should not suggest values for an empty key by default", () => {
+      const parser = keyValue({
+        value: choice(["debug"] as const),
+      });
+
+      const suggestions = [...parser.suggest?.("=d") ?? []];
+
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("should not suggest values when the key canonicalizes to empty", () => {
+      const key: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "KEY",
+        placeholder: "KEY",
+        parse: (input) => ({
+          success: true,
+          value: input === "default" ? "" : input,
+        }),
+        format: (input) => input,
+      };
+      const parser = keyValue({
+        key,
+        value: choice(["debug"] as const),
+      });
+
+      const suggestions = [...parser.suggest?.("default=d") ?? []];
+
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("should not suggest keys that cannot round-trip", () => {
+      const parser = keyValue({ key: choice(["A=B"] as const) });
+
+      const suggestions = [...parser.suggest?.("A") ?? []];
+
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("should not suggest keys that overlap a multi-character separator", () => {
+      const parser = keyValue({
+        separator: "==",
+        key: choice(["A="] as const),
+      });
+
+      const suggestions = [...parser.suggest?.("A") ?? []];
+
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("should not suggest raw keys that canonicalize away separators", () => {
+      const key: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "KEY",
+        placeholder: "KEY",
+        parse: (input) => ({
+          success: true,
+          value: input === "A=B" ? "AB" : input,
+        }),
+        format: (input) => input,
+        *suggest(prefix) {
+          if ("A=B".startsWith(prefix)) {
+            yield { kind: "literal", text: "A=B" };
+          }
+        },
+      };
+      const parser = keyValue({ key });
+
+      const suggestions = [...parser.suggest?.("A") ?? []];
+
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("should not suggest values that cannot round-trip", () => {
+      const parser = keyValue({
+        split: "last",
+        value: choice(["B=C"] as const),
+      });
+
+      const suggestions = [...parser.suggest?.("A=B") ?? []];
+
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("should not suggest values that overlap a multi-character separator", () => {
+      const parser = keyValue({
+        separator: "==",
+        split: "last",
+        value: choice(["=B"] as const),
+      });
+
+      const suggestions = [...parser.suggest?.("A==") ?? []];
+
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("should not suggest raw values that canonicalize away separators", () => {
+      const value: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: "VALUE",
+        parse: (input) => ({
+          success: true,
+          value: input === "B=C" ? "BC" : input,
+        }),
+        format: (input) => input,
+        *suggest(prefix) {
+          if ("B=C".startsWith(prefix)) {
+            yield { kind: "literal", text: "B=C" };
+          }
+        },
+      };
+      const parser = keyValue({ split: "last", value });
+
+      const suggestions = [...parser.suggest?.("A=B") ?? []];
+
+      assert.deepEqual(suggestions, []);
+    });
+
+    it("should keep suggesting split-last keys after a separator", () => {
+      const parser = keyValue({
+        split: "last",
+        key: choice(["A=B"] as const),
+        value: choice(["C"] as const),
+      });
+
+      const partialSuggestions = [...parser.suggest?.("A=") ?? []];
+      const completeKeySuggestions = [...parser.suggest?.("A=B") ?? []];
+
+      assert.deepEqual(partialSuggestions, [
+        { kind: "literal", text: "A=B=" },
+      ]);
+      assert.deepEqual(completeKeySuggestions, [
+        { kind: "literal", text: "A=B=" },
+      ]);
+    });
+
+    it("should preserve file suggestions after the separator", () => {
+      const value: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "PATH",
+        placeholder: "",
+        parse: (input) => ({ success: true, value: input }),
+        format: (input) => input,
+        *suggest(prefix) {
+          yield { kind: "file", type: "file", pattern: prefix };
+        },
+      };
+      const parser = keyValue({ value });
+
+      const suggestions = [...parser.suggest?.("out=src/") ?? []];
+
+      assert.deepEqual(suggestions, [
+        { kind: "file", type: "file", pattern: "out=src/" },
+      ]);
+    });
+
+    it("should preserve file suggestions with non-parseable patterns", () => {
+      const value: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "PATH",
+        placeholder: "",
+        parse: (input) =>
+          input.endsWith(".json")
+            ? { success: true, value: input }
+            : { success: false, error: message`Expected a JSON file.` },
+        format: (input) => input,
+        *suggest(prefix) {
+          yield {
+            kind: "file",
+            type: "file",
+            extensions: [".json"],
+            pattern: prefix,
+          };
+        },
+      };
+      const parser = keyValue({ value });
+
+      const suggestions = [...parser.suggest?.("out=src/") ?? []];
+
+      assert.deepEqual(suggestions, [
+        {
+          kind: "file",
+          type: "file",
+          extensions: [".json"],
+          pattern: "out=src/",
+        },
+      ]);
+    });
+  });
+
+  describe("deferred metadata", () => {
+    it("should mark the tuple as deferred when a child parser is deferred", () => {
+      const key: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "KEY",
+        placeholder: "",
+        parse: (input) => ({
+          success: true,
+          value: input,
+          deferred: true,
+        }),
+        format: (value) => value,
+      };
+      const parser = keyValue({ key });
+
+      const result = parser.parse("USER=alice");
+
+      assert.ok(result.success);
+      assert.ok(result.deferred);
+      assert.deepEqual(result.deferredKeys, new Map([[0, null]]));
+    });
+
+    it("should preserve nested deferred keys from child parsers", () => {
+      const nestedDeferredKeys = new Map<PropertyKey, null>([
+        ["name", null],
+      ]);
+      const value: ValueParser<"sync", { readonly name: string }> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: { name: "" },
+        parse: (input) => ({
+          success: true,
+          value: { name: input },
+          deferred: true,
+          deferredKeys: nestedDeferredKeys,
+        }),
+        format: (value) => value.name,
+      };
+      const parser = keyValue({ value });
+
+      const result = parser.parse("user=alice");
+
+      assert.ok(result.success);
+      assert.ok(result.deferred);
+      assert.deepEqual(
+        result.deferredKeys,
+        new Map<PropertyKey, ReadonlyMap<PropertyKey, null> | null>([
+          [1, nestedDeferredKeys],
+        ]),
+      );
+    });
+
+    it("should mark fully deferred object children in deferredKeys", () => {
+      const value: ValueParser<"sync", { readonly name: string }> = {
+        mode: "sync",
+        metavar: "VALUE",
+        placeholder: { name: "" },
+        parse: (input) => ({
+          success: true,
+          value: { name: input },
+          deferred: true,
+        }),
+        format: (value) => value.name,
+      };
+      const parser = keyValue({ value });
+
+      const result = parser.parse("user=alice");
+
+      assert.ok(result.success);
+      assert.ok(result.deferred);
+      assert.deepEqual(result.deferredKeys, new Map([[1, null]]));
+    });
+  });
+
+  describe("custom errors", () => {
+    it("should use static custom errors", () => {
+      const custom = message`Use KEY=VALUE.`;
+      const parser = keyValue({
+        allowEmptyValue: false,
+        errors: {
+          missingSeparator: custom,
+          emptyKey: custom,
+          emptyValue: custom,
+          invalidKey: custom,
+          invalidValue: custom,
+        },
+        key: choice(["host"] as const),
+        value: integer(),
+      });
+
+      for (const input of ["host", "=value", "host=", "port=1", "host=x"]) {
+        const result = parser.parse(input);
+        assert.ok(!result.success);
+        assert.deepEqual(result.error, custom);
+      }
+    });
+
+    it("should pass context to custom error callbacks", () => {
+      const parser = keyValue({
+        allowEmptyValue: false,
+        errors: {
+          missingSeparator: (input, separator) =>
+            message`Missing ${separator} in ${text(input)}.`,
+          emptyKey: (input) => message`Empty key in ${text(input)}.`,
+          emptyValue: (input) => message`Empty value in ${text(input)}.`,
+          invalidKey: (error) => [text("Bad key: "), ...error],
+          invalidValue: (error) => [text("Bad value: "), ...error],
+        },
+        key: choice(["host"] as const),
+        value: integer(),
+      });
+
+      const missing = parser.parse("host");
+      assert.ok(!missing.success);
+      assert.equal(formatMessage(missing.error), 'Missing "=" in host.');
+
+      const emptyKey = parser.parse("=localhost");
+      assert.ok(!emptyKey.success);
+      assert.equal(formatMessage(emptyKey.error), "Empty key in =localhost.");
+
+      const emptyValue = parser.parse("host=");
+      assert.ok(!emptyValue.success);
+      assert.equal(formatMessage(emptyValue.error), "Empty value in host=.");
+
+      const invalidKey = parser.parse("port=80");
+      assert.ok(!invalidKey.success);
+      assert.equal(
+        formatMessage(invalidKey.error),
+        'Bad key: Expected one of "host", but got "port".',
+      );
+
+      const invalidValue = parser.parse("host=http");
+      assert.ok(!invalidValue.success);
+      assert.equal(
+        formatMessage(invalidValue.error),
+        'Bad value: Expected a valid integer, but got "http".',
+      );
+    });
+  });
+
+  describe("types", () => {
+    it("should infer key and value parser result types", () => {
+      const parser = keyValue({
+        key: choice(["host", "port"] as const),
+        value: integer(),
+      });
+      parser satisfies ValueParser<
+        "sync",
+        readonly ["host" | "port", number]
+      >;
+
+      const result = parser.parse("port=5432");
+      assert.ok(result.success);
+      const value: readonly ["host" | "port", number] = result.value;
+      assert.deepEqual(value, ["port", 5432]);
+    });
+
+    it("should default omitted child parser result types to string", () => {
+      const explicitTypeArguments =
+        // @ts-expect-error: keyValue() derives types from child parsers.
+        keyValue<string, number>();
+      explicitTypeArguments satisfies ValueParser<
+        "sync",
+        readonly [string, string]
+      >;
+
+      const typedOptions: KeyValueOptions = {};
+      const parser = keyValue(typedOptions);
+      parser satisfies ValueParser<"sync", readonly [string, string]>;
+
+      const result = parser.parse("port=5432");
+      assert.ok(result.success);
+      const value: readonly [string, string] = result.value;
+      assert.deepEqual(value, ["port", "5432"]);
+
+      const missingValueParser =
+        // @ts-expect-error: non-string value types require a value parser.
+        {} satisfies KeyValueOptions<string, number>;
+      assert.deepEqual(missingValueParser, {});
+    });
+
+    it("should preserve result types from typed options objects", () => {
+      const options: KeyValueOptions<"port", number> = {
+        key: choice(["port"] as const),
+        value: integer(),
+      };
+      const parser = keyValue(options);
+      parser satisfies ValueParser<"sync", readonly ["port", number]>;
+
+      const result = parser.parse("port=5432");
+      assert.ok(result.success);
+      const value: readonly ["port", number] = result.value;
+      assert.deepEqual(value, ["port", 5432]);
+    });
+
+    it("should accept optional options objects", () => {
+      const explicitUndefinedParser = keyValue(undefined);
+      explicitUndefinedParser satisfies ValueParser<
+        "sync",
+        readonly [string, string]
+      >;
+
+      const makeParser = (options: KeyValueOptions | undefined) =>
+        keyValue(options);
+
+      const parser = makeParser(undefined);
+      parser satisfies ValueParser<"sync", readonly [string, string]>;
+
+      const result = parser.parse("port=5432");
+      assert.ok(result.success);
+      const value: readonly [string, string] = result.value;
+      assert.deepEqual(value, ["port", "5432"]);
+    });
+
+    it("should include default string types when optional options are undefined", () => {
+      const options = Math.random() > 0.5 ? { value: integer() } : undefined;
+      const parser = keyValue(options);
+      parser satisfies ValueParser<
+        "sync",
+        readonly [string, number] | readonly [string, string]
+      >;
+
+      const result = parser.parse("port=5432");
+      assert.ok(result.success);
+      const value:
+        | readonly [string, number]
+        | readonly [string, string] = result.value;
+      assert.equal(value[0], "port");
+      // @ts-expect-error: optional undefined options use default string parsers.
+      const numericOnly: readonly [string, number] = result.value;
+      assert.deepEqual(numericOnly[0], "port");
+    });
+  });
+
+  describe("properties", () => {
+    it("property: strings with one separator parse into original sides", () => {
+      fc.assert(
+        fc.property(
+          fc.string().map((value) => value.replaceAll("=", "_") || "KEY"),
+          fc.string().map((value) => value.replaceAll("=", "_")),
+          (key, value) => {
+            const parser = keyValue();
+
+            const result = parser.parse(`${key}=${value}`);
+
+            assert.ok(result.success);
+            assert.deepEqual(result.value, [key, value]);
+          },
+        ),
+        propertyParameters,
+      );
+    });
+  });
+
+  describe("construction errors", () => {
+    it("should reject an empty separator", () => {
+      assert.throws(
+        () => keyValue({ separator: "" }),
+        {
+          name: "TypeError",
+          message: "Expected a non-empty string.",
+        },
+      );
+    });
+
+    it("should reject async child parsers", () => {
+      const asyncParser: ValueParser<"async", string> = {
+        mode: "async",
+        metavar: "ASYNC",
+        placeholder: "",
+        parse: (input) => Promise.resolve({ success: true, value: input }),
+        format: (value) => value,
+      };
+
+      assert.throws(
+        // @ts-expect-error: keyValue() only accepts sync key parsers.
+        () => keyValue({ key: asyncParser }),
+        {
+          name: "TypeError",
+          message: /only supports sync key parsers/u,
+        },
+      );
+      assert.throws(
+        // @ts-expect-error: keyValue() only accepts sync value parsers.
+        () => keyValue({ value: asyncParser }),
+        {
+          name: "TypeError",
+          message: /only supports sync value parsers/u,
+        },
+      );
+    });
+
+    it("should reject dependency-derived child parsers", () => {
+      const mode = dependency(choice(["dev", "prod"]));
+      const derived = mode.derive({
+        metavar: "LEVEL",
+        mode: "sync",
+        factory: (m) =>
+          choice(m === "dev" ? ["debug", "info"] : ["warn", "error"]),
+        defaultValue: () => "dev",
+      });
+
+      assert.throws(
+        () => keyValue({ key: derived }),
+        {
+          name: "TypeError",
+          message: /dependency-derived key parsers/u,
+        },
+      );
+      assert.throws(
+        () => keyValue({ value: derived }),
+        {
+          name: "TypeError",
+          message: /dependency-derived value parsers/u,
+        },
+      );
+    });
+  });
+});
+
+describe("firstOf", () => {
+  describe("parsing", () => {
+    it("should return the first successful constituent's value", () => {
+      const parser = firstOf(choice(["auto"]), integer({ min: 1 }));
+
+      const autoResult = parser.parse("auto");
+      assert.ok(autoResult.success);
+      assert.equal(autoResult.value, "auto");
+
+      const intResult = parser.parse("5");
+      assert.ok(intResult.success);
+      assert.equal(intResult.value, 5);
+    });
+
+    it("should respect declaration order on overlapping inputs", () => {
+      const parser = firstOf(choice(["1"]), integer());
+      const result = parser.parse("1");
+      assert.ok(result.success);
+      assert.equal(result.value, "1");
+
+      const reversed = firstOf(integer(), choice(["1"]));
+      const reversedResult = reversed.parse("1");
+      assert.ok(reversedResult.success);
+      assert.equal(reversedResult.value, 1);
+    });
+
+    it("should combine all constituent errors when every parser fails", () => {
+      const parser = firstOf(choice(["auto"]), integer({ min: 1 }));
+      const result = parser.parse("abc");
+      assert.ok(!result.success);
+
+      const [header] = result.error;
+      assert.ok(header.type === "text");
+      assert.ok(header.text.includes("Expected one of the following"));
+
+      const lineBreaks = result.error.filter(
+        (term: MessageTerm) => term.type === "lineBreak",
+      );
+      assert.equal(lineBreaks.length, 2);
+
+      const formatted = formatMessage(result.error);
+      assert.ok(formatted.includes("auto"));
+      assert.ok(formatted.includes("integer"));
+      assert.equal(formatted.split("\n").length, 3);
+    });
+
+    it("should propagate the deferred flag from custom constituents", () => {
+      const deferredParser: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "DEFERRED",
+        placeholder: "",
+        parse: (input) => ({ success: true, value: input, deferred: true }),
+        format: (value) => value,
+      };
+      const parser = firstOf(integer(), deferredParser);
+      const result = parser.parse("abc");
+      assert.ok(result.success);
+      assert.equal(result.value, "abc");
+      assert.ok(result.deferred);
+    });
+  });
+
+  describe("metadata", () => {
+    it("should be a sync value parser", () => {
+      const parser = firstOf(choice(["auto"]), integer());
+      assert.equal(parser.mode, "sync");
+      assert.ok(isValueParser(parser));
+    });
+
+    it("should join constituent metavars with | by default", () => {
+      const parser = firstOf(choice(["auto"]), integer());
+      assert.equal(parser.metavar, "TYPE|INTEGER");
+    });
+
+    it("should respect a custom metavar option", () => {
+      const parser = firstOf(choice(["auto"]), integer(), {
+        metavar: "COUNT",
+      });
+      assert.equal(parser.metavar, "COUNT");
+    });
+
+    it("should use the first constituent's placeholder", () => {
+      const parser = firstOf(choice(["auto", "manual"]), integer());
+      assert.equal(parser.placeholder, "auto");
+
+      const reversed = firstOf(integer(), choice(["auto", "manual"]));
+      assert.equal(reversed.placeholder, 0);
+    });
+  });
+
+  describe("choices", () => {
+    it("should merge choices when every constituent defines them", () => {
+      const parser = firstOf(choice(["a", "b"]), choice(["c"]));
+      assert.deepEqual(parser.choices, ["a", "b", "c"]);
+    });
+
+    it("should deduplicate overlapping choices", () => {
+      const parser = firstOf(choice(["a", "b"]), choice(["b", "c"]));
+      assert.deepEqual(parser.choices, ["a", "b", "c"]);
+    });
+
+    it("should keep 0 and -0 distinct when deduplicating", () => {
+      const parser = firstOf(choice([0]), choice([-0, 1]));
+      assert.equal(parser.choices?.length, 3);
+      assert.ok(Object.is(parser.choices?.[0], 0));
+      assert.ok(Object.is(parser.choices?.[1], -0));
+      assert.equal(parser.choices?.[2], 1);
+    });
+
+    it("should omit choices when any constituent is open-ended", () => {
+      const parser = firstOf(choice(["auto"]), integer());
+      assert.equal(parser.choices, undefined);
+    });
+  });
+
+  describe("format", () => {
+    it("should format with the constituent that accepts the value", () => {
+      const parser = firstOf(choice(["auto"]), integer({ min: 1 }));
+      assert.equal(parser.format("auto"), "auto");
+      assert.equal(parser.format(5), "5");
+    });
+
+    it("should skip constituents whose format() throws", () => {
+      const throwing: ValueParser<"sync", number> = {
+        mode: "sync",
+        metavar: "ONE",
+        placeholder: 1,
+        parse: (input) =>
+          input === "1"
+            ? { success: true, value: 1 }
+            : { success: false, error: message`Expected ${text("1")}.` },
+        format: (value) => {
+          if (value !== 1) throw new RangeError("Not one.");
+          return "1";
+        },
+      };
+      const parser = firstOf(throwing, integer());
+      assert.equal(parser.format(42), "42");
+      assert.equal(parser.format(1), "1");
+    });
+
+    it("should rethrow when every constituent's format() throws", () => {
+      const throwing: ValueParser<"sync", number> = {
+        mode: "sync",
+        metavar: "ONE",
+        placeholder: 1,
+        parse: () => ({ success: false, error: message`Nope.` }),
+        format: () => {
+          throw new RangeError("Cannot format.");
+        },
+      };
+      const parser = firstOf(throwing, throwing);
+      assert.throws(() => parser.format(42), RangeError);
+    });
+
+    it("should fall back to a well-formed string for unclaimed values", () => {
+      const parser = firstOf(choice(["auto"]), integer({ min: 1 }));
+      assert.equal(parser.format(0), "0");
+    });
+
+    it("should not validate out-of-union values through another branch", () => {
+      // Regression: a format()+parse() round-trip (as performed by
+      // validateValue() for bindEnv()/bindConfig() fallbacks) must not
+      // accept values that no constituent accepts.
+      const parser = firstOf(string({ pattern: /^a$/ }), integer({ min: 1 }));
+      const roundTrip = parser.parse(parser.format(0));
+      assert.ok(!roundTrip.success);
+    });
+
+    it("should not let a lossy earlier constituent claim a later one's value", () => {
+      // Regression: color().format() accepts any { r, g, b, a } shape and
+      // color().parse() accepts the result, so a naive success-based
+      // ownership test would drop extra object fields owned by json().
+      const parser = firstOf(color(), json({ rootType: "object" }));
+      const value = { r: 1, g: 2, b: 3, a: 1, extra: "keep" };
+      const roundTrip = parser.parse(parser.format(value));
+      assert.ok(roundTrip.success);
+      assert.deepEqual(roundTrip.value, value);
+    });
+
+    it("should format values owned via a constituent's validate()", () => {
+      // The inner firstOf() accepts { a: 1 } through its validate() hook,
+      // but the outer round-trip cannot see that ownership: the JSON text
+      // is shadowed by the inner choice() branch, so the combined parse
+      // yields the string instead of the object.  The format path must
+      // consult the hook rather than fall back to an earlier branch's
+      // generic stringification ("[object Object]").
+      const inner = firstOf(choice(['{"a":1}']), json({ rootType: "object" }));
+      const outer = firstOf(choice(["x"]), inner);
+      assert.equal(outer.format({ a: 1 }), '{"a":1}');
+    });
+
+    it("should format overlapping values for display", () => {
+      // format() is a display-oriented best effort; precise fallback
+      // validation goes through validate() instead.
+      const parser = firstOf(choice(["1"]), integer());
+      assert.equal(parser.format("1"), "1");
+      assert.equal(parser.format(1), "1");
+    });
+
+    it("should format through a constituent that normalizes the value", () => {
+      const mac = macAddress({ outputSeparator: ":" });
+      const parser = firstOf(mac, choice(["none"]));
+      assert.equal(
+        parser.format("AA-BB-CC-DD-EE-FF"),
+        mac.format("AA-BB-CC-DD-EE-FF"),
+      );
+    });
+  });
+
+  describe("validate", () => {
+    it("should accept values owned by a constituent", () => {
+      const parser = firstOf(choice(["auto"]), integer({ min: 1 }));
+      const autoResult = parser.validate?.("auto");
+      assert.ok(autoResult?.success);
+      assert.equal(autoResult.value, "auto");
+      const intResult = parser.validate?.(5);
+      assert.ok(intResult?.success);
+      assert.equal(intResult.value, 5);
+    });
+
+    it("should accept values shadowed by an earlier overlapping branch", () => {
+      // The integer 1 cannot be produced by parsing (its string form "1"
+      // always goes to the choice() branch), but it is still a valid
+      // integer() value, so fallback validation must accept it unchanged.
+      const parser = firstOf(choice(["1"]), integer());
+      const result = parser.validate?.(1);
+      assert.ok(result?.success);
+      assert.equal(result.value, 1);
+    });
+
+    it("should reject values that no constituent accepts", () => {
+      // The number 0 violates integer({ min: 1 }), and the choice() branch
+      // only accepts the *string* "0".  A format()+parse() round-trip
+      // cannot express this failure ("0" parses fine into the choice
+      // branch), which is exactly what validate() is for.
+      const parser = firstOf(choice(["0"]), integer({ min: 1 }));
+      const result = parser.validate?.(0);
+      assert.ok(result);
+      assert.ok(!result.success);
+      const stringResult = parser.validate?.("0");
+      assert.ok(stringResult?.success);
+      assert.equal(stringResult.value, "0");
+    });
+
+    it("should accept fallback values canonicalized by parse()", () => {
+      // choice() with caseInsensitive canonicalizes during parse() but
+      // does not expose normalize(), so the round trip yields "info" for
+      // the fallback "INFO".  A same-type primitive canonicalization is
+      // still ownership: the constituent alone would accept the same
+      // fallback through its format()+parse() round-trip validation.
+      const parser = firstOf(
+        choice(["info", "warn"], { caseInsensitive: true }),
+        integer(),
+      );
+      // Config/env fallback values are runtime-typed, so they can carry
+      // representations outside the inferred literal union:
+      const result = parser.validate?.("INFO" as never);
+      assert.ok(result?.success);
+      assert.equal(result.value, "info");
+
+      // Same for number canonicalization: choice([0]) parses "-0" as 0.
+      const zero = firstOf(choice([0]), string());
+      const zeroResult = zero.validate?.(-0);
+      assert.ok(zeroResult?.success);
+      assert.ok(Object.is(zeroResult.value, 0));
+    });
+
+    it("should accept fallbacks canonicalized beyond case folding", () => {
+      // Built-in parsers like email({ allowDisplayName: true }) and
+      // semVer({ allowPrefix: true }) canonicalize during parse() without
+      // exposing normalize().  When no constituent owns the value more
+      // faithfully, a same-primitive-type round trip is the same
+      // canonicalization the constituent alone would apply to a fallback.
+      const mail = firstOf(email({ allowDisplayName: true }), integer());
+      const mailResult = mail.validate?.("John Doe <john@example.com>");
+      assert.ok(mailResult?.success);
+      assert.equal(mailResult.value, "john@example.com");
+
+      const version = firstOf(semVer({ allowPrefix: true }), integer());
+      // The v-prefixed form is outside the SemVerString literal type but
+      // arrives at runtime from config/env fallbacks:
+      const versionResult = version.validate?.("v1.2.3" as never);
+      assert.ok(versionResult?.success);
+      assert.equal(versionResult.value, "1.2.3");
+    });
+
+    it("should not treat arbitrary same-type round trips as ownership", () => {
+      // A parser whose format() clamps values to its range round-trips
+      // 15 into 10.  That is data loss, not canonicalization: it must
+      // not claim the value ahead of a later constituent that preserves
+      // it exactly.
+      const clamping: ValueParser<"sync", number> = {
+        mode: "sync",
+        metavar: "CLAMPED",
+        placeholder: 1,
+        parse: (input) => {
+          const n = Number(input);
+          return Number.isInteger(n) && n >= 1 && n <= 10
+            ? { success: true, value: n }
+            : { success: false, error: message`Expected 1-10.` };
+        },
+        format: (value) => String(Math.max(1, Math.min(10, value))),
+      };
+      const parser = firstOf(clamping, float());
+      const result = parser.validate?.(15);
+      assert.ok(result?.success);
+      assert.equal(result.value, 15);
+    });
+
+    it("should canonicalize parse-normalized fallbacks through option()", () => {
+      const parser = option(
+        "--level",
+        firstOf(choice(["info"], { caseInsensitive: true }), integer()),
+      );
+      const result = parser.validateValue?.("INFO" as never);
+      assert.ok(result);
+      assert.ok(result.success);
+      assert.equal(result.value, "info");
+    });
+
+    it("should canonicalize values through the owning constituent", () => {
+      const mac = macAddress({ outputSeparator: ":" });
+      const parser = firstOf(mac, choice(["none"]));
+      const result = parser.validate?.("AA-BB-CC-DD-EE-FF");
+      assert.ok(result?.success);
+      assert.equal(result.value, mac.format("AA-BB-CC-DD-EE-FF"));
+    });
+
+    it("should delegate to a constituent's own validate()", () => {
+      const inner = firstOf(choice(["0"]), integer({ min: 1 }));
+      const parser = firstOf(choice(["x"]), inner);
+      const invalid = parser.validate?.(0);
+      assert.ok(invalid);
+      assert.ok(!invalid.success);
+      const valid = parser.validate?.(5);
+      assert.ok(valid?.success);
+      assert.equal(valid.value, 5);
+    });
+
+    it("should not let an opaque-object branch claim another's value", () => {
+      // Mimics firstOf(instant(), zonedDateTime()): both value types are
+      // class instances without enumerable own keys, and the instant-like
+      // parser lossily accepts the zoned string form by stripping the
+      // time zone annotation.  Ownership comparison must not treat two
+      // key-less objects of different types as equal.
+      class FakeInstant {
+        readonly #iso: string;
+        constructor(iso: string) {
+          this.#iso = iso;
+        }
+        toString(): string {
+          return this.#iso;
+        }
+      }
+      class FakeZonedDateTime {
+        readonly #iso: string;
+        readonly #zone: string;
+        constructor(iso: string, zone: string) {
+          this.#iso = iso;
+          this.#zone = zone;
+        }
+        toString(): string {
+          return `${this.#iso}[${this.#zone}]`;
+        }
+      }
+      const instant: ValueParser<"sync", FakeInstant> = {
+        mode: "sync",
+        metavar: "INSTANT",
+        placeholder: new FakeInstant("1970-01-01T00:00:00Z"),
+        parse: (input) => ({
+          success: true,
+          value: new FakeInstant(input.replace(/\[[^\]]*\]$/, "")),
+        }),
+        format: (value) => value.toString(),
+      };
+      const zoned: ValueParser<"sync", FakeZonedDateTime> = {
+        mode: "sync",
+        metavar: "ZONED",
+        placeholder: new FakeZonedDateTime("1970-01-01T00:00:00Z", "UTC"),
+        parse: (input) => {
+          const match = /^(.+)\[([^\]]+)\]$/.exec(input);
+          return match == null
+            ? {
+              success: false,
+              error: message`Expected a time zone annotation.`,
+            }
+            : {
+              success: true,
+              value: new FakeZonedDateTime(match[1], match[2]),
+            };
+        },
+        format: (value) => value.toString(),
+      };
+      const parser = firstOf(instant, zoned);
+      const value = new FakeZonedDateTime("2024-01-01T00:00:00Z", "Asia/Seoul");
+      const result = parser.validate?.(value);
+      assert.ok(result?.success);
+      assert.ok(result.value instanceof FakeZonedDateTime);
+      assert.equal(String(result.value), "2024-01-01T00:00:00Z[Asia/Seoul]");
+    });
+
+    it("should not equate objects when only one side overrides toString()", () => {
+      // Same-prototype opaque objects compare by their toString()
+      // serialization, but only when *both* sides override it: an
+      // instance-level override on the round-tripped value alone must
+      // not make it equal to a value that stringifies generically.
+      class Opaque {}
+      const claiming: ValueParser<"sync", Opaque> = {
+        mode: "sync",
+        metavar: "OPAQUE",
+        placeholder: new Opaque(),
+        parse: (input) => {
+          const value = new Opaque();
+          Object.defineProperty(value, "toString", { value: () => input });
+          return { success: true, value };
+        },
+        format: (value) => String(value),
+      };
+      const parser = firstOf(claiming, choice(["none"]));
+      const result = parser.validate?.(new Opaque());
+      assert.ok(result);
+      assert.ok(!result.success);
+    });
+
+    it("should accept null-prototype objects as plain objects", () => {
+      // JSON values built with Object.create(null) format to the same
+      // JSON text as ordinary object literals and parse back as ordinary
+      // objects; ownership comparison must not distinguish the two
+      // prototypes.
+      const parser = firstOf(json({ rootType: "object" }), choice(["none"]));
+      const value: Record<string, number> = Object.assign(
+        Object.create(null),
+        { a: 1 },
+      );
+      const result = parser.validate?.(value);
+      assert.ok(result?.success);
+      assert.deepEqual(result.value, { a: 1 });
+    });
+
+    it("should let class instances with public fields own their values", () => {
+      // A hookless custom parser may round-trip a class instance through
+      // its enumerable own fields without overriding toString().  Two
+      // structurally equal instances of the same class must compare as
+      // equal, or the parser could never own its own round-tripped
+      // values and fallback validation would reject them.
+      class UserId {
+        readonly id: string;
+        constructor(id: string) {
+          this.id = id;
+        }
+      }
+      const userId: ValueParser<"sync", UserId> = {
+        mode: "sync",
+        metavar: "USER",
+        placeholder: new UserId(""),
+        parse: (input) =>
+          /^[a-z]+$/.test(input)
+            ? { success: true, value: new UserId(input) }
+            : { success: false, error: message`Expected a user ID.` },
+        format: (value) => value.id,
+      };
+      const parser = firstOf(integer(), userId);
+      const result = parser.validate?.(new UserId("alice"));
+      assert.ok(result?.success);
+      assert.ok(result.value instanceof UserId);
+      assert.equal(result.value.id, "alice");
+    });
+
+    it("should require matching serialization when toString() is overridden", () => {
+      // A class may expose some state through enumerable fields and keep
+      // the rest in private fields that only its toString() serializes.
+      // Structural key equality alone must not let a lossy parser claim
+      // such a value when the serializations disagree.
+      class Token {
+        readonly id: string;
+        readonly #scope: string;
+        constructor(id: string, scope: string) {
+          this.id = id;
+          this.#scope = scope;
+        }
+        toString(): string {
+          return `${this.id}:${this.#scope}`;
+        }
+      }
+      const token: ValueParser<"sync", Token> = {
+        mode: "sync",
+        metavar: "TOKEN",
+        placeholder: new Token("", ""),
+        parse: (input) => ({
+          success: true,
+          value: new Token(input, "parsed"),
+        }),
+        // Lossy: drops the private scope.
+        format: (value) => value.id,
+      };
+      const parser = firstOf(token, choice(["none"]));
+      const result = parser.validate?.(new Token("alice", "original"));
+      assert.ok(result);
+      assert.ok(!result.success);
+    });
+
+    it("should not crash on values with throwing toString getters", () => {
+      // Accessing toString on a hostile or exotic object (Proxy, throwing
+      // getter) must not crash ownership resolution; such objects still
+      // compare through their enumerable own fields.
+      class Weird {
+        readonly id: string;
+        constructor(id: string) {
+          this.id = id;
+        }
+        get toString(): never {
+          throw new Error("boom");
+        }
+      }
+      const weird: ValueParser<"sync", Weird> = {
+        mode: "sync",
+        metavar: "WEIRD",
+        placeholder: new Weird(""),
+        parse: (input) => ({ success: true, value: new Weird(input) }),
+        format: (value) => value.id,
+      };
+      const parser = firstOf(weird, integer());
+      const result = parser.validate?.(new Weird("x"));
+      assert.ok(result?.success);
+      assert.ok(result.value instanceof Weird);
+      assert.equal(result.value.id, "x");
+    });
+
+    it("should treat a throwing constituent validate() as non-ownership", () => {
+      // A custom parser's validate() hook is typed for its own T, so it
+      // may reasonably use string-only operations that throw when handed
+      // a foreign value from another branch of the union.  Such throws
+      // must count as "not this constituent's value", letting later
+      // branches claim it, just like throwing format() does.
+      const word: ValueParser<"sync", string> = {
+        mode: "sync",
+        metavar: "WORD",
+        placeholder: "",
+        parse: (input) =>
+          /^[a-z]+$/.test(input)
+            ? { success: true, value: input }
+            : { success: false, error: message`Expected a lowercase word.` },
+        format: (value) => String(value),
+        validate(value) {
+          const lower = value.toLowerCase();
+          return /^[a-z]+$/.test(lower)
+            ? { success: true, value: lower }
+            : { success: false, error: message`Expected a lowercase word.` };
+        },
+      };
+      const parser = firstOf(word, integer());
+      const result = parser.validate?.(1);
+      assert.ok(result?.success);
+      assert.equal(result.value, 1);
+      assert.equal(parser.format(1), "1");
+    });
+
+    it("should consult a constituent's validate() for shadowed values", () => {
+      // The inner firstOf() cannot round-trip the shadowed integer 1
+      // through format()+parse() (the string "1" goes to its choice()
+      // branch), but its own validate() hook accepts it; the outer
+      // firstOf() must consult that hook instead of only round-tripping.
+      const parser = firstOf(choice(["x"]), firstOf(choice(["1"]), integer()));
+      const result = parser.validate?.(1);
+      assert.ok(result?.success);
+      assert.equal(result.value, 1);
+    });
+
+    it("should be used by option()/argument() fallback validation", () => {
+      const overlapping = argument(firstOf(choice(["1"]), integer()));
+      const shadowed = overlapping.validateValue?.(1);
+      assert.ok(shadowed);
+      assert.ok(shadowed.success);
+      assert.equal(shadowed.value, 1);
+
+      const strict = argument(firstOf(choice(["0"]), integer({ min: 1 })));
+      const rejected = strict.validateValue?.(0);
+      assert.ok(rejected);
+      assert.ok(!rejected.success);
+    });
+  });
+
+  describe("normalize", () => {
+    it("should be undefined when no constituent normalizes", () => {
+      const parser = firstOf(choice(["auto"]), integer());
+      assert.equal(parser.normalize, undefined);
+    });
+
+    it("should dispatch to the constituent that accepts the value", () => {
+      const mac = macAddress({ outputSeparator: ":" });
+      const parser = firstOf(mac, choice(["none"]));
+      assert.equal(
+        parser.normalize?.("AA-BB-CC-DD-EE-FF"),
+        mac.normalize?.("AA-BB-CC-DD-EE-FF"),
+      );
+    });
+
+    it("should return values unchanged for constituents without normalize", () => {
+      const parser = firstOf(macAddress(), choice(["none"]));
+      assert.equal(parser.normalize?.("none"), "none");
+    });
+
+    it("should return unclaimed values unchanged", () => {
+      const parser = firstOf(macAddress(), choice(["none"]));
+      assert.equal(parser.normalize?.("not-a-mac"), "not-a-mac");
+    });
+
+    it("should normalize through a constituent's validate() ownership", () => {
+      // The outer firstOf() cannot round-trip 7 through the inner one
+      // (the string "7" goes to the inner choice() branch), but the
+      // inner validate() hook accepts it; normalization ownership must
+      // honor that hook just like validate() does.
+      const evenizer: ValueParser<"sync", number> = {
+        mode: "sync",
+        metavar: "EVEN",
+        placeholder: 0,
+        parse: (input) => {
+          const n = Number(input);
+          return Number.isInteger(n)
+            ? { success: true, value: n - (n % 2) }
+            : { success: false, error: message`Expected a number.` };
+        },
+        format: (value) => String(value),
+        normalize: (value) => value - (value % 2),
+      };
+      const inner = firstOf(choice(["7"]), evenizer);
+      const outer = firstOf(choice(["x"]), inner);
+      assert.equal(inner.normalize?.(7), 6);
+      assert.equal(outer.normalize?.(7), 6);
+    });
+  });
+
+  describe("suggest", () => {
+    it("should be undefined when no constituent suggests", () => {
+      const parser = firstOf(string(), integer());
+      assert.equal(parser.suggest, undefined);
+    });
+
+    it("should merge suggestions from all constituents in order", () => {
+      const parser = firstOf(
+        choice(["auto", "always"]),
+        choice(["all", "never"]),
+      );
+      const suggestions = [...parser.suggest?.("a") ?? []];
+      assert.deepEqual(
+        suggestions.map((s) => s.kind === "literal" ? s.text : s.kind),
+        ["auto", "always", "all"],
+      );
+    });
+
+    it("should deduplicate identical suggestions across constituents", () => {
+      const parser = firstOf(choice(["auto", "max"]), choice(["auto", "min"]));
+      const suggestions = [...parser.suggest?.("") ?? []];
+      assert.deepEqual(
+        suggestions.map((s) => s.kind === "literal" ? s.text : s.kind),
+        ["auto", "max", "min"],
+      );
+    });
+  });
+
+  describe("array form", () => {
+    it("should accept a dynamically built array of parsers", () => {
+      const parsers: ValueParser<"sync", "auto" | number>[] = [
+        choice(["auto"]),
+        integer({ min: 1 }),
+      ];
+      const parser = firstOf(parsers);
+      const autoResult = parser.parse("auto");
+      assert.ok(autoResult.success);
+      assert.equal(autoResult.value, "auto");
+      const intResult = parser.parse("5");
+      assert.ok(intResult.success);
+      assert.equal(intResult.value, 5);
+      assert.equal(parser.metavar, "TYPE|INTEGER");
+    });
+
+    it("should accept options with the array form", () => {
+      const parser = firstOf([choice(["auto"]), integer()], {
+        metavar: "COUNT",
+      });
+      assert.equal(parser.metavar, "COUNT");
+    });
+
+    it("should snapshot the parser array at construction time", () => {
+      const parsers: ValueParser<"sync", "auto" | number>[] = [
+        choice(["auto"]),
+        integer(),
+      ];
+      const parser = firstOf(parsers);
+      parsers.length = 0;
+      const result = parser.parse("5");
+      assert.ok(result.success);
+      assert.equal(result.value, 5);
+    });
+
+    it("should throw TypeError for arrays with fewer than two parsers", () => {
+      assert.throws(() => firstOf([integer()]), TypeError);
+      assert.throws(() => firstOf([]), TypeError);
+    });
+  });
+
+  describe("custom errors", () => {
+    it("should use a static noMatch message", () => {
+      const parser = firstOf(choice(["auto"]), integer({ min: 1 }), {
+        errors: { noMatch: message`Custom error.` },
+      });
+      const result = parser.parse("abc");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, message`Custom error.`);
+    });
+
+    it("should pass input and constituent errors to a noMatch function", () => {
+      let seenInput: string | undefined;
+      let seenErrors: readonly Message[] | undefined;
+      const parser = firstOf(choice(["auto"]), integer({ min: 1 }), {
+        errors: {
+          noMatch: (input, errors) => {
+            seenInput = input;
+            seenErrors = errors;
+            return message`No match for ${input}.`;
+          },
+        },
+      });
+      const result = parser.parse("abc");
+      assert.ok(!result.success);
+      assert.deepEqual(result.error, message`No match for ${"abc"}.`);
+      assert.equal(seenInput, "abc");
+      assert.equal(seenErrors?.length, 2);
+      assert.ok(formatMessage(seenErrors[0]).includes("auto"));
+      assert.ok(formatMessage(seenErrors[1]).includes("integer"));
+    });
+  });
+
+  describe("types", () => {
+    it("should infer the union of constituent types", () => {
+      const pair = firstOf(choice(["auto"]), integer({ min: 1 }));
+      pair satisfies ValueParser<"sync", "auto" | number>;
+
+      const withOptions = firstOf(choice(["auto"]), integer(), {
+        metavar: "COUNT",
+      });
+      withOptions satisfies ValueParser<"sync", "auto" | number>;
+
+      const variadic = firstOf(
+        choice(["a"]),
+        choice(["b"]),
+        choice(["c"]),
+        choice(["d"]),
+        choice(["e"]),
+        integer(),
+      );
+      variadic satisfies ValueParser<
+        "sync",
+        "a" | "b" | "c" | "d" | "e" | number
+      >;
+
+      const fromArray = firstOf([choice(["auto"]), integer({ min: 1 })]);
+      fromArray satisfies ValueParser<"sync", "auto" | number>;
+
+      const result = pair.parse("auto");
+      assert.ok(result.success);
+      const value: "auto" | number = result.value;
+      assert.equal(value, "auto");
+    });
+  });
+
+  describe("properties", () => {
+    it("property: every constituent's values parse to themselves", () => {
+      fc.assert(
+        fc.property(
+          fc.uniqueArray(lowercaseWordArbitrary, { minLength: 1 }),
+          safeIntegerArbitrary,
+          (words, num) => {
+            const parser = firstOf(choice(words), integer());
+            for (const word of words) {
+              const result = parser.parse(word);
+              assert.ok(result.success);
+              assert.equal(result.value, word);
+            }
+            const numResult = parser.parse(String(num));
+            assert.ok(numResult.success);
+            assert.equal(numResult.value, num);
+          },
+        ),
+        propertyParameters,
+      );
+    });
+
+    it("property: parse(format(v)) round-trips union values", () => {
+      fc.assert(
+        fc.property(
+          fc.uniqueArray(lowercaseWordArbitrary, { minLength: 1 }),
+          safeIntegerArbitrary,
+          (words, num) => {
+            const parser = firstOf(choice(words), integer());
+            for (const value of [...words, num]) {
+              const result = parser.parse(parser.format(value));
+              assert.ok(result.success);
+              assert.equal(result.value, value);
+            }
+          },
+        ),
+        propertyParameters,
+      );
+    });
+
+    it("property: declaration order determines the winning branch", () => {
+      fc.assert(
+        fc.property(safeIntegerArbitrary, (num) => {
+          const numText = String(num);
+          const stringFirst = firstOf(choice([numText]), integer());
+          const stringResult = stringFirst.parse(numText);
+          assert.ok(stringResult.success);
+          assert.equal(stringResult.value, numText);
+
+          const integerFirst = firstOf(integer(), choice([numText]));
+          const integerResult = integerFirst.parse(numText);
+          assert.ok(integerResult.success);
+          assert.equal(integerResult.value, num);
+        }),
+        propertyParameters,
+      );
+    });
+  });
+
+  describe("integration", () => {
+    it("should parse option values through option()", () => {
+      const parser = option(
+        "--count",
+        firstOf(choice(["auto"]), integer({ min: 1 })),
+      );
+
+      const auto = parse(parser, ["--count", "auto"]);
+      assert.ok(auto.success);
+      assert.equal(auto.value, "auto");
+
+      const five = parse(parser, ["--count", "5"]);
+      assert.ok(five.success);
+      assert.equal(five.value, 5);
+
+      const invalid = parse(parser, ["--count", "0"]);
+      assert.ok(!invalid.success);
+    });
+
+    it("should normalize withDefault() defaults via the owning constituent", () => {
+      const mac = macAddress({ outputSeparator: ":" });
+      const parser = withDefault(
+        option("--mac", firstOf(mac, choice(["none"]))),
+        "AA-BB-CC-DD-EE-FF",
+      );
+      const result = parse(parser, []);
+      assert.ok(result.success);
+      assert.equal(result.value, mac.normalize?.("AA-BB-CC-DD-EE-FF"));
+    });
+
+    it("should normalize withDefault() defaults through nested firstOf()", () => {
+      const evenizer: ValueParser<"sync", number> = {
+        mode: "sync",
+        metavar: "EVEN",
+        placeholder: 0,
+        parse: (input) => {
+          const n = Number(input);
+          return Number.isInteger(n)
+            ? { success: true, value: n - (n % 2) }
+            : { success: false, error: message`Expected a number.` };
+        },
+        format: (value) => String(value),
+        normalize: (value) => value - (value % 2),
+      };
+      const parser = withDefault(
+        option("--n", firstOf(choice(["x"]), firstOf(choice(["7"]), evenizer))),
+        7,
+      );
+      const result = parse(parser, []);
+      assert.ok(result.success);
+      assert.equal(result.value, 6);
+    });
+  });
+
+  describe("construction errors", () => {
+    it("should throw TypeError when fewer than two parsers are given", () => {
+      assert.throws(
+        // @ts-expect-error: firstOf() requires at least two parsers.
+        () => firstOf(integer()),
+        TypeError,
+      );
+      assert.throws(
+        // @ts-expect-error: firstOf() requires at least two parsers.
+        () => firstOf(integer(), { metavar: "COUNT" }),
+        TypeError,
+      );
+    });
+
+    it("should throw TypeError for non-parser arguments", () => {
+      assert.throws(
+        // @ts-expect-error: 42 is not a value parser.
+        () => firstOf(integer(), 42),
+        TypeError,
+      );
+    });
+
+    it("should throw TypeError for dependency-derived constituents", () => {
+      // A derived value parser parses with *default* dependency values when
+      // called directly, and firstOf() cannot forward the derived metadata
+      // that option()/argument() use to re-run it with live values, so
+      // accepting one would silently validate against the wrong branch.
+      const mode = dependency(choice(["dev", "prod"]));
+      const derived = mode.derive({
+        metavar: "LEVEL",
+        mode: "sync",
+        factory: (m) =>
+          choice(m === "dev" ? ["debug", "info"] : ["warn", "error"]),
+        defaultValue: () => "dev",
+      });
+      assert.throws(() => firstOf(derived, choice(["auto"])), TypeError);
+      assert.throws(() => firstOf(choice(["auto"]), derived), TypeError);
+    });
+
+    it("should throw TypeError for async constituents", () => {
+      const asyncParser: ValueParser<"async", string> = {
+        mode: "async",
+        metavar: "ASYNC",
+        placeholder: "",
+        parse: (input) => Promise.resolve({ success: true, value: input }),
+        format: (value) => value,
+      };
+      assert.throws(
+        // @ts-expect-error: firstOf() only accepts sync value parsers.
+        () => firstOf(string(), asyncParser),
+        TypeError,
+      );
+    });
+  });
+});
+
+// cSpell: ignore résumé phonebk toolongcode hanidec jpan hebr arabext
+// cSpell: ignore localhosts lojban rozaj Resian

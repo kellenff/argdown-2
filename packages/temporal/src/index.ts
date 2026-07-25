@@ -1,0 +1,915 @@
+import type { ValueParser, ValueParserResult } from "@optique/core/valueparser";
+import type { Suggestion } from "@optique/core/parser";
+import { type Message, message } from "@optique/core/message";
+import {
+  ensureNonEmptyString,
+  type NonEmptyString,
+} from "@optique/core/nonempty";
+
+function ensureTemporal(): void {
+  if (typeof globalThis.Temporal === "undefined") {
+    throw new TypeError(
+      "Temporal API is not available. " +
+        "Use a runtime with Temporal support or install a polyfill " +
+        "like @js-temporal/polyfill.",
+    );
+  }
+}
+
+/**
+ * IANA Time Zone Database identifier.
+ *
+ * Represents valid timezone identifiers that follow the IANA timezone naming
+ * convention:
+ *
+ * - Two-level: `"Asia/Seoul"`, `"America/New_York"`, `"Europe/London"`
+ * - Three-level: `"America/Argentina/Buenos_Aires"`,
+ *   `"America/Kentucky/Louisville"`
+ * - Standard single-segment: `"UTC"`, `"GMT"`, `"Universal"`
+ * - Fixed-offset abbreviations: `"EST"`, `"MST"`, `"HST"`
+ * - Deprecated aliases: `"Japan"`, `"Singapore"`, `"Cuba"`
+ *
+ * @example
+ * ```typescript
+ * const seoul: TimeZone = "Asia/Seoul";
+ * const utc: TimeZone = "UTC";
+ * const gmt: TimeZone = "GMT";
+ * const buenosAires: TimeZone = "America/Argentina/Buenos_Aires";
+ * ```
+ */
+export type TimeZone =
+  | `${string}/${string}/${string}`
+  | `${string}/${string}`
+  | SingleSegmentTimeZone;
+
+/**
+ * Options for creating an instant parser.
+ */
+export interface InstantOptions {
+  /**
+   * The metavariable name for this parser. This is used in help messages to
+   * indicate what kind of value this parser expects. Usually a single
+   * word in uppercase, like `TIMESTAMP` or `INSTANT`.
+   * @default `"TIMESTAMP"`
+   */
+  readonly metavar?: NonEmptyString;
+
+  /**
+   * Custom error messages for instant parsing failures.
+   * @since 0.5.0
+   */
+  readonly errors?: {
+    /**
+     * Custom error message when input is not a valid instant format.
+     * Can be a static message or a function that receives the input.
+     * @since 0.5.0
+     */
+    invalidFormat?: Message | ((input: string) => Message);
+  };
+}
+
+/**
+ * Options for creating a duration parser.
+ */
+export interface DurationOptions {
+  /**
+   * The metavariable name for this parser. This is used in help messages to
+   * indicate what kind of value this parser expects. Usually a single
+   * word in uppercase, like `DURATION`.
+   * @default `"DURATION"`
+   */
+  readonly metavar?: NonEmptyString;
+
+  /**
+   * Custom error messages for duration parsing failures.
+   * @since 0.5.0
+   */
+  readonly errors?: {
+    /**
+     * Custom error message when input is not a valid duration format.
+     * Can be a static message or a function that receives the input.
+     * @since 0.5.0
+     */
+    invalidFormat?: Message | ((input: string) => Message);
+  };
+}
+
+/**
+ * Options for creating a zoned datetime parser.
+ */
+export interface ZonedDateTimeOptions {
+  /**
+   * The metavariable name for this parser. This is used in help messages to
+   * indicate what kind of value this parser expects. Usually a single
+   * word in uppercase, like `ZONED_DATETIME`.
+   * @default `"ZONED_DATETIME"`
+   */
+  readonly metavar?: NonEmptyString;
+
+  /**
+   * Custom error messages for zoned datetime parsing failures.
+   * @since 0.5.0
+   */
+  readonly errors?: {
+    /**
+     * Custom error message when input is not a valid zoned datetime format.
+     * Can be a static message or a function that receives the input.
+     * @since 0.5.0
+     */
+    invalidFormat?: Message | ((input: string) => Message);
+  };
+}
+
+/**
+ * Options for creating a plain date parser.
+ */
+export interface PlainDateOptions {
+  /**
+   * The metavariable name for this parser. This is used in help messages to
+   * indicate what kind of value this parser expects. Usually a single
+   * word in uppercase, like `DATE`.
+   * @default `"DATE"`
+   */
+  readonly metavar?: NonEmptyString;
+
+  /**
+   * Custom error messages for plain date parsing failures.
+   * @since 0.5.0
+   */
+  readonly errors?: {
+    /**
+     * Custom error message when input is not a valid date format.
+     * Can be a static message or a function that receives the input.
+     * @since 0.5.0
+     */
+    invalidFormat?: Message | ((input: string) => Message);
+  };
+}
+
+/**
+ * Options for creating a plain time parser.
+ */
+export interface PlainTimeOptions {
+  /**
+   * The metavariable name for this parser. This is used in help messages to
+   * indicate what kind of value this parser expects. Usually a single
+   * word in uppercase, like `TIME`.
+   * @default `"TIME"`
+   */
+  readonly metavar?: NonEmptyString;
+
+  /**
+   * Custom error messages for plain time parsing failures.
+   * @since 0.5.0
+   */
+  readonly errors?: {
+    /**
+     * Custom error message when input is not a valid time format.
+     * Can be a static message or a function that receives the input.
+     * @since 0.5.0
+     */
+    invalidFormat?: Message | ((input: string) => Message);
+  };
+}
+
+/**
+ * Options for creating a plain datetime parser.
+ */
+export interface PlainDateTimeOptions {
+  /**
+   * The metavariable name for this parser. This is used in help messages to
+   * indicate what kind of value this parser expects. Usually a single
+   * word in uppercase, like `DATETIME`.
+   * @default `"DATETIME"`
+   */
+  readonly metavar?: NonEmptyString;
+
+  /**
+   * Custom error messages for plain datetime parsing failures.
+   * @since 0.5.0
+   */
+  readonly errors?: {
+    /**
+     * Custom error message when input is not a valid datetime format.
+     * Can be a static message or a function that receives the input.
+     * @since 0.5.0
+     */
+    invalidFormat?: Message | ((input: string) => Message);
+  };
+}
+
+/**
+ * Options for creating a plain year-month parser.
+ */
+export interface PlainYearMonthOptions {
+  /**
+   * The metavariable name for this parser. This is used in help messages to
+   * indicate what kind of value this parser expects. Usually a single
+   * word in uppercase, like `YEAR-MONTH`.
+   * @default `"YEAR-MONTH"`
+   */
+  readonly metavar?: NonEmptyString;
+
+  /**
+   * Custom error messages for plain year-month parsing failures.
+   * @since 0.5.0
+   */
+  readonly errors?: {
+    /**
+     * Custom error message when input is not a valid year-month format.
+     * Can be a static message or a function that receives the input.
+     * @since 0.5.0
+     */
+    invalidFormat?: Message | ((input: string) => Message);
+  };
+}
+
+/**
+ * Options for creating a plain month-day parser.
+ */
+export interface PlainMonthDayOptions {
+  /**
+   * The metavariable name for this parser. This is used in help messages to
+   * indicate what kind of value this parser expects. Usually a single
+   * word in uppercase, like `MONTH-DAY`.
+   * @default `"MONTH-DAY"`
+   */
+  readonly metavar?: NonEmptyString;
+
+  /**
+   * Custom error messages for plain month-day parsing failures.
+   * @since 0.5.0
+   */
+  readonly errors?: {
+    /**
+     * Custom error message when input is not a valid month-day format.
+     * Can be a static message or a function that receives the input.
+     * @since 0.5.0
+     */
+    invalidFormat?: Message | ((input: string) => Message);
+  };
+}
+
+/**
+ * Options for creating a timezone parser.
+ */
+export interface TimeZoneOptions {
+  /**
+   * The metavariable name for this parser. This is used in help messages to
+   * indicate what kind of value this parser expects. Usually a single
+   * word in uppercase, like `TIMEZONE`.
+   * @default `"TIMEZONE"`
+   */
+  readonly metavar?: NonEmptyString;
+
+  /**
+   * Custom error messages for timezone parsing failures.
+   * @since 0.5.0
+   */
+  readonly errors?: {
+    /**
+     * Custom error message when input is not a valid timezone identifier.
+     * Can be a static message or a function that receives the input.
+     * @since 0.5.0
+     */
+    invalidFormat?: Message | ((input: string) => Message);
+  };
+}
+
+/**
+ * Creates a ValueParser for parsing Temporal.Instant from ISO 8601 strings.
+ *
+ * Accepts strings like:
+ *
+ * - `"2020-01-23T17:04:36.491865121Z"`
+ * - `"2020-01-23T17:04:36Z"`
+ *
+ * @param options Configuration options for the instant parser.
+ * @returns A ValueParser that parses strings into Temporal.Instant values.
+ * @throws {TypeError} (from `parse()`) If the Temporal API is not available
+ *   at runtime.
+ */
+export function instant(
+  options: InstantOptions = {},
+): ValueParser<"sync", Temporal.Instant> {
+  const metavar = options.metavar ?? "TIMESTAMP";
+  ensureNonEmptyString(metavar);
+  return {
+    mode: "sync",
+    metavar,
+    get placeholder(): Temporal.Instant {
+      try {
+        return Temporal.Instant.from("1970-01-01T00:00:00Z");
+      } catch {
+        return undefined as unknown as Temporal.Instant;
+      }
+    },
+    parse(input: string): ValueParserResult<Temporal.Instant> {
+      ensureTemporal();
+      try {
+        const value = Temporal.Instant.from(input);
+        return { success: true, value };
+      } catch {
+        return {
+          success: false,
+          error: options.errors?.invalidFormat
+            ? (typeof options.errors.invalidFormat === "function"
+              ? options.errors.invalidFormat(input)
+              : options.errors.invalidFormat)
+            : message`Invalid instant: ${input}. Expected ISO 8601 format like ${"2020-01-23T17:04:36Z"}.`,
+        };
+      }
+    },
+    format(value: Temporal.Instant): string {
+      return value.toString();
+    },
+  };
+}
+
+/**
+ * Creates a ValueParser for parsing Temporal.Duration from ISO 8601 duration strings.
+ *
+ * Accepts strings like:
+ *
+ * - `"PT1H30M"`
+ * - `"P1DT12H"`
+ * - `"PT30S"`
+ *
+ * @param options Configuration options for the duration parser.
+ * @returns A ValueParser that parses strings into Temporal.Duration values.
+ * @throws {TypeError} (from `parse()`) If the Temporal API is not available
+ *   at runtime.
+ */
+export function duration(
+  options: DurationOptions = {},
+): ValueParser<"sync", Temporal.Duration> {
+  const metavar = options.metavar ?? "DURATION";
+  ensureNonEmptyString(metavar);
+  return {
+    mode: "sync",
+    metavar,
+    get placeholder(): Temporal.Duration {
+      try {
+        return Temporal.Duration.from("PT0S");
+      } catch {
+        return undefined as unknown as Temporal.Duration;
+      }
+    },
+    parse(input: string): ValueParserResult<Temporal.Duration> {
+      ensureTemporal();
+      try {
+        const value = Temporal.Duration.from(input);
+        return { success: true, value };
+      } catch {
+        return {
+          success: false,
+          error: options.errors?.invalidFormat
+            ? (typeof options.errors.invalidFormat === "function"
+              ? options.errors.invalidFormat(input)
+              : options.errors.invalidFormat)
+            : message`Invalid duration: ${input}. Expected ISO 8601 format like ${"PT1H30M"}.`,
+        };
+      }
+    },
+    format(value: Temporal.Duration): string {
+      return value.toString();
+    },
+  };
+}
+
+/**
+ * Creates a ValueParser for parsing Temporal.ZonedDateTime from ISO 8601 strings with timezone.
+ *
+ * Accepts strings like:
+ *
+ * - `"2020-01-23T17:04:36.491865121+01:00[Europe/Paris]"`
+ * - `"2020-01-23T17:04:36Z[UTC]"`
+ *
+ * @param options Configuration options for the zoned datetime parser.
+ * @returns A ValueParser that parses strings into Temporal.ZonedDateTime values.
+ * @throws {TypeError} (from `parse()`) If the Temporal API is not available
+ *   at runtime.
+ */
+export function zonedDateTime(
+  options: ZonedDateTimeOptions = {},
+): ValueParser<"sync", Temporal.ZonedDateTime> {
+  const metavar = options.metavar ?? "ZONED_DATETIME";
+  ensureNonEmptyString(metavar);
+  return {
+    mode: "sync",
+    metavar,
+    get placeholder(): Temporal.ZonedDateTime {
+      try {
+        return Temporal.ZonedDateTime.from(
+          "1970-01-01T00:00:00+00:00[UTC]",
+        );
+      } catch {
+        return undefined as unknown as Temporal.ZonedDateTime;
+      }
+    },
+    parse(input: string): ValueParserResult<Temporal.ZonedDateTime> {
+      ensureTemporal();
+      try {
+        const value = Temporal.ZonedDateTime.from(input);
+        return { success: true, value };
+      } catch {
+        return {
+          success: false,
+          error: options.errors?.invalidFormat
+            ? (typeof options.errors.invalidFormat === "function"
+              ? options.errors.invalidFormat(input)
+              : options.errors.invalidFormat)
+            : message`Invalid zoned datetime: ${input}. Expected ISO 8601 format with timezone like ${"2020-01-23T17:04:36+01:00[Europe/Paris]"}.`,
+        };
+      }
+    },
+    format(value: Temporal.ZonedDateTime): string {
+      return value.toString();
+    },
+  };
+}
+
+/**
+ * Optional RFC 9557 calendar annotation suffix, e.g. `[u-ca=gregory]`.
+ * Accepts case-insensitive values and the optional critical flag (`!`).
+ * Used by all plain Temporal regexes to accept `toString()` output for
+ * non-ISO calendars.
+ */
+const CALENDAR_ANNOTATION = String.raw`(\[!?u-ca=[a-zA-Z0-9\-]+\])?`;
+
+/**
+ * Required RFC 9557 calendar annotation (non-optional variant used when the
+ * annotation must be present, e.g. for reference-day/year forms).
+ */
+const CALENDAR_ANNOTATION_REQUIRED = String.raw`\[!?u-ca=[a-zA-Z0-9\-]+\]`;
+
+/**
+ * Year portion: either 4 digits (`YYYY`) or a sign-prefixed 6-digit expanded
+ * year (`+YYYYYY`/`-YYYYYY`).
+ */
+const YEAR = String.raw`([+-]\d{6}|\d{4})`;
+
+/** ISO 8601 fractional seconds with `.` or `,` separator. */
+const FRACTIONAL = String.raw`[.,]\d+`;
+
+/** Extended date: `YYYY-MM-DD` or `±YYYYYY-MM-DD`. */
+const DATE_EXTENDED = `${YEAR}-\\d{2}-\\d{2}`;
+
+/** Basic date: `YYYYMMDD` or `±YYYYYYMMDD`. */
+const DATE_BASIC = `${YEAR}\\d{4}`;
+
+/** Extended time: `HH:MM[:SS[.frac]]`. */
+const TIME_EXTENDED = `\\d{2}:\\d{2}(:\\d{2}(${FRACTIONAL})?)?`;
+
+/** Basic time: `HH`, `HHMM`, or `HHMMSS[.frac]`. */
+const TIME_BASIC = `\\d{2}(\\d{2}(\\d{2}(${FRACTIONAL})?)?)?`;
+
+/**
+ * Matches YYYY-MM-DD (extended) or YYYYMMDD (basic) date forms only (no time
+ * component).  Both forms accept expanded years and calendar annotations.
+ */
+const PLAIN_DATE_RE = new RegExp(
+  `^(${DATE_EXTENDED}|${DATE_BASIC})${CALENDAR_ANNOTATION}$`,
+);
+
+/**
+ * Matches time forms only (no date prefix).  Accepts extended
+ * (`HH:MM[:SS[.frac]]`), basic (`HH`, `HHMM`, `HHMMSS[.frac]`), and
+ * `T`-prefixed variants.  Calendar annotations are accepted for consistency
+ * with `Temporal.PlainTime.from()` on polyfill runtimes.
+ */
+const PLAIN_TIME_RE = new RegExp(
+  `^[Tt]?(${TIME_EXTENDED}|${TIME_BASIC})${CALENDAR_ANNOTATION}$`,
+);
+
+/**
+ * Matches date-time strings with both date and time parts.  Accepts extended,
+ * basic, and mixed forms (e.g. `2020-01-23T170436`).  The separator may be
+ * `T`, `t`, or a space.  The time portion may be reduced-precision (hour
+ * only).
+ */
+const PLAIN_DATETIME_RE = new RegExp(
+  `^(${DATE_EXTENDED}|${DATE_BASIC})[Tt ](${TIME_EXTENDED}|${TIME_BASIC})${CALENDAR_ANNOTATION}$`,
+);
+
+/**
+ * Matches YYYY-MM (extended) or YYYYMM (basic), or a full date
+ * (extended or basic) with a required calendar annotation (the reference day
+ * is emitted by `toString()` for non-ISO calendars).
+ */
+const PLAIN_YEAR_MONTH_RE = new RegExp(
+  `^(${YEAR}-\\d{2}(${CALENDAR_ANNOTATION}|-\\d{2}${CALENDAR_ANNOTATION_REQUIRED})|${YEAR}\\d{2}(${CALENDAR_ANNOTATION}|\\d{2}${CALENDAR_ANNOTATION_REQUIRED}))$`,
+);
+
+/**
+ * Matches MM-DD, --MM-DD, MMDD, or --MMDD month-day forms, or a full date
+ * (extended or basic) with a required calendar annotation (the reference year
+ * is emitted by `toString()` for non-ISO calendars).
+ */
+const PLAIN_MONTH_DAY_RE = new RegExp(
+  `^((--)?(\\d{2}-\\d{2}|\\d{4})${CALENDAR_ANNOTATION}|(${DATE_EXTENDED}|${DATE_BASIC})${CALENDAR_ANNOTATION_REQUIRED})$`,
+);
+
+/**
+ * Creates a ValueParser for parsing Temporal.PlainDate from ISO 8601 date strings.
+ *
+ * Accepts strings like:
+ *
+ * - `"2020-01-23"`
+ * - `"2020-12-31"`
+ *
+ * @param options Configuration options for the plain date parser.
+ * @returns A ValueParser that parses strings into Temporal.PlainDate values.
+ * @throws {TypeError} (from `parse()`) If the Temporal API is not available
+ *   at runtime.
+ */
+export function plainDate(
+  options: PlainDateOptions = {},
+): ValueParser<"sync", Temporal.PlainDate> {
+  const metavar = options.metavar ?? "DATE";
+  ensureNonEmptyString(metavar);
+  return {
+    mode: "sync",
+    metavar,
+    get placeholder(): Temporal.PlainDate {
+      try {
+        return Temporal.PlainDate.from("1970-01-01");
+      } catch {
+        return undefined as unknown as Temporal.PlainDate;
+      }
+    },
+    parse(input: string): ValueParserResult<Temporal.PlainDate> {
+      ensureTemporal();
+      try {
+        if (!PLAIN_DATE_RE.test(input)) throw new RangeError();
+        const value = Temporal.PlainDate.from(input);
+        return { success: true, value };
+      } catch {
+        return {
+          success: false,
+          error: options.errors?.invalidFormat
+            ? (typeof options.errors.invalidFormat === "function"
+              ? options.errors.invalidFormat(input)
+              : options.errors.invalidFormat)
+            : message`Invalid date: ${input}. Expected ISO 8601 format like ${"2020-01-23"}.`,
+        };
+      }
+    },
+    format(value: Temporal.PlainDate): string {
+      return value.toString();
+    },
+  };
+}
+
+/**
+ * Creates a ValueParser for parsing Temporal.PlainTime from ISO 8601 time strings.
+ *
+ * Accepts strings like:
+ *
+ * - `"17:04:36"`
+ * - `"17:04:36.491865121"`
+ *
+ * @param options Configuration options for the plain time parser.
+ * @returns A ValueParser that parses strings into Temporal.PlainTime values.
+ * @throws {TypeError} (from `parse()`) If the Temporal API is not available
+ *   at runtime.
+ */
+export function plainTime(
+  options: PlainTimeOptions = {},
+): ValueParser<"sync", Temporal.PlainTime> {
+  const metavar = options.metavar ?? "TIME";
+  ensureNonEmptyString(metavar);
+  return {
+    mode: "sync",
+    metavar,
+    get placeholder(): Temporal.PlainTime {
+      try {
+        return Temporal.PlainTime.from("00:00:00");
+      } catch {
+        return undefined as unknown as Temporal.PlainTime;
+      }
+    },
+    parse(input: string): ValueParserResult<Temporal.PlainTime> {
+      ensureTemporal();
+      try {
+        if (!PLAIN_TIME_RE.test(input)) throw new RangeError();
+        const value = Temporal.PlainTime.from(input);
+        return { success: true, value };
+      } catch {
+        return {
+          success: false,
+          error: options.errors?.invalidFormat
+            ? (typeof options.errors.invalidFormat === "function"
+              ? options.errors.invalidFormat(input)
+              : options.errors.invalidFormat)
+            : message`Invalid time: ${input}. Expected ISO 8601 format like ${"17:04:36"}.`,
+        };
+      }
+    },
+    format(value: Temporal.PlainTime): string {
+      return value.toString();
+    },
+  };
+}
+
+/**
+ * Creates a ValueParser for parsing Temporal.PlainDateTime from ISO 8601 datetime strings.
+ *
+ * Accepts strings like:
+ *
+ * - `"2020-01-23T17:04:36"`
+ * - `"2020-01-23T17:04:36.491865121"`
+ *
+ * @param options Configuration options for the plain datetime parser.
+ * @returns A ValueParser that parses strings into Temporal.PlainDateTime values.
+ * @throws {TypeError} (from `parse()`) If the Temporal API is not available
+ *   at runtime.
+ */
+export function plainDateTime(
+  options: PlainDateTimeOptions = {},
+): ValueParser<"sync", Temporal.PlainDateTime> {
+  const metavar = options.metavar ?? "DATETIME";
+  ensureNonEmptyString(metavar);
+  return {
+    mode: "sync",
+    metavar,
+    get placeholder(): Temporal.PlainDateTime {
+      try {
+        return Temporal.PlainDateTime.from("1970-01-01T00:00:00");
+      } catch {
+        return undefined as unknown as Temporal.PlainDateTime;
+      }
+    },
+    parse(input: string): ValueParserResult<Temporal.PlainDateTime> {
+      ensureTemporal();
+      try {
+        if (!PLAIN_DATETIME_RE.test(input)) throw new RangeError();
+        const value = Temporal.PlainDateTime.from(input);
+        return { success: true, value };
+      } catch {
+        return {
+          success: false,
+          error: options.errors?.invalidFormat
+            ? (typeof options.errors.invalidFormat === "function"
+              ? options.errors.invalidFormat(input)
+              : options.errors.invalidFormat)
+            : message`Invalid datetime: ${input}. Expected ISO 8601 format like ${"2020-01-23T17:04:36"}.`,
+        };
+      }
+    },
+    format(value: Temporal.PlainDateTime): string {
+      return value.toString();
+    },
+  };
+}
+
+/**
+ * Creates a ValueParser for parsing Temporal.PlainYearMonth from ISO 8601 year-month strings.
+ *
+ * Accepts strings like:
+ *
+ * - `"2020-01"`
+ * - `"2020-12"`
+ *
+ * @param options Configuration options for the plain year-month parser.
+ * @returns A ValueParser that parses strings into Temporal.PlainYearMonth values.
+ * @throws {TypeError} (from `parse()`) If the Temporal API is not available
+ *   at runtime.
+ */
+export function plainYearMonth(
+  options: PlainYearMonthOptions = {},
+): ValueParser<"sync", Temporal.PlainYearMonth> {
+  const metavar = options.metavar ?? "YEAR-MONTH";
+  ensureNonEmptyString(metavar);
+  return {
+    mode: "sync",
+    metavar,
+    get placeholder(): Temporal.PlainYearMonth {
+      try {
+        return Temporal.PlainYearMonth.from("1970-01");
+      } catch {
+        return undefined as unknown as Temporal.PlainYearMonth;
+      }
+    },
+    parse(input: string): ValueParserResult<Temporal.PlainYearMonth> {
+      ensureTemporal();
+      try {
+        if (!PLAIN_YEAR_MONTH_RE.test(input)) throw new RangeError();
+        const value = Temporal.PlainYearMonth.from(input);
+        return { success: true, value };
+      } catch {
+        return {
+          success: false,
+          error: options.errors?.invalidFormat
+            ? (typeof options.errors.invalidFormat === "function"
+              ? options.errors.invalidFormat(input)
+              : options.errors.invalidFormat)
+            : message`Invalid year-month: ${input}. Expected ISO 8601 format like ${"2020-01"}.`,
+        };
+      }
+    },
+    format(value: Temporal.PlainYearMonth): string {
+      return value.toString();
+    },
+  };
+}
+
+/**
+ * Creates a ValueParser for parsing Temporal.PlainMonthDay from ISO 8601 month-day strings.
+ *
+ * Accepts strings like:
+ *
+ * - `"01-23"`
+ * - `"12-31"`
+ *
+ * @param options Configuration options for the plain month-day parser.
+ * @returns A ValueParser that parses strings into Temporal.PlainMonthDay values.
+ * @throws {TypeError} (from `parse()`) If the Temporal API is not available
+ *   at runtime.
+ */
+export function plainMonthDay(
+  options: PlainMonthDayOptions = {},
+): ValueParser<"sync", Temporal.PlainMonthDay> {
+  const metavar = options.metavar ?? "MONTH-DAY";
+  ensureNonEmptyString(metavar);
+  return {
+    mode: "sync",
+    metavar,
+    get placeholder(): Temporal.PlainMonthDay {
+      try {
+        return Temporal.PlainMonthDay.from("01-01");
+      } catch {
+        return undefined as unknown as Temporal.PlainMonthDay;
+      }
+    },
+    parse(input: string): ValueParserResult<Temporal.PlainMonthDay> {
+      ensureTemporal();
+      try {
+        if (!PLAIN_MONTH_DAY_RE.test(input)) throw new RangeError();
+        const value = Temporal.PlainMonthDay.from(input);
+        return { success: true, value };
+      } catch {
+        return {
+          success: false,
+          error: options.errors?.invalidFormat
+            ? (typeof options.errors.invalidFormat === "function"
+              ? options.errors.invalidFormat(input)
+              : options.errors.invalidFormat)
+            : message`Invalid month-day: ${input}. Expected ISO 8601 format like ${"01-23"}.`,
+        };
+      }
+    },
+    format(value: Temporal.PlainMonthDay): string {
+      return value.toString();
+    },
+  };
+}
+
+/**
+ * Single-segment IANA timezone identifiers accepted across all supported
+ * runtimes (Deno, Node.js, Bun).  This tuple is the single source of truth:
+ * {@link SingleSegmentTimeZone} is derived from it, and the runtime lookup
+ * {@link singleSegmentTimeZoneLookup} is built from it.
+ */
+const singleSegmentTimeZoneList = [
+  "UTC",
+  "GMT",
+  "GMT0",
+  "GMT+0",
+  "GMT-0",
+  "UCT",
+  "Universal",
+  "Greenwich",
+  "Zulu",
+  "EST",
+  "MST",
+  "HST",
+  "Cuba",
+  "Egypt",
+  "Eire",
+  "GB",
+  "GB-Eire",
+  "Hongkong",
+  "Iceland",
+  "Iran",
+  "Israel",
+  "Jamaica",
+  "Japan",
+  "Kwajalein",
+  "Libya",
+  "Navajo",
+  "NZ",
+  "NZ-CHAT",
+  "Poland",
+  "Portugal",
+  "PRC",
+  "ROC",
+  "ROK",
+  "Singapore",
+  "Turkey",
+  "W-SU",
+] as const;
+
+type SingleSegmentTimeZone = typeof singleSegmentTimeZoneList[number];
+
+const singleSegmentTimeZoneLookup: ReadonlyMap<string, SingleSegmentTimeZone> =
+  new Map(
+    singleSegmentTimeZoneList.map((timeZone) => [
+      timeZone.toLowerCase(),
+      timeZone,
+    ]),
+  );
+
+/**
+ * Creates a ValueParser for parsing IANA Time Zone Database identifiers.
+ *
+ * Accepts strings like:
+ *
+ * - `"Asia/Seoul"`
+ * - `"America/New_York"`
+ * - `"Europe/London"`
+ * - `"UTC"`
+ * - `"GMT"`
+ * - `"EST"`
+ *
+ * @param options Configuration options for the timezone parser.
+ * @returns A ValueParser that parses and validates timezone identifiers.
+ * @throws {TypeError} (from `parse()`) If the Temporal API is not available
+ *   at runtime.
+ */
+export function timeZone(
+  options: TimeZoneOptions = {},
+): ValueParser<"sync", TimeZone> {
+  const metavar = options.metavar ?? "TIMEZONE";
+  ensureNonEmptyString(metavar);
+  return {
+    mode: "sync",
+    metavar,
+    placeholder: "UTC" as TimeZone,
+    parse(input: string): ValueParserResult<TimeZone> {
+      ensureTemporal();
+      try {
+        // For single-segment identifiers (no "/"), only accept those
+        // in the curated allowlist to ensure cross-runtime consistency.
+        // Some Temporal implementations reject allowlisted links such as
+        // "CET", while others accept additional identifiers like "Factory".
+        // The lookup is case-insensitive and normalizes to canonical casing.
+        if (!input.includes("/")) {
+          const canonical = singleSegmentTimeZoneLookup.get(
+            input.toLowerCase(),
+          );
+          if (canonical == null) {
+            throw new RangeError();
+          }
+          return { success: true, value: canonical };
+        }
+
+        // Validate by creating a ZonedDateTime with this timezone
+        // This will throw if the timezone is invalid
+        Temporal.ZonedDateTime.from({
+          year: 2020,
+          month: 1,
+          day: 1,
+          timeZone: input,
+        });
+        return { success: true, value: input as TimeZone };
+      } catch {
+        return {
+          success: false,
+          error: options.errors?.invalidFormat
+            ? (typeof options.errors.invalidFormat === "function"
+              ? options.errors.invalidFormat(input)
+              : options.errors.invalidFormat)
+            : message`Invalid timezone identifier: ${input}. Must be a valid IANA timezone like "Asia/Seoul" or "UTC".`,
+        };
+      }
+    },
+    format(value: TimeZone): string {
+      return value;
+    },
+    *suggest(prefix: string): Iterable<Suggestion> {
+      let timezones: string[];
+
+      try {
+        // Use the modern Intl API to get all supported timezones
+        timezones = Intl.supportedValuesOf("timeZone");
+      } catch {
+        // If Intl.supportedValuesOf is not available, provide at least UTC and GMT
+        timezones = ["UTC", "GMT"];
+      }
+
+      // Always ensure UTC and GMT are included if they're not already
+      if (!timezones.includes("UTC")) timezones.unshift("UTC");
+      if (!timezones.includes("GMT")) timezones.unshift("GMT");
+
+      for (const timezone of timezones) {
+        if (timezone.toLowerCase().startsWith(prefix.toLowerCase())) {
+          yield {
+            kind: "literal",
+            text: timezone,
+          };
+        }
+      }
+    },
+  };
+}

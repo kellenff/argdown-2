@@ -1,0 +1,3441 @@
+import {
+  cloneDocEntry,
+  deduplicateDocEntries,
+  deduplicateDocFragments,
+  type DocEntry,
+  type DocPage,
+  type DocPageFormatOptions,
+  type DocSection,
+  formatDocPage,
+  isDocEntryHidden,
+} from "@optique/core/doc";
+import { message, valueSet } from "@optique/core/message";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { getDisplayWidth } from "#src/displaywidth.ts";
+
+describe("formatDocPage", () => {
+  it("should format a minimal page with only sections", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "argument", metavar: "test" },
+          description: [{ type: "text", text: "A test command" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page);
+    const expected = "\n  test                        A test command\n";
+    assert.equal(result, expected);
+  });
+
+  it("should compute maxWidth from visible atomic usage terms", () => {
+    const page: DocPage = {
+      usage: [
+        { type: "optional", terms: [{ type: "literal", value: "sub" }] },
+        {
+          type: "multiple",
+          min: 0,
+          terms: [{ type: "passthrough" }],
+        },
+        {
+          type: "exclusive",
+          terms: [
+            [{ type: "command", name: "secret", hidden: true }],
+            [{ type: "ellipsis" }],
+          ],
+        },
+      ],
+      sections: [],
+    };
+
+    assert.throws(
+      () => formatDocPage("app", page, { maxWidth: 11 }),
+      {
+        name: "RangeError",
+        message: "maxWidth must be at least 12, got 11.",
+      },
+    );
+    const result = formatDocPage("app", page, { maxWidth: 12 });
+    assert.ok(result.startsWith("Usage: app"));
+    assert.ok(result.includes("sub"));
+    assert.ok(result.includes("[...]"));
+    assert.ok(!result.includes("secret"));
+  });
+
+  it("should format a page with brief", () => {
+    const page: DocPage = {
+      brief: [{ type: "text", text: "This is a brief description" }],
+      sections: [],
+    };
+
+    const result = formatDocPage("myapp", page);
+    const expected = "This is a brief description\n";
+    assert.equal(result, expected);
+  });
+
+  it("should format a page with usage", () => {
+    const page: DocPage = {
+      usage: [{ type: "command", name: "command" }],
+      sections: [],
+    };
+
+    const result = formatDocPage("myapp", page);
+    const expected = "Usage: myapp command\n";
+    assert.equal(result, expected);
+  });
+
+  it("should omit usage when showUsage is false", () => {
+    const page: DocPage = {
+      brief: message`Project tools.`,
+      usage: [{ type: "command", name: "build" }],
+      description: message`Run project automation commands.`,
+      sections: [{
+        entries: [{
+          term: { type: "command", name: "build" },
+          description: message`Build the project.`,
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, { showUsage: false });
+
+    assert.ok(!result.includes("Usage:"));
+    assert.ok(result.includes("Project tools."));
+    assert.ok(result.includes("Run project automation commands."));
+    assert.ok(result.includes("build"));
+    assert.ok(result.includes("Build the project."));
+  });
+
+  it("should ignore suppressed usage when validating maxWidth", () => {
+    const page: DocPage = {
+      usage: [{
+        type: "command",
+        name: "very-long-command-name-that-would-not-fit",
+      }],
+      sections: [{
+        entries: [{
+          term: { type: "command", name: "run" },
+          description: message`Run.`,
+        }],
+      }],
+    };
+
+    assert.throws(
+      () => formatDocPage("myapp", page, { maxWidth: 10 }),
+      RangeError,
+    );
+
+    const result = formatDocPage("myapp", page, {
+      maxWidth: 10,
+      showUsage: false,
+    });
+
+    assert.ok(!result.includes("Usage:"));
+    assert.ok(result.includes("run"));
+  });
+
+  it("should format a page with description", () => {
+    const page: DocPage = {
+      description: [{ type: "text", text: "This is a detailed description" }],
+      sections: [],
+    };
+
+    const result = formatDocPage("myapp", page);
+    const expected = "\nThis is a detailed description\n";
+    assert.equal(result, expected);
+  });
+
+  it("should format a page with footer", () => {
+    const page: DocPage = {
+      footer: [{ type: "text", text: "This is footer text" }],
+      sections: [],
+    };
+
+    const result = formatDocPage("myapp", page);
+    const expected = "\nThis is footer text";
+    assert.equal(result, expected);
+  });
+
+  it("should format sections with titles", () => {
+    const page: DocPage = {
+      sections: [{
+        title: "Options",
+        entries: [{
+          term: { type: "option", names: ["-v", "--verbose"] },
+          description: [{ type: "text", text: "Enable verbose output" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page);
+    const expected =
+      "\nOptions:\n  -v, --verbose               Enable verbose output\n";
+    assert.equal(result, expected);
+  });
+
+  it("should format entries with default values when showDefault is false", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-p", "--port"] },
+          description: [{ type: "text", text: "Port number" }],
+          default: [{ type: "text", text: "8080" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page);
+    const expected = "\n  -p, --port                  Port number\n";
+    assert.equal(result, expected);
+  });
+
+  it("should show default values when showDefault is true", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-p", "--port"] },
+          description: [{ type: "text", text: "Port number" }],
+          default: [{ type: "text", text: "8080" }],
+        }, {
+          term: { type: "option", names: ["-h", "--host"] },
+          default: [{ type: "text", text: "localhost" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, { showDefault: true });
+    const expected =
+      "\n  -p, --port                  Port number [8080]\n  -h, --host                   [localhost]\n";
+    assert.equal(result, expected);
+  });
+
+  it("should show default values with custom prefix and suffix", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-f", "--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          default: [{ type: "text", text: "json" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showDefault: { prefix: " (default: ", suffix: ")" },
+    });
+    const expected =
+      "\n  -f, --format                Output format (default: json)\n";
+    assert.equal(result, expected);
+  });
+
+  it("should dim default values when colors are enabled", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-p", "--port"] },
+          description: [{ type: "text", text: "Port number" }],
+          default: [{ type: "text", text: "8080" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showDefault: true,
+      colors: true,
+    });
+    const expected =
+      "\n  \u001b[3m-p\u001b[0m\u001b[2m, \u001b[0m\u001b[3m--port\u001b[0m                  Port number\u001b[2m [8080]\u001b[0m\n";
+    assert.equal(result, expected);
+  });
+
+  it("should not show defaults when entry.default is undefined", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-v", "--verbose"] },
+          description: [{ type: "text", text: "Enable verbose output" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, { showDefault: true });
+    const expected = "\n  -v, --verbose               Enable verbose output\n";
+    assert.equal(result, expected);
+  });
+
+  it("should handle entries without descriptions", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "command", name: "command" },
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page);
+    const expected = "\n  command                   \n";
+    assert.equal(result, expected);
+  });
+
+  it("should respect termIndent option", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "argument", metavar: "test" },
+          description: [{ type: "text", text: "Test description" }],
+        }],
+      }],
+    };
+
+    const options: DocPageFormatOptions = { termIndent: 4 };
+    const result = formatDocPage("myapp", page, options);
+    const expected = "\n    test                        Test description\n";
+    assert.equal(result, expected);
+  });
+
+  it("should respect termWidth option", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "argument", metavar: "short" },
+          description: [{ type: "text", text: "Description" }],
+        }],
+      }],
+    };
+
+    const options: DocPageFormatOptions = { termWidth: 10 };
+    const result = formatDocPage("myapp", page, options);
+    const expected = "\n  short       Description\n";
+    assert.equal(result, expected);
+  });
+
+  it("should respect maxWidth option with brief", () => {
+    const page: DocPage = {
+      brief: [{
+        type: "text",
+        text:
+          "A very long brief description that should be wrapped at some point",
+      }],
+      sections: [],
+    };
+
+    const options: DocPageFormatOptions = { maxWidth: 30 };
+    const result = formatDocPage("myapp", page, options);
+    // Text should be wrapped
+    assert.ok(result.includes("A very long brief"));
+    assert.ok(result.includes("\n"));
+  });
+
+  it("should handle colors option", () => {
+    const page: DocPage = {
+      usage: [{ type: "command", name: "command" }],
+      sections: [],
+    };
+
+    const options: DocPageFormatOptions = { colors: true };
+    const result = formatDocPage("myapp", page, options);
+
+    // Verify exact format: bold+dim label, space, bold program name, space, bold command
+    const expected =
+      "\u001b[1;2mUsage:\u001b[0m \u001b[1mmyapp\u001b[0m \u001b[1mcommand\u001b[0m\n";
+    assert.equal(
+      result,
+      expected,
+      "Output should match expected format exactly",
+    );
+  });
+
+  it("should sort command-only sections before argument-only sections", () => {
+    const page: DocPage = {
+      sections: [{
+        title: "Commands",
+        entries: [{
+          term: { type: "command", name: "cmd" },
+          description: [{ type: "text", text: "A command" }],
+        }],
+      }, {
+        entries: [{
+          term: { type: "argument", metavar: "untitled" },
+          description: [{ type: "text", text: "Untitled entry" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page);
+    const expected =
+      "\nCommands:\n  cmd                         A command\n\n  untitled                    Untitled entry\n";
+    assert.equal(result, expected);
+  });
+
+  it("should format complete page with all components", () => {
+    const page: DocPage = {
+      brief: [{ type: "text", text: "A complete CLI application" }],
+      usage: [
+        { type: "command", name: "myapp" },
+        { type: "optional", terms: [{ type: "option", names: ["-v"] }] },
+      ],
+      description: [{
+        type: "text",
+        text: "This application does many useful things.",
+      }],
+      sections: [{
+        title: "Options",
+        entries: [{
+          term: { type: "option", names: ["-v", "--verbose"] },
+          description: [{ type: "text", text: "Enable verbose output" }],
+        }, {
+          term: { type: "option", names: ["-h", "--help"] },
+          description: [{ type: "text", text: "Show help information" }],
+        }],
+      }],
+      footer: [{
+        type: "text",
+        text: "For more information, visit our website.",
+      }],
+    };
+
+    const result = formatDocPage("myapp", page);
+    const expected =
+      "A complete CLI application\nUsage: myapp myapp [-v]\n\nThis application does many useful things.\n\nOptions:\n  -v, --verbose               Enable verbose output\n  -h, --help                  Show help information\n\nFor more information, visit our website.";
+    assert.equal(result, expected);
+  });
+
+  it("should apply resetSuffix correctly in default values with colors", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-p", "--port"] },
+          description: [{ type: "text", text: "Port number" }],
+          default: [{ type: "value", value: "8080" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showDefault: true,
+      colors: true,
+    });
+
+    // Should contain resetSuffix after ANSI reset to maintain dim styling
+    assert.ok(result.includes("\x1b[2m"));
+    assert.ok(result.includes("\x1b[32m8080\x1b[0m\x1b[2m"));
+  });
+
+  it("should handle resetSuffix with custom prefix and suffix", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-f", "--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          default: [{ type: "value", value: "json" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showDefault: { prefix: " (default: ", suffix: ")" },
+      colors: true,
+    });
+
+    // Should contain resetSuffix in the custom format
+    assert.ok(
+      result.includes("\x1b[2m (default: \x1b[32mjson\x1b[0m\x1b[2m)\x1b[0m"),
+    );
+  });
+
+  it("should not apply resetSuffix when colors is false", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-p", "--port"] },
+          description: [{ type: "text", text: "Port number" }],
+          default: [{ type: "value", value: "8080" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showDefault: true,
+      colors: false,
+    });
+
+    // Should not contain any ANSI codes
+    assert.ok(!result.includes("\x1b["));
+    assert.ok(result.includes('Port number ["8080"]'));
+  });
+
+  it("should handle complex message defaults with resetSuffix", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--config"] },
+          description: [{ type: "text", text: "Configuration file" }],
+          default: [
+            { type: "text", text: "Uses " },
+            { type: "envVar", envVar: "CONFIG_FILE" },
+            { type: "text", text: " if set" },
+          ],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showDefault: true,
+      colors: true,
+    });
+
+    // Should maintain resetSuffix throughout the complex message
+    assert.ok(
+      result.includes(
+        "\x1b[2m [Uses \x1b[1;4mCONFIG_FILE\x1b[0m\x1b[2m if set]\x1b[0m",
+      ),
+    );
+  });
+
+  it("should skip sections with no entries (Issue #29)", () => {
+    const page: DocPage = {
+      usage: [{ type: "command", name: "cmd1" }],
+      sections: [
+        {
+          title: "Group 1 commands",
+          entries: [], // Empty entries array
+        },
+        {
+          title: "Options",
+          entries: [
+            {
+              term: { type: "option", names: ["--help"] },
+              description: [{ type: "text", text: "Show help" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const output = formatDocPage("test", page, { colors: false });
+
+    // Should not contain the empty "Group 1 commands:" section
+    assert.ok(!output.includes("Group 1 commands:"));
+
+    // Should still contain the Options section with entries
+    assert.ok(output.includes("Options:"));
+    assert.ok(output.includes("--help"));
+  });
+
+  it("should handle multiple empty sections", () => {
+    const page: DocPage = {
+      usage: [{ type: "command", name: "test" }],
+      sections: [
+        {
+          title: "Empty Section 1",
+          entries: [],
+        },
+        {
+          title: "Non-Empty Section",
+          entries: [
+            {
+              term: { type: "option", names: ["-v", "--verbose"] },
+              description: [{ type: "text", text: "Verbose output" }],
+            },
+          ],
+        },
+        {
+          title: "Empty Section 2",
+          entries: [],
+        },
+      ],
+    };
+
+    const output = formatDocPage("test", page, { colors: false });
+
+    // Should not contain either empty section
+    assert.ok(!output.includes("Empty Section 1:"));
+    assert.ok(!output.includes("Empty Section 2:"));
+
+    // Should still contain the non-empty section
+    assert.ok(output.includes("Non-Empty Section:"));
+    assert.ok(output.includes("-v, --verbose"));
+  });
+
+  it("should handle sections with only empty entries", () => {
+    const page: DocPage = {
+      usage: [], // Empty usage to show default
+      sections: [
+        {
+          title: "Should Not Appear",
+          entries: [], // No entries at all
+        },
+        {
+          entries: [], // Untitled section with no entries
+        },
+      ],
+    };
+
+    const output = formatDocPage("test", page, { colors: false });
+
+    // Should not contain the titled empty section
+    assert.ok(!output.includes("Should Not Appear:"));
+
+    // Output should only have the usage line
+    assert.equal(output.trim(), "Usage: test");
+  });
+
+  it("should format examples, author, and bugs sections", () => {
+    const page: DocPage = {
+      usage: [],
+      sections: [],
+      examples: message`myapp --help\nmyapp --version`,
+      author: message`Jane Doe <jane@example.com>`,
+      bugs: message`Report bugs at https://github.com/example/myapp/issues`,
+    };
+
+    const result = formatDocPage("myapp", page);
+
+    assert.ok(result.includes("Examples:\n"));
+    // formatMessage converts \n to space, so check for indented content
+    assert.ok(result.includes("  myapp --help myapp --version"));
+
+    assert.ok(result.includes("Author:\n"));
+    assert.ok(result.includes("  Jane Doe <jane@example.com>"));
+
+    assert.ok(result.includes("Bugs:\n"));
+    assert.ok(
+      result.includes(
+        "  Report bugs at https://github.com/example/myapp/issues",
+      ),
+    );
+  });
+
+  it("should format examples, author, and bugs with bold+dim labels when colors enabled", () => {
+    const page: DocPage = {
+      usage: [],
+      sections: [],
+      examples: message`Example usage`,
+      author: message`John Doe`,
+      bugs: message`Bug tracker`,
+    };
+
+    const result = formatDocPage("myapp", page, { colors: true });
+
+    // Empty usage array renders just the program name without trailing space
+    const expected = [
+      "\x1b[1;2mUsage:\x1b[0m \x1b[1mmyapp\x1b[0m",
+      "",
+      "\x1b[1;2mExamples:\x1b[0m",
+      "  Example usage",
+      "",
+      "\x1b[1;2mAuthor:\x1b[0m",
+      "  John Doe",
+      "",
+      "\x1b[1;2mBugs:\x1b[0m",
+      "  Bug tracker",
+      "",
+    ].join("\n");
+
+    assert.equal(result, expected);
+  });
+
+  it("should render examples, author, and bugs in correct order before footer", () => {
+    const page: DocPage = {
+      usage: [],
+      sections: [],
+      examples: message`Example usage`,
+      author: message`John Doe`,
+      bugs: message`Bug tracker`,
+      footer: message`Footer text`,
+    };
+
+    const result = formatDocPage("test", page);
+
+    const examplesIndex = result.indexOf("Examples:");
+    const authorIndex = result.indexOf("Author:");
+    const bugsIndex = result.indexOf("Bugs:");
+    const footerIndex = result.indexOf("Footer text");
+
+    // Check that all sections are present
+    assert.ok(examplesIndex !== -1, "Examples section should be present");
+    assert.ok(authorIndex !== -1, "Author section should be present");
+    assert.ok(bugsIndex !== -1, "Bugs section should be present");
+    assert.ok(footerIndex !== -1, "Footer should be present");
+
+    // Check order: Examples → Author → Bugs → Footer
+    assert.ok(
+      examplesIndex < authorIndex,
+      "Examples should come before Author",
+    );
+    assert.ok(authorIndex < bugsIndex, "Author should come before Bugs");
+    assert.ok(bugsIndex < footerIndex, "Bugs should come before Footer");
+  });
+
+  it("should not include examples, author, or bugs sections when not provided", () => {
+    const page: DocPage = {
+      usage: [],
+      sections: [],
+      footer: message`Footer only`,
+    };
+
+    const result = formatDocPage("test", page);
+
+    assert.ok(!result.includes("Examples:"));
+    assert.ok(!result.includes("Author:"));
+    assert.ok(!result.includes("Bugs:"));
+    assert.ok(result.includes("Footer only"));
+  });
+
+  it("should treat empty brief as absent", () => {
+    const withEmpty: DocPage = { brief: [], sections: [] };
+    const withAbsent: DocPage = { sections: [] };
+    assert.equal(
+      formatDocPage("app", withEmpty),
+      formatDocPage("app", withAbsent),
+    );
+  });
+
+  it("should treat empty description as absent", () => {
+    const withEmpty: DocPage = { description: [], sections: [] };
+    const withAbsent: DocPage = { sections: [] };
+    assert.equal(
+      formatDocPage("app", withEmpty),
+      formatDocPage("app", withAbsent),
+    );
+  });
+
+  it("should treat empty examples as absent", () => {
+    const withEmpty: DocPage = { examples: [], usage: [], sections: [] };
+    const withAbsent: DocPage = { usage: [], sections: [] };
+    assert.equal(
+      formatDocPage("app", withEmpty),
+      formatDocPage("app", withAbsent),
+    );
+  });
+
+  it("should treat empty author as absent", () => {
+    const withEmpty: DocPage = { author: [], usage: [], sections: [] };
+    const withAbsent: DocPage = { usage: [], sections: [] };
+    assert.equal(
+      formatDocPage("app", withEmpty),
+      formatDocPage("app", withAbsent),
+    );
+  });
+
+  it("should treat empty bugs as absent", () => {
+    const withEmpty: DocPage = { bugs: [], usage: [], sections: [] };
+    const withAbsent: DocPage = { usage: [], sections: [] };
+    assert.equal(
+      formatDocPage("app", withEmpty),
+      formatDocPage("app", withAbsent),
+    );
+  });
+
+  it("should treat empty footer as absent", () => {
+    const withEmpty: DocPage = { footer: [], sections: [] };
+    const withAbsent: DocPage = { sections: [] };
+    assert.equal(
+      formatDocPage("app", withEmpty),
+      formatDocPage("app", withAbsent),
+    );
+  });
+
+  it("should not let empty meta sections affect maxWidth validation", () => {
+    // Empty examples/author/bugs should not widen the minimum maxWidth.
+    // "Examples:" is 9 chars, so maxWidth=8 should be accepted when
+    // examples is empty (same as omitted).
+    assert.doesNotThrow(() => {
+      formatDocPage("app", { examples: [], sections: [] }, { maxWidth: 8 });
+    });
+    assert.doesNotThrow(() => {
+      formatDocPage("app", { author: [], sections: [] }, { maxWidth: 6 });
+    });
+    assert.doesNotThrow(() => {
+      formatDocPage("app", { bugs: [], sections: [] }, { maxWidth: 4 });
+    });
+  });
+
+  it("should treat entry-level empty description as absent", () => {
+    const withEmpty: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "command", name: "cmd" },
+          description: [],
+        }],
+      }],
+    };
+    const withAbsent: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "command", name: "cmd" },
+        }],
+      }],
+    };
+    assert.equal(
+      formatDocPage("app", withEmpty),
+      formatDocPage("app", withAbsent),
+    );
+  });
+
+  it("should format all labels with bold+dim when colors enabled", () => {
+    const page: DocPage = {
+      usage: [{ type: "command", name: "myapp" }],
+      sections: [
+        {
+          title: "Options",
+          entries: [{
+            term: { type: "option", names: ["--help"] },
+            description: message`Show help`,
+          }],
+        },
+        {
+          title: "Commands",
+          entries: [{
+            term: { type: "command", name: "test" },
+            description: message`Run tests`,
+          }],
+        },
+      ],
+      examples: message`myapp --help`,
+      author: message`Jane Doe`,
+      bugs: message`GitHub Issues`,
+    };
+
+    const result = formatDocPage("myapp", page, { colors: true });
+
+    const expected = [
+      // Usage includes both program name and command name
+      "\x1b[1;2mUsage:\x1b[0m \x1b[1mmyapp\x1b[0m \x1b[1mmyapp\x1b[0m",
+      "",
+      "\x1b[1;2mCommands:\x1b[0m",
+      // Commands are rendered with bold (code 1)
+      "  \x1b[1mtest\x1b[0m                        Run tests",
+      "",
+      "\x1b[1;2mOptions:\x1b[0m",
+      // Options are rendered with italic (code 3) by default
+      "  \x1b[3m--help\x1b[0m                      Show help",
+      "",
+      "\x1b[1;2mExamples:\x1b[0m",
+      "  myapp --help",
+      "",
+      "\x1b[1;2mAuthor:\x1b[0m",
+      "  Jane Doe",
+      "",
+      "\x1b[1;2mBugs:\x1b[0m",
+      "  GitHub Issues",
+      "",
+    ].join("\n");
+
+    assert.equal(result, expected);
+  });
+
+  it("should format all labels as plain text when colors disabled", () => {
+    const page: DocPage = {
+      usage: [{ type: "command", name: "myapp" }],
+      sections: [
+        {
+          title: "Options",
+          entries: [{
+            term: { type: "option", names: ["--help"] },
+            description: message`Show help`,
+          }],
+        },
+      ],
+      examples: message`myapp --help`,
+      author: message`Jane Doe`,
+      bugs: message`GitHub Issues`,
+    };
+
+    const result = formatDocPage("myapp", page, { colors: false });
+
+    const expected = [
+      // Usage includes both program name and command name
+      "Usage: myapp myapp",
+      "",
+      "Options:",
+      // Default termWidth is 26, spacing adjusted accordingly
+      "  --help                      Show help",
+      "",
+      "Examples:",
+      "  myapp --help",
+      "",
+      "Author:",
+      "  Jane Doe",
+      "",
+      "Bugs:",
+      "  GitHub Issues",
+      "",
+    ].join("\n");
+
+    assert.equal(result, expected);
+  });
+
+  it("should not show choices when showChoices is not set", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          choices: valueSet(["json", "yaml", "xml"], {
+            fallback: "",
+            type: "unit",
+          }),
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page);
+    assert.ok(!result.includes("choices"));
+    assert.ok(!result.includes("json"));
+  });
+
+  it("should not show choices when showChoices is false", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          choices: valueSet(["json", "yaml", "xml"], {
+            fallback: "",
+            type: "unit",
+          }),
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, { showChoices: false });
+    assert.ok(!result.includes("choices"));
+    assert.ok(!result.includes("json, yaml, xml"));
+  });
+
+  it("should show choices when showChoices is true", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          choices: valueSet(["json", "yaml", "xml"], {
+            fallback: "",
+            type: "unit",
+          }),
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, { showChoices: true });
+    assert.ok(result.includes("Output format (choices: json, yaml, xml)"));
+  });
+
+  it("should show choices with custom prefix, suffix, and label", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          choices: valueSet(["json", "yaml"], { fallback: "", type: "unit" }),
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showChoices: { prefix: " {", suffix: "}", label: "" },
+    });
+    assert.ok(result.includes("Output format {json, yaml}"));
+  });
+
+  it("should show choices with custom label", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          choices: valueSet(["json", "yaml"], { fallback: "", type: "unit" }),
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showChoices: { label: "valid: " },
+    });
+    assert.ok(result.includes("Output format (valid: json, yaml)"));
+  });
+
+  it("should show choices without description", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--level"] },
+          choices: valueSet(["debug", "info", "warn"], {
+            fallback: "",
+            type: "unit",
+          }),
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, { showChoices: true });
+    assert.ok(result.includes("(choices: debug, info, warn)"));
+  });
+
+  it("should use default label when showChoices object has no label", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          choices: valueSet(["json", "yaml"], { fallback: "", type: "unit" }),
+        }],
+      }],
+    };
+    const result = formatDocPage("myapp", page, {
+      showChoices: {},
+    });
+    assert.ok(result.includes(" (choices: json, yaml)"));
+  });
+
+  it("should use default prefix when showDefault object has no prefix", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--port"] },
+          description: [{ type: "text", text: "Port number" }],
+          default: message`3000`,
+        }],
+      }],
+    };
+    const result = formatDocPage("myapp", page, {
+      showDefault: { suffix: "]" },
+    });
+    // Uses the fallback prefix " [" since no prefix is specified;
+    // the plain-text default value "3000" should appear as " [3000]".
+    assert.ok(result.includes(" [3000]"));
+    assert.ok(result.includes("Port number"));
+  });
+
+  it("should not show choices when entry has no choices field", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-v", "--verbose"] },
+          description: [{ type: "text", text: "Enable verbose output" }],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, { showChoices: true });
+    assert.ok(!result.includes("choices"));
+    assert.ok(result.includes("Enable verbose output"));
+  });
+
+  it("should not render choices suffix for empty choices array", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          choices: [],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, { showChoices: true });
+    assert.ok(!result.includes("choices"));
+    assert.ok(!result.includes("("));
+    assert.ok(!result.includes(")"));
+    assert.ok(result.includes("Output format"));
+  });
+
+  it("should not render default suffix for empty default array", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          default: [],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, { showDefault: true });
+    assert.ok(!result.includes("["));
+    assert.ok(!result.includes("]"));
+    assert.ok(result.includes("Output format"));
+  });
+
+  it("should render description, default, then choices in order", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          default: [{ type: "text", text: "json" }],
+          choices: valueSet(["json", "yaml", "xml"], {
+            fallback: "",
+            type: "unit",
+          }),
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showDefault: true,
+      showChoices: true,
+    });
+    const line = result.split("\n").find((l) => l.includes("--format"))!;
+    const defaultIdx = line.indexOf("[json]");
+    const choicesIdx = line.indexOf("(choices:");
+    assert.ok(defaultIdx !== -1, "default should be present");
+    assert.ok(choicesIdx !== -1, "choices should be present");
+    assert.ok(
+      defaultIdx < choicesIdx,
+      "default should come before choices",
+    );
+  });
+
+  it("should dim choices with per-value coloring when colors are enabled", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--format"] },
+          description: [{ type: "text", text: "Output format" }],
+          choices: valueSet(["json", "yaml"], { fallback: "", type: "unit" }),
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showChoices: true,
+      colors: true,
+    });
+    // Should contain dim ANSI wrapping and per-value green coloring
+    assert.ok(result.includes("\x1b[2m"));
+    assert.ok(result.includes("\x1b[0m"));
+    // Each value should get its own green color within the dim context
+    assert.ok(
+      result.includes("\x1b[32mjson\x1b[0m\x1b[2m"),
+      "json should be green with dim reset",
+    );
+    assert.ok(
+      result.includes("\x1b[32myaml\x1b[0m\x1b[2m"),
+      "yaml should be green with dim reset",
+    );
+    // Commas should be in the dim context, not inside green
+    assert.ok(
+      result.includes("\x1b[2m, \x1b[32m") ||
+        result.includes("\x1b[0m\x1b[2m, \x1b[32m"),
+      "commas should be between value color sequences",
+    );
+  });
+
+  describe("smart section ordering", () => {
+    it("should sort command-only sections before option-only sections", () => {
+      const page: DocPage = {
+        sections: [
+          {
+            title: "Options",
+            entries: [{
+              term: { type: "option", names: ["--verbose"] },
+              description: [{ type: "text", text: "Verbose output" }],
+            }],
+          },
+          {
+            title: "Commands",
+            entries: [{
+              term: { type: "command", name: "serve" },
+              description: [{ type: "text", text: "Start server" }],
+            }],
+          },
+        ],
+      };
+
+      const result = formatDocPage("myapp", page);
+      const commandsPos = result.indexOf("Commands:");
+      const optionsPos = result.indexOf("Options:");
+      assert.ok(
+        commandsPos < optionsPos,
+        "Commands section should appear before Options section",
+      );
+    });
+
+    it("should sort mixed sections between command-only and option-only sections", () => {
+      const page: DocPage = {
+        sections: [
+          {
+            title: "Options",
+            entries: [{
+              term: { type: "option", names: ["--flag"] },
+              description: [{ type: "text", text: "A flag" }],
+            }],
+          },
+          {
+            title: "Mixed",
+            entries: [
+              {
+                term: { type: "command", name: "sub" },
+                description: [{ type: "text", text: "A subcommand" }],
+              },
+              {
+                term: { type: "option", names: ["--opt"] },
+                description: [{ type: "text", text: "An option" }],
+              },
+            ],
+          },
+          {
+            title: "Commands",
+            entries: [{
+              term: { type: "command", name: "build" },
+              description: [{ type: "text", text: "Build" }],
+            }],
+          },
+        ],
+      };
+
+      const result = formatDocPage("myapp", page);
+      const commandsPos = result.indexOf("Commands:");
+      const mixedPos = result.indexOf("Mixed:");
+      const optionsPos = result.indexOf("Options:");
+      assert.ok(
+        commandsPos < mixedPos,
+        "Commands section should appear before Mixed section",
+      );
+      assert.ok(
+        mixedPos < optionsPos,
+        "Mixed section should appear before Options section",
+      );
+    });
+
+    it("should sort untitled sections before titled sections within the same bucket", () => {
+      const page: DocPage = {
+        sections: [
+          {
+            title: "Named",
+            entries: [{
+              term: { type: "command", name: "named" },
+              description: [{ type: "text", text: "A named section" }],
+            }],
+          },
+          {
+            entries: [{
+              term: { type: "command", name: "ungrouped" },
+              description: [{ type: "text", text: "An ungrouped command" }],
+            }],
+          },
+        ],
+      };
+
+      const result = formatDocPage("myapp", page);
+      const namedPos = result.indexOf("Named:");
+      const ungroupedPos = result.indexOf("ungrouped");
+      assert.ok(
+        ungroupedPos < namedPos,
+        "Untitled section should appear before titled section in the same bucket",
+      );
+    });
+
+    it("should preserve relative order within the same bucket (stable sort)", () => {
+      const page: DocPage = {
+        sections: [
+          {
+            title: "Beta",
+            entries: [{
+              term: { type: "command", name: "beta" },
+              description: [{ type: "text", text: "Beta command" }],
+            }],
+          },
+          {
+            title: "Alpha",
+            entries: [{
+              term: { type: "command", name: "alpha" },
+              description: [{ type: "text", text: "Alpha command" }],
+            }],
+          },
+        ],
+      };
+
+      const result = formatDocPage("myapp", page);
+      const betaPos = result.indexOf("Beta:");
+      const alphaPos = result.indexOf("Alpha:");
+      assert.ok(
+        betaPos < alphaPos,
+        "Beta should appear before Alpha (original order preserved within same bucket)",
+      );
+    });
+
+    it("should use custom sectionOrder callback when provided", () => {
+      const page: DocPage = {
+        sections: [
+          {
+            title: "Commands",
+            entries: [{
+              term: { type: "command", name: "build" },
+              description: [{ type: "text", text: "Build" }],
+            }],
+          },
+          {
+            title: "Options",
+            entries: [{
+              term: { type: "option", names: ["--flag"] },
+              description: [{ type: "text", text: "A flag" }],
+            }],
+          },
+        ],
+      };
+
+      // Custom sort: reverse alphabetical by title, so Options before Commands
+      // (since "O" > "C", reversed comparator puts Options first)
+      const sectionOrder = (a: DocSection, b: DocSection): number => {
+        const aTitle = a.title ?? "";
+        const bTitle = b.title ?? "";
+        return bTitle.localeCompare(aTitle);
+      };
+
+      const result = formatDocPage("myapp", page, { sectionOrder });
+      const commandsPos = result.indexOf("Commands:");
+      const optionsPos = result.indexOf("Options:");
+      assert.ok(
+        optionsPos < commandsPos,
+        "Options should appear before Commands with custom reverse-alphabetical sort",
+      );
+    });
+
+    it("should use custom sectionOrder and preserve relative order on tie (stable)", () => {
+      const page: DocPage = {
+        sections: [
+          {
+            title: "First",
+            entries: [{
+              term: { type: "command", name: "a" },
+              description: [{ type: "text", text: "First" }],
+            }],
+          },
+          {
+            title: "Second",
+            entries: [{
+              term: { type: "command", name: "b" },
+              description: [{ type: "text", text: "Second" }],
+            }],
+          },
+          {
+            title: "Third",
+            entries: [{
+              term: { type: "command", name: "c" },
+              description: [{ type: "text", text: "Third" }],
+            }],
+          },
+        ],
+      };
+
+      // Always return 0 (tie)—original order should be preserved
+      const sectionOrder = (_a: DocSection, _b: DocSection): number => 0;
+
+      const result = formatDocPage("myapp", page, { sectionOrder });
+      const firstPos = result.indexOf("First:");
+      const secondPos = result.indexOf("Second:");
+      const thirdPos = result.indexOf("Third:");
+      assert.ok(firstPos < secondPos, "First should appear before Second");
+      assert.ok(secondPos < thirdPos, "Second should appear before Third");
+    });
+  });
+
+  describe("maxWidth with showDefault and showChoices", () => {
+    // Issue #132: when a term is wider than termWidth (default: 26), the
+    // description column starts further right than descColumnWidth assumes,
+    // but formatMessage is still given the full descColumnWidth budget.
+    // This causes the first line to overflow maxWidth.
+
+    it("should not exceed maxWidth when term is wider than termWidth with showChoices (issue #132)", () => {
+      // "-p, --package-manager PACKAGE_MANAGER" is 38 chars > termWidth 26.
+      // descColumnWidth = 100 - 2 - 26 - 2 = 70, but first-line budget is
+      // only 100 - (2 + 38 + 2) = 58 chars.  Without the fix, the combined
+      // description + choices text fills 69 chars in the desc column, and the
+      // full line becomes 2 + 38 + 2 + 69 = 111 chars (observed in the issue).
+      const page: DocPage = {
+        sections: [{
+          title: "Options",
+          entries: [{
+            term: {
+              type: "option",
+              names: ["-p", "--package-manager"],
+              metavar: "PACKAGE_MANAGER" as const,
+            },
+            description: [
+              {
+                type: "text",
+                text: "The package manager to use for installing dependencies.",
+              },
+            ],
+            choices: valueSet(
+              ["deno", "pnpm", "bun", "yarn", "npm"],
+              { fallback: "", type: "unit" },
+            ),
+          }],
+        }],
+      };
+
+      const result = formatDocPage("repro", page, {
+        showChoices: true,
+        maxWidth: 100,
+        colors: false,
+      });
+
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 100,
+          `Line exceeds maxWidth 100: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+    });
+
+    it("should not exceed maxWidth when term is wider than termWidth with showDefault", () => {
+      // Same pattern as issue #132, but with showDefault instead of showChoices.
+      // The defaultStartWidth calculation has the same bug: it uses
+      // lastLineVisibleLength(description) without accounting for the extra
+      // physical offset caused by the wide term.
+      // Term "-p, --package-manager PACKAGE_MANAGER" is 38 chars.
+      // descColumnWidth = 80 - 2 - 26 - 2 = 50.
+      // First-line budget = 80 - (2 + 38 + 2) = 38 chars.
+      // Without fix: "The package manager to use for your project." (44 chars)
+      // fits in 50 but not 38, so the full line becomes 2+38+2+44 = 86 > 80.
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: {
+              type: "option",
+              names: ["-p", "--package-manager"],
+              metavar: "PACKAGE_MANAGER" as const,
+            },
+            description: [
+              {
+                type: "text",
+                text: "The package manager to use for your project.",
+              },
+            ],
+            default: [{ type: "text", text: "npm" }],
+          }],
+        }],
+      };
+
+      const result = formatDocPage("repro", page, {
+        showDefault: true,
+        maxWidth: 80,
+        colors: false,
+      });
+
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 80,
+          `Line exceeds maxWidth 80: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+    });
+
+    it("should not exceed maxWidth when term is wider than termWidth with both showDefault and showChoices", () => {
+      // Combined case: wide term + both options active.  The accumulated
+      // description + default + choices text on the first output line must
+      // still respect maxWidth.
+      // Term "-w, --web-framework WEB_FRAMEWORK" is 34 chars > 26.
+      // descColumnWidth = 100 - 2 - 26 - 2 = 70.
+      // First-line budget = 100 - (2 + 34 + 2) = 62 chars.
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: {
+              type: "option",
+              names: ["-w", "--web-framework"],
+              metavar: "WEB_FRAMEWORK" as const,
+            },
+            description: [
+              { type: "text", text: "The web framework to integrate." },
+            ],
+            default: [{ type: "text", text: "hono" }],
+            choices: valueSet(
+              ["hono", "nitro", "next", "elysia", "express"],
+              { fallback: "", type: "unit" },
+            ),
+          }],
+        }],
+      };
+
+      const result = formatDocPage("repro", page, {
+        showDefault: true,
+        showChoices: true,
+        maxWidth: 100,
+        colors: false,
+      });
+
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 100,
+          `Line exceeds maxWidth 100: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+    });
+
+    it("should wrap description itself when it would overflow due to wide term", () => {
+      // When the description text itself is longer than the narrowed first-line
+      // budget (maxWidth - termIndent - actualTermWidth - 2), it must be wrapped
+      // within that budget, not within the wider descColumnWidth.
+      // Term is 38 chars, maxWidth = 80, first-line budget = 38 chars.
+      // Description "The package manager to use for your project." is 44 chars:
+      // - Without fix: fits in descColumnWidth=50, stays on one line → full
+      //   line = 2+38+2+44 = 86 > 80.
+      // - With fix: wrapped at 38-char budget, first line ≤ 38 chars → fine.
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: {
+              type: "option",
+              names: ["-p", "--package-manager"],
+              metavar: "PACKAGE_MANAGER" as const,
+            },
+            description: [
+              {
+                type: "text",
+                text: "The package manager to use for your project.",
+              },
+            ],
+          }],
+        }],
+      };
+
+      const result = formatDocPage("repro", page, {
+        maxWidth: 80,
+        colors: false,
+      });
+
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 80,
+          `Line exceeds maxWidth 80: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+      // Description must have wrapped onto a new line
+      assert.ok(result.includes("\n"), "Expected a wrapped line in output");
+    });
+
+    it("should not exceed maxWidth when term is wider than termWidth with colors enabled", () => {
+      // ANSI escape codes inflate the raw string length but must not be counted
+      // toward visible width.  lastLineVisibleLength() strips them correctly,
+      // so the overflow logic should still trigger for wide terms even when
+      // colors: true adds ANSI codes to the term string.
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: {
+              type: "option",
+              names: ["-p", "--package-manager"],
+              metavar: "PACKAGE_MANAGER" as const,
+            },
+            description: [
+              {
+                type: "text",
+                text: "The package manager to use for installing dependencies.",
+              },
+            ],
+            choices: valueSet(
+              ["deno", "pnpm", "bun", "yarn", "npm"],
+              { fallback: "", type: "unit" },
+            ),
+          }],
+        }],
+      };
+
+      const result = formatDocPage("repro", page, {
+        showChoices: true,
+        maxWidth: 100,
+        colors: true,
+      });
+
+      for (const line of result.split("\n")) {
+        const visibleWidth = getDisplayWidth(line);
+        assert.ok(
+          visibleWidth <= 100,
+          `Line visible width exceeds maxWidth 100: ${visibleWidth} columns`,
+        );
+      }
+    });
+
+    it("should not overflow when term is exactly termWidth wide (boundary)", () => {
+      // When term visible width equals termWidth (26), extraTermOffset = 0
+      // and behaviour should be identical to the pre-fix code path.
+      // "--verbose-mode VERBOSE_MOD" is exactly 26 chars.
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: {
+              type: "option",
+              names: ["--verbose-mode"],
+              metavar: "VERBOSE_MOD" as const,
+            },
+            description: [
+              { type: "text", text: "Enable verbose mode output." },
+            ],
+            choices: valueSet(
+              ["trace", "debug", "info", "warn", "error"],
+              { fallback: "", type: "unit" },
+            ),
+          }],
+        }],
+      };
+
+      const result = formatDocPage("repro", page, {
+        showChoices: true,
+        maxWidth: 80,
+        colors: false,
+      });
+
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 80,
+          `Line exceeds maxWidth 80: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+    });
+
+    it("should not overflow when term is 1 char wider than termWidth (boundary)", () => {
+      // Minimal extra offset: term is just 1 char wider than termWidth.
+      // "--verbose-mode VERBOSE_MODE" is 27 chars (termWidth 26 + 1).
+      // descColumnWidth = 80 - 2 - 26 - 2 = 50.  First-line budget = 49.
+      //
+      // "Enable verbose mode output for entire running sys." is exactly 50 chars:
+      // tokens = ["Enable "(7), "verbose "(8), "mode "(5), "output "(7),
+      //           "for "(4), "entire "(7), "running "(8), "sys."(4)] = 50 total.
+      //
+      // Without fix (startWidth=0): running totals stay ≤ 50, no wrap.
+      //   Full first line = 2+27+2+50 = 81 > 80 → OVERFLOW.
+      // With fix (startWidth=1): total hits 51 at "sys.", so it wraps.
+      //   Full first line ≤ 80 ✓.
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: {
+              type: "option",
+              names: ["--verbose-mode"],
+              metavar: "VERBOSE_MODE" as const,
+            },
+            description: [
+              {
+                type: "text",
+                text: "Enable verbose mode output for entire running sys.",
+              },
+            ],
+          }],
+        }],
+      };
+
+      const result = formatDocPage("repro", page, {
+        maxWidth: 80,
+        colors: false,
+      });
+
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 80,
+          `Line exceeds maxWidth 80: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+      // With the fix the description must have wrapped
+      assert.ok(result.includes("\n"), "Expected wrapped line");
+    });
+
+    it("should not overflow when choices suffix ) would push the last line over maxWidth", () => {
+      // The closing suffix ")" is appended outside of formatMessage, so it is
+      // not counted in the maxWidth budget.  If the choices content is allowed
+      // to fill the description column to the very last char, adding ")"
+      // produces a line that is 1 char too wide.
+      //
+      // Setup (all default termIndent=2, termWidth=26):
+      //   maxWidth = 50  →  descColumnWidth = 50-2-26-2 = 20
+      //   term "--option" (8 chars) fits in termWidth, no extra offset
+      //   description = "" (empty)
+      //   prefix = " (" (2), label = "choices: " (9)  →  prefixLabelLen = 11
+      //   choicesStartWidth = 0 + 11 = 11
+      //   value "aaaaaaaaa" (9 chars): 11+9 = 20 = descColumnWidth → no wrap
+      //   choicesDisplay = "aaaaaaaaa"
+      //   choicesText = " (choices: aaaaaaaaa)" = 21 chars
+      //   full line = 2 + 26 + 2 + 21 = 51 > 50
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "option", names: ["--option"] },
+            choices: valueSet(["aaaaaaaaa"], { fallback: "", type: "unit" }),
+          }],
+        }],
+      };
+
+      const result = formatDocPage("repro", page, {
+        showChoices: true,
+        maxWidth: 50,
+        colors: false,
+      });
+
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 50,
+          `Line exceeds maxWidth 50: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+    });
+
+    it("should not exceed maxWidth when showDefault overflows the line", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "option", names: ["--opt"] },
+            description: [{ type: "text", text: "Some option" }],
+            default: [{ type: "text", text: "a very long default value" }],
+          }],
+        }],
+      };
+
+      const result = formatDocPage("myapp", page, {
+        showDefault: true,
+        maxWidth: 50,
+      });
+
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 50,
+          `Line exceeds maxWidth 50: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+    });
+
+    it("should not exceed maxWidth when showChoices overflows the line", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "option", names: ["-f", "--format"] },
+            description: [{ type: "text", text: "Output format" }],
+            choices: valueSet(
+              ["json", "yaml", "toml", "xml", "csv", "tsv", "html", "markdown"],
+              { fallback: "", type: "unit" },
+            ),
+          }],
+        }],
+      };
+
+      const result = formatDocPage("myapp", page, {
+        showChoices: true,
+        maxWidth: 60,
+      });
+
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 60,
+          `Line exceeds maxWidth 60: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+    });
+
+    it("should not exceed maxWidth when both showDefault and showChoices overflow", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "option", names: ["-f", "--format"] },
+            description: [{ type: "text", text: "Output format" }],
+            default: [{ type: "text", text: "json" }],
+            choices: valueSet(
+              ["json", "yaml", "toml", "xml", "csv", "tsv", "html", "markdown"],
+              { fallback: "", type: "unit" },
+            ),
+          }],
+        }],
+      };
+
+      const result = formatDocPage("myapp", page, {
+        showDefault: true,
+        showChoices: true,
+        maxWidth: 60,
+      });
+
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 60,
+          `Line exceeds maxWidth 60: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+    });
+  });
+
+  it("should throw TypeError when programName contains a newline", () => {
+    const page: DocPage = { sections: [] };
+    assert.throws(
+      () => formatDocPage("bad\nname", page),
+      TypeError,
+    );
+    assert.throws(
+      () => formatDocPage("bad\rname", page),
+      TypeError,
+    );
+    assert.throws(
+      () => formatDocPage("bad\r\nname", page),
+      TypeError,
+    );
+  });
+
+  it("should throw TypeError for non-string programName", () => {
+    const page: DocPage = { sections: [] };
+    assert.throws(
+      () => formatDocPage(123 as never, page),
+      TypeError,
+    );
+    assert.throws(
+      () => formatDocPage(Symbol("x") as never, page),
+      TypeError,
+    );
+  });
+
+  it("should throw TypeError for empty programName", () => {
+    const page: DocPage = { sections: [] };
+    assert.throws(
+      () => formatDocPage("", page),
+      TypeError,
+    );
+  });
+
+  it("should throw TypeError for programName with control characters", () => {
+    const page: DocPage = { sections: [] };
+    assert.throws(
+      () => formatDocPage("bad\x00name", page),
+      TypeError,
+    );
+    assert.throws(
+      () => formatDocPage("bad\tname", page),
+      TypeError,
+    );
+  });
+
+  it("should throw TypeError for programName with Unicode line separators", () => {
+    const page: DocPage = { sections: [] };
+    assert.throws(
+      () => formatDocPage("bad\x85name", page),
+      TypeError,
+    );
+    assert.throws(
+      () => formatDocPage("bad\u2028name", page),
+      TypeError,
+    );
+    assert.throws(
+      () => formatDocPage("bad\u2029name", page),
+      TypeError,
+    );
+  });
+
+  it("should throw TypeError when section title contains a newline", () => {
+    const page: DocPage = {
+      sections: [{
+        title: "bad\nsection",
+        entries: [{
+          term: { type: "argument", metavar: "X" },
+          description: [{ type: "text", text: "desc" }],
+        }],
+      }],
+    };
+    assert.throws(
+      () => formatDocPage("myapp", page),
+      TypeError,
+    );
+    const crPage: DocPage = {
+      sections: [{
+        title: "bad\rsection",
+        entries: [{
+          term: { type: "argument", metavar: "X" },
+          description: [{ type: "text", text: "desc" }],
+        }],
+      }],
+    };
+    assert.throws(
+      () => formatDocPage("myapp", crPage),
+      TypeError,
+    );
+    const crlfPage: DocPage = {
+      sections: [{
+        title: "bad\r\nsection",
+        entries: [{
+          term: { type: "argument", metavar: "X" },
+          description: [{ type: "text", text: "desc" }],
+        }],
+      }],
+    };
+    assert.throws(
+      () => formatDocPage("myapp", crlfPage),
+      TypeError,
+    );
+  });
+
+  it("should throw TypeError when section title is empty", () => {
+    const page: DocPage = {
+      sections: [{
+        title: "",
+        entries: [{
+          term: { type: "argument", metavar: "X" },
+          description: [{ type: "text", text: "desc" }],
+        }],
+      }],
+    };
+    assert.throws(
+      () => formatDocPage("myapp", page),
+      TypeError,
+    );
+  });
+
+  it("should throw TypeError when section title is whitespace-only", () => {
+    const page: DocPage = {
+      sections: [{
+        title: "   ",
+        entries: [{
+          term: { type: "argument", metavar: "X" },
+          description: [{ type: "text", text: "desc" }],
+        }],
+      }],
+    };
+    assert.throws(
+      () => formatDocPage("myapp", page),
+      TypeError,
+    );
+  });
+
+  it("should not throw for empty title in empty section", () => {
+    for (const title of ["", "   "]) {
+      const page: DocPage = {
+        sections: [{ title, entries: [] }],
+      };
+      assert.doesNotThrow(() => formatDocPage("myapp", page));
+    }
+  });
+
+  it("should not throw for newline in title of empty section", () => {
+    const page: DocPage = {
+      sections: [{
+        title: "bad\nsection",
+        entries: [],
+      }],
+    };
+    assert.doesNotThrow(() => formatDocPage("myapp", page));
+  });
+
+  describe("small maxWidth graceful degradation", () => {
+    const simplePage: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-v", "--verbose"] },
+          description: [{ type: "text", text: "Enable verbose output" }],
+        }],
+      }],
+    };
+
+    function assertLinesWithinMaxWidth(
+      result: string,
+      maxWidth: number,
+    ): void {
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= maxWidth,
+          `Line exceeds maxWidth ${maxWidth}: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+    }
+
+    it("should not exceed maxWidth when smaller than default layout budget", () => {
+      const maxWidth = 20;
+      const result = formatDocPage("myapp", simplePage, { maxWidth });
+      assertLinesWithinMaxWidth(result, maxWidth);
+      assert.ok(result.includes("--verbose"));
+    });
+
+    it("should degrade gracefully with very small maxWidth", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "abc def ghi" }],
+          }],
+        }],
+      };
+      const maxWidth = 15;
+      const result = formatDocPage("app", page, { maxWidth });
+      assertLinesWithinMaxWidth(result, maxWidth);
+    });
+
+    it("should handle maxWidth exactly equal to default layout budget", () => {
+      // default termIndent=2, termWidth=26, gap=2 → budget=30
+      const maxWidth = 30;
+      const result = formatDocPage("myapp", simplePage, { maxWidth });
+      assertLinesWithinMaxWidth(result, maxWidth);
+    });
+
+    it("should not exceed small maxWidth with showDefault", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "option", names: ["--port"] },
+            description: [{ type: "text", text: "Port number" }],
+            default: [{ type: "text", text: "3000" }],
+          }],
+        }],
+      };
+      const maxWidth = 20;
+      const result = formatDocPage("myapp", page, {
+        maxWidth,
+        showDefault: true,
+      });
+      assertLinesWithinMaxWidth(result, maxWidth);
+    });
+
+    it("should not add extra blank lines for long terms that fit in line", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "option", names: ["--longoption123"] },
+            description: [{ type: "text", text: "A long option" }],
+          }],
+        }],
+      };
+      const maxWidth = 20;
+      const result = formatDocPage("myapp", page, { maxWidth });
+      // The term "--longoption123" (15 chars) fits in maxWidth - termIndent
+      // (20 - 2 = 18), so it should appear on a single line without a
+      // leading blank line or missing indent.
+      const lines = result.split("\n");
+      const termLine = lines.find((l) => l.includes("--longoption123"));
+      assert.ok(termLine != null, "Term should appear in output");
+      const termIndex = result.indexOf(termLine!);
+      assert.ok(
+        !result.slice(0, termIndex).endsWith("\n\n"),
+        "Should not have a blank line before the term",
+      );
+      assert.ok(
+        termLine.startsWith("  "),
+        `Term line should have left indent: "${termLine}"`,
+      );
+    });
+
+    it("should respect maxWidth with custom termWidth and termIndent exceeding it", () => {
+      const maxWidth = 25;
+      const result = formatDocPage("myapp", simplePage, {
+        maxWidth,
+        termIndent: 4,
+        termWidth: 30,
+      });
+      assertLinesWithinMaxWidth(result, maxWidth);
+    });
+
+    it("should throw RangeError when maxWidth is too small for any layout", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "desc" }],
+          }],
+        }],
+      };
+      // default termIndent=2, minimum for desc entries = 2 + 4 = 6
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 5 }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 6, got 5.",
+        },
+      );
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 1 }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 6, got 1.",
+        },
+      );
+      // maxWidth=6 is the minimum feasible value with default termIndent
+      assert.doesNotThrow(
+        () => formatDocPage("app", page, { maxWidth: 6 }),
+      );
+      // Pages without entries accept maxWidth=1
+      const emptyPage: DocPage = {
+        brief: [{ type: "text", text: "A brief description" }],
+        sections: [],
+      };
+      assert.doesNotThrow(
+        () => formatDocPage("app", emptyPage, { maxWidth: 1 }),
+      );
+      // Bare-term entries (including empty description) need termIndent + 1 = 3
+      const bareTermPage: DocPage = {
+        sections: [{
+          entries: [
+            { term: { type: "argument", metavar: "X" } },
+            { term: { type: "argument", metavar: "Y" }, description: [] },
+          ],
+        }],
+      };
+      assert.doesNotThrow(
+        () => formatDocPage("app", bareTermPage, { maxWidth: 3 }),
+      );
+      assert.throws(
+        () => formatDocPage("app", bareTermPage, { maxWidth: 2 }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 3, got 2.",
+        },
+      );
+    });
+
+    it("should throw TypeError for non-finite or non-integer maxWidth", () => {
+      const page: DocPage = { sections: [] };
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: NaN }),
+        {
+          name: "TypeError",
+          message: "maxWidth must be a finite integer, got NaN.",
+        },
+      );
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: Infinity }),
+        {
+          name: "TypeError",
+          message: "maxWidth must be a finite integer, got Infinity.",
+        },
+      );
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 20.5 }),
+        {
+          name: "TypeError",
+          message: "maxWidth must be a finite integer, got 20.5.",
+        },
+      );
+    });
+
+    it("should throw RangeError when maxWidth is too small for Usage label", () => {
+      const page: DocPage = {
+        usage: [{ type: "argument", metavar: "FILE" }],
+        sections: [],
+      };
+      // 7 + max("app"(3), min("FILE"(4), 3+7=10)) = 7 + 4 = 11
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 10 }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 11, got 10.",
+        },
+      );
+      // maxWidth=11: indent(7)+FILE(4) = 11 fits on continuation line
+      const result = formatDocPage("app", page, { maxWidth: 11 });
+      assertLinesWithinMaxWidth(result, 11);
+    });
+
+    it("should accept maxWidth fitting empty usage exactly", () => {
+      const page: DocPage = {
+        usage: [],
+        sections: [],
+      };
+      // "Usage: " (7) + "a" (1) = 8
+      const result = formatDocPage("a", page, { maxWidth: 8 });
+      assertLinesWithinMaxWidth(result, 8);
+    });
+
+    it("should accept maxWidth when first term wraps and fits", () => {
+      const page: DocPage = {
+        usage: [{ type: "command", name: "b" }],
+        sections: [],
+      };
+      // "Usage: a" (8) on first line, "       b" (8) on continuation
+      const result = formatDocPage("a", page, { maxWidth: 8 });
+      assertLinesWithinMaxWidth(result, 8);
+    });
+
+    it("should accept maxWidth fitting all-hidden usage exactly", () => {
+      const page: DocPage = {
+        usage: [{ type: "command", name: "secret", hidden: true }],
+        sections: [],
+      };
+      // All terms hidden → renders as "Usage: app" (10 chars)
+      const result = formatDocPage("app", page, { maxWidth: 10 });
+      assertLinesWithinMaxWidth(result, 10);
+    });
+
+    it("should throw RangeError when maxWidth is too small for Examples label", () => {
+      const page: DocPage = {
+        examples: [{ type: "text", text: "example" }],
+        sections: [],
+      };
+      // "Examples:" label is 9 chars
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 8 }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 9, got 8.",
+        },
+      );
+      // maxWidth=9 should work
+      const result = formatDocPage("app", page, { maxWidth: 9 });
+      assertLinesWithinMaxWidth(result, 9);
+    });
+
+    it("should throw RangeError when maxWidth is too small for Author label", () => {
+      const page: DocPage = {
+        author: [{ type: "text", text: "Jane" }],
+        sections: [],
+      };
+      // "Author:" label is 7 chars
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 6 }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 7, got 6.",
+        },
+      );
+      const result = formatDocPage("app", page, { maxWidth: 7 });
+      assertLinesWithinMaxWidth(result, 7);
+    });
+
+    it("should throw RangeError when maxWidth is too small for Bugs label", () => {
+      const page: DocPage = {
+        bugs: [{ type: "text", text: "x y" }],
+        sections: [],
+      };
+      // "Bugs:" label is 5 chars
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 4 }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 5, got 4.",
+        },
+      );
+      const result = formatDocPage("app", page, { maxWidth: 5 });
+      assertLinesWithinMaxWidth(result, 5);
+    });
+
+    it("should throw RangeError when maxWidth is too small for showDefault", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "d" }],
+            default: [{ type: "text", text: "0" }],
+          }],
+        }],
+      };
+      // showDefault prefix " [" (2), suffix wraps with content
+      // minDescWidth=2, minimum = termIndent(2) + max(4, 2*2+1) = 2 + 5 = 7
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 6, showDefault: true }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 7, got 6.",
+        },
+      );
+      // At minimum, output should not exceed maxWidth
+      const result = formatDocPage("app", page, {
+        maxWidth: 7,
+        showDefault: true,
+      });
+      assertLinesWithinMaxWidth(result, 7);
+    });
+
+    it("should throw RangeError when maxWidth is too small for showChoices", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "d" }],
+            choices: valueSet(["a", "b"], ""),
+          }],
+        }],
+      };
+      // showChoices prefix " (" (2) + label "choices: " (9) = 11
+      // suffix wraps with content
+      // minDescWidth=11, minimum = termIndent(2) + max(4, 2*11+1) = 2 + 23 = 25
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 24, showChoices: true }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 25, got 24.",
+        },
+      );
+      const result = formatDocPage("app", page, {
+        maxWidth: 25,
+        showChoices: true,
+      });
+      assertLinesWithinMaxWidth(result, 25);
+    });
+
+    it("should reject maxWidth in the gap between split and non-split ranges", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "d" }],
+            choices: valueSet(["a", "b"], ""),
+          }],
+        }],
+      };
+      // Default termWidth=26, termIndent=2.
+      // showChoices prefix+label = 2+9 = 11
+      // Split range works at small maxWidth (e.g. 25).
+      // Non-split needs: 2 + 26 + 2 + 11 = 41.
+      // Gap: 26..40 should be rejected.
+      const result25 = formatDocPage("app", page, {
+        maxWidth: 25,
+        showChoices: true,
+      });
+      assertLinesWithinMaxWidth(result25, 25);
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 31, showChoices: true }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 41, got 31.",
+        },
+      );
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 40, showChoices: true }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 41, got 40.",
+        },
+      );
+      const result41 = formatDocPage("app", page, {
+        maxWidth: 41,
+        showChoices: true,
+      });
+      assertLinesWithinMaxWidth(result41, 41);
+    });
+
+    it("should treat empty-array defaults and choices as absent", () => {
+      // Empty default: [] should not affect min width or produce output
+      const defaultPage: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "d" }],
+            default: [],
+          }],
+        }],
+      };
+      const defaultResult = formatDocPage("app", defaultPage, {
+        showDefault: true,
+      });
+      assert.ok(!defaultResult.includes("["));
+      assert.ok(!defaultResult.includes("]"));
+      // Empty choices: [] should not affect min width or produce output
+      const choicesPage: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "d" }],
+            choices: [],
+          }],
+        }],
+      };
+      const choicesResult = formatDocPage("app", choicesPage, {
+        showChoices: true,
+      });
+      assert.ok(!choicesResult.includes("choices"));
+      assert.ok(!choicesResult.includes("("));
+      assert.ok(!choicesResult.includes(")"));
+      // Empty arrays should not inflate maxWidth requirements
+      assert.doesNotThrow(() =>
+        formatDocPage("app", defaultPage, {
+          maxWidth: 8,
+          showDefault: true,
+        })
+      );
+      assert.doesNotThrow(() =>
+        formatDocPage("app", choicesPage, {
+          maxWidth: 8,
+          showChoices: true,
+        })
+      );
+    });
+
+    it("should allow non-empty showDefault at narrow width", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            default: [{ type: "text", text: "0" }],
+          }],
+        }],
+      };
+      // minDescWidth = prefix.length = 2
+      // minimum = termIndent(2) + max(4, 2*2+1) = 7
+      // Suffix wraps onto the content line, so this fits
+      const result = formatDocPage("app", page, {
+        maxWidth: 7,
+        showDefault: true,
+      });
+      assertLinesWithinMaxWidth(result, 7);
+    });
+
+    it("should use fixed-term minimum when termWidth is small", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "d" }],
+            choices: valueSet(["a"], ""),
+          }],
+        }],
+      };
+      // termWidth=1: fixedEntryMin = 2+2+1+11 = 16, splitEntryMin = 2+2+21 = 25
+      // min(16, 25) = 16
+      assert.throws(
+        () =>
+          formatDocPage("app", page, {
+            maxWidth: 15,
+            showChoices: true,
+            termWidth: 1,
+          }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 16, got 15.",
+        },
+      );
+      const result = formatDocPage("app", page, {
+        maxWidth: 16,
+        showChoices: true,
+        termWidth: 1,
+      });
+      assertLinesWithinMaxWidth(result, 16);
+    });
+
+    it("should use max of all applicable minimums", () => {
+      const page: DocPage = {
+        usage: [{ type: "argument", metavar: "FILE" }],
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "desc" }],
+          }],
+        }],
+      };
+      // usage requires 7 + max("app"(3), min("FILE"(4), 10)) = 11,
+      // entries require termIndent(2) + 4 = 6; max(11, 6) = 11
+      assert.throws(
+        () => formatDocPage("app", page, { maxWidth: 10 }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 11, got 10.",
+        },
+      );
+      // maxWidth=11: indent(7)+FILE(4) = 11 fits on continuation line
+      const result = formatDocPage("app", page, { maxWidth: 11 });
+      assertLinesWithinMaxWidth(result, 11);
+    });
+
+    it("should respect custom showDefault prefix in minWidth", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "d" }],
+            default: [{ type: "text", text: "0" }],
+          }],
+        }],
+      };
+      // Custom prefix "<<<" (3), suffix wraps with content
+      // minDescWidth=3, minimum = termIndent(2) + max(4, 2*3+1) = 2 + 7 = 9
+      assert.throws(
+        () =>
+          formatDocPage("app", page, {
+            maxWidth: 8,
+            showDefault: { prefix: "<<<", suffix: ">>" },
+          }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 9, got 8.",
+        },
+      );
+      const result = formatDocPage("app", page, {
+        maxWidth: 9,
+        showDefault: { prefix: "<<<", suffix: ">>" },
+      });
+      assertLinesWithinMaxWidth(result, 9);
+    });
+
+    it("should respect custom showChoices label in minWidth", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "d" }],
+            choices: valueSet(["a"], ""),
+          }],
+        }],
+      };
+      // Custom label "v: " (3), prefix " (" (2), suffix wraps with content
+      // minDescWidth = 2 + 3 = 5
+      // minimum = termIndent(2) + max(4, 2*5+1) = 2 + 11 = 13
+      assert.throws(
+        () =>
+          formatDocPage("app", page, {
+            maxWidth: 12,
+            showChoices: { label: "v: " },
+          }),
+        {
+          name: "RangeError",
+          message: "maxWidth must be at least 13, got 12.",
+        },
+      );
+      const result = formatDocPage("app", page, {
+        maxWidth: 13,
+        showChoices: { label: "v: " },
+      });
+      assertLinesWithinMaxWidth(result, 13);
+    });
+
+    it("uses fallback prefix ' [' when showDefault has no prefix (maxWidth path)", () => {
+      // The ?? fallback for showDefault.prefix at line 631 is only reached
+      // when maxWidth is set and needsDescColumn is true.
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "d" }],
+            default: [{ type: "text", text: "0" }],
+          }],
+        }],
+      };
+      // showDefault has suffix but no prefix → uses default " [" (2 chars).
+      // minDescWidth = 2, minimum = termIndent(2) + max(4, 2*2+1) = 2 + 5 = 7
+      const result = formatDocPage("app", page, {
+        maxWidth: 40,
+        showDefault: { suffix: "]" },
+      });
+      assertLinesWithinMaxWidth(result, 40);
+      assert.ok(result.includes(" [0]"));
+    });
+
+    it("uses fallback label 'choices: ' when showChoices has no label (maxWidth path)", () => {
+      // The ?? fallback for showChoices.label at line 643 is only reached
+      // when maxWidth is set and needsDescColumn is true.
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "X" },
+            description: [{ type: "text", text: "d" }],
+            choices: valueSet(["a", "b"], { fallback: "", type: "unit" }),
+          }],
+        }],
+      };
+      // showChoices has prefix but no label → uses default "choices: " (9 chars).
+      // minDescWidth = prefix_width + label_width = 2 + 9 = 11
+      const result = formatDocPage("app", page, {
+        maxWidth: 60,
+        showChoices: { prefix: " (" },
+      });
+      assertLinesWithinMaxWidth(result, 60);
+      assert.ok(result.includes(" (choices: a, b)"));
+    });
+  });
+
+  describe("Unicode display width", () => {
+    it("should align CJK terms correctly", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "한글" },
+            description: [{ type: "text", text: "설명" }],
+          }],
+        }],
+      };
+      // "한글" = 4 display columns.  Verify the term is padded correctly.
+      const result = formatDocPage("app", page, { maxWidth: 20 });
+      assert.ok(result.includes("한글"));
+      assert.ok(result.includes("설명"));
+    });
+
+    it("should respect maxWidth with CJK content", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "한글" },
+            description: [{ type: "text", text: "설명 설명 설명" }],
+          }],
+        }],
+      };
+      const result = formatDocPage("앱", page, { maxWidth: 20 });
+      for (const line of result.split("\n")) {
+        assert.ok(
+          getDisplayWidth(line) <= 20,
+          `Line display width exceeds 20: "${line}" (${
+            getDisplayWidth(line)
+          } columns)`,
+        );
+      }
+    });
+
+    it("should handle emoji in descriptions", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "FILE" },
+            description: [{ type: "text", text: "😀 description" }],
+          }],
+        }],
+      };
+      const result = formatDocPage("app", page, { maxWidth: 30 });
+      assert.ok(result.includes("😀"));
+    });
+  });
+});
+
+describe("branch coverage: doc.ts edge cases", () => {
+  // Lines 615, 629, 641: maxWidth != null passed to examples/author/bugs.
+  it("examples/author/bugs format with maxWidth set", () => {
+    const page: DocPage = {
+      sections: [],
+      examples: message`myapp --help`,
+      author: message`Jane Doe`,
+      bugs: message`bugs.example.com`,
+    };
+    const result = formatDocPage("myapp", page, { maxWidth: 60 });
+    assert.ok(result.includes("Examples:"));
+    assert.ok(result.includes("Author:"));
+    assert.ok(result.includes("Bugs:"));
+  });
+
+  // Line 400: section sort falls through to index comparison (titleCmp == 0).
+  // Requires two sections with the same title-null-ness so that titleCmp==0
+  // and the tiebreak is by index.
+  it("sections sort preserves order when title-null-ness is equal", () => {
+    const page: DocPage = {
+      sections: [
+        {
+          title: "Options",
+          entries: [{ term: { type: "argument", metavar: "a" } }],
+        },
+        {
+          title: "Arguments",
+          entries: [{ term: { type: "argument", metavar: "b" } }],
+        },
+      ],
+    };
+    const result = formatDocPage("myapp", page);
+    // Both sections have titles (same title-null-ness → index tiebreak).
+    // The order should be stable (index-based) according to the comparator.
+    assert.ok(result.includes("Options:"));
+    assert.ok(result.includes("Arguments:"));
+  });
+
+  // Lines 462, 465: showDefault is true (boolean), so prefix/suffix come from
+  // the false branch of `typeof showDefault === "object"`.
+  it("showDefault: true uses default prefix/suffix brackets", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--output"] },
+          default: message`stdout`,
+        }],
+      }],
+    };
+    const result = formatDocPage("myapp", page, { showDefault: true });
+    assert.ok(result.includes("["));
+    assert.ok(result.includes("stdout"));
+    assert.ok(result.includes("]"));
+  });
+
+  // Line 476: description is long enough that adding prefix would overflow
+  // descColumnWidth, so a newline is inserted before the default value.
+  it("showDefault: default wraps to new line when description is wide", () => {
+    const longDesc =
+      "A very long description that occupies almost all of the description column width";
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-v", "--verbose"] },
+          description: message`${longDesc}`,
+          default: message`false`,
+        }],
+      }],
+    };
+    // maxWidth=60 gives a narrow descColumnWidth so the default wraps.
+    const result = formatDocPage("myapp", page, {
+      showDefault: true,
+      maxWidth: 60,
+    });
+    assert.ok(result.includes("false"), "default value should appear");
+  });
+
+  // Lines 523, 529, 538, 546: showChoices as object with label/maxItems
+  // options—exercises the false-branch of the conditional default.
+  it("showChoices: object with label uses provided label", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--fmt"] },
+          choices: valueSet(["json", "yaml", "csv"], ""),
+        }],
+      }],
+    };
+    const result = formatDocPage("myapp", page, {
+      showChoices: { label: "one of: " },
+    });
+    assert.ok(result.includes("one of:"));
+  });
+
+  it("showChoices: object with maxItems truncates long choice lists", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--color"] },
+          choices: valueSet([
+            "red",
+            "green",
+            "blue",
+            "cyan",
+            "magenta",
+            "yellow",
+          ], ""),
+        }],
+      }],
+    };
+    // maxItems: 2 → only first two choices displayed, rest truncated.
+    const result = formatDocPage("myapp", page, {
+      showChoices: { maxItems: 2 },
+    });
+    assert.ok(result.includes("red") || result.includes("..."));
+    assert.ok(result.includes("..."), "should show ellipsis for truncation");
+  });
+
+  it("showChoices: maxItems should count only value terms", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--color"] },
+          choices: [
+            { type: "text", text: "try " },
+            { type: "value", value: "red" },
+            { type: "text", text: " or " },
+            { type: "value", value: "green" },
+            { type: "text", text: " first" },
+          ],
+        }],
+      }],
+    };
+
+    const result = formatDocPage("myapp", page, {
+      showChoices: { maxItems: 1 },
+    });
+
+    assert.ok(result.includes("choices: try red, ..."));
+    assert.ok(!result.includes("green"));
+  });
+
+  it("showChoices: maxItems 0 throws RangeError", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--color"] },
+          choices: valueSet(["red", "green", "blue"], ""),
+        }],
+      }],
+    };
+    assert.throws(
+      () =>
+        formatDocPage("myapp", page, {
+          showChoices: { maxItems: 0 },
+        }),
+      {
+        name: "RangeError",
+        message: "showChoices.maxItems must be at least 1, but got 0.",
+      },
+    );
+  });
+
+  it("showChoices: negative maxItems throws RangeError", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--color"] },
+          choices: valueSet(["red", "green", "blue"], ""),
+        }],
+      }],
+    };
+    assert.throws(
+      () =>
+        formatDocPage("myapp", page, {
+          showChoices: { maxItems: -1 },
+        }),
+      {
+        name: "RangeError",
+        message: "showChoices.maxItems must be at least 1, but got -1.",
+      },
+    );
+  });
+
+  it("showChoices: maxItems 0 throws even without choices entries", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--verbose"] },
+        }],
+      }],
+    };
+    assert.throws(
+      () =>
+        formatDocPage("myapp", page, {
+          showChoices: { maxItems: 0 },
+        }),
+      {
+        name: "RangeError",
+        message: "showChoices.maxItems must be at least 1, but got 0.",
+      },
+    );
+  });
+
+  it("section sort falls back to index when comparator ties", () => {
+    const page: DocPage = {
+      sections: [
+        {
+          entries: [{ term: { type: "argument", metavar: "FIRST" } }],
+        },
+        {
+          entries: [{ term: { type: "argument", metavar: "SECOND" } }],
+        },
+      ],
+    };
+    const result = formatDocPage("myapp", page, {
+      sectionOrder: () => 0,
+    });
+    const firstIndex = result.indexOf("FIRST");
+    const secondIndex = result.indexOf("SECOND");
+    assert.ok(firstIndex !== -1);
+    assert.ok(secondIndex !== -1);
+    assert.ok(firstIndex < secondIndex);
+  });
+
+  it("showDefault object uses fallback prefix and suffix", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--name"] },
+          default: message`guest`,
+        }],
+      }],
+    };
+    const result = formatDocPage("myapp", page, {
+      showDefault: {},
+    });
+    assert.ok(result.includes("[guest]"));
+  });
+
+  it("showChoices handles non-array choices value safely", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["--mode"] },
+          // Runtime guard path: choices is non-null but not an array.
+          choices: "dev,prod" as never,
+        }],
+      }],
+    };
+    // Non-array choices should be treated as absent
+    const result = formatDocPage("myapp", page, {
+      showChoices: { maxItems: 1 },
+    });
+    assert.ok(result.includes("--mode"));
+    assert.ok(!result.includes("choices:"));
+  });
+
+  it("showChoices non-array choices should not violate maxWidth", () => {
+    const page: DocPage = {
+      sections: [{
+        entries: [{
+          term: { type: "option", names: ["-m"] },
+          choices: "dev,prod" as never,
+        }],
+      }],
+    };
+    assert.doesNotThrow(() =>
+      formatDocPage("myapp", page, {
+        showChoices: true,
+        maxWidth: 8,
+      })
+    );
+  });
+
+  describe("degenerate and hidden entries", () => {
+    it("should skip entries with hidden: true terms", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [
+            {
+              term: { type: "option", names: ["--secret"], hidden: true },
+              description: [{ type: "text", text: "Secret option" }],
+            },
+            {
+              term: { type: "option", names: ["--visible"] },
+              description: [{ type: "text", text: "Visible option" }],
+            },
+          ],
+        }],
+      };
+      const result = formatDocPage("app", page, { colors: false });
+      assert.ok(!result.includes("--secret"));
+      assert.ok(!result.includes("Secret option"));
+      assert.ok(result.includes("--visible"));
+    });
+
+    it("should skip entries with hidden: 'doc' terms", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: {
+              type: "command",
+              name: "internal",
+              hidden: "doc",
+            } as never,
+            description: [{ type: "text", text: "Internal command" }],
+          }],
+        }],
+      };
+      const result = formatDocPage("app", page, { colors: false });
+      assert.ok(!result.includes("internal"));
+    });
+
+    it("should skip entries with hidden: 'help' terms", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: {
+              type: "option",
+              names: ["--debug"],
+              hidden: "help",
+            } as never,
+            description: [{ type: "text", text: "Debug mode" }],
+          }],
+        }],
+      };
+      const result = formatDocPage("app", page, { colors: false });
+      assert.ok(!result.includes("--debug"));
+      assert.ok(!result.includes("Debug mode"));
+    });
+
+    it("should show entries with hidden: 'usage' terms", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: {
+              type: "option",
+              names: ["--verbose"],
+              hidden: "usage",
+            } as never,
+            description: [{ type: "text", text: "Verbose output" }],
+          }],
+        }],
+      };
+      const result = formatDocPage("app", page, { colors: false });
+      assert.ok(result.includes("--verbose"));
+      assert.ok(result.includes("Verbose output"));
+    });
+
+    it("should skip entries with option term having empty names", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: {
+              type: "option",
+              names: [] as never,
+              metavar: "X",
+            } as never,
+          }],
+        }],
+      };
+      const result = formatDocPage("app", page, { colors: false });
+      // Should not contain any non-empty content lines in the section
+      const lines = result.split("\n").filter((l) => l.trim() !== "");
+      assert.equal(lines.length, 0);
+    });
+
+    it("should skip entries with empty command name", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "command", name: "" } as never,
+          }],
+        }],
+      };
+      const result = formatDocPage("app", page, { colors: false });
+      const lines = result.split("\n").filter((l) => l.trim() !== "");
+      assert.equal(lines.length, 0);
+    });
+
+    it("should skip entries with empty argument metavar", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "argument", metavar: "" } as never,
+          }],
+        }],
+      };
+      const result = formatDocPage("app", page, { colors: false });
+      const lines = result.split("\n").filter((l) => l.trim() !== "");
+      assert.equal(lines.length, 0);
+    });
+
+    it("should skip entries with empty literal value", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "literal", value: "" } as never,
+          }],
+        }],
+      };
+      const result = formatDocPage("app", page, { colors: false });
+      const lines = result.split("\n").filter((l) => l.trim() !== "");
+      assert.equal(lines.length, 0);
+    });
+
+    it("should skip entries with exclusive term having empty branches", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "exclusive", terms: [] } as never,
+          }],
+        }],
+      };
+      const result = formatDocPage("app", page, { colors: false });
+      const lines = result.split("\n").filter((l) => l.trim() !== "");
+      assert.equal(lines.length, 0);
+    });
+
+    it("should suppress section heading when all entries are filtered", () => {
+      const page: DocPage = {
+        sections: [{
+          title: "Secrets",
+          entries: [
+            {
+              term: { type: "option", names: ["--key"], hidden: true },
+              description: [{ type: "text", text: "Secret key" }],
+            },
+            {
+              term: {
+                type: "option",
+                names: ["--token"],
+                hidden: "doc",
+              } as never,
+              description: [{ type: "text", text: "Secret token" }],
+            },
+          ],
+        }],
+      };
+      const result = formatDocPage("app", page, { colors: false });
+      assert.ok(!result.includes("Secrets"));
+      assert.ok(!result.includes("--key"));
+      assert.ok(!result.includes("--token"));
+    });
+
+    it("should not reject maxWidth when all entries are filtered", () => {
+      const page: DocPage = {
+        sections: [{
+          entries: [{
+            term: { type: "option", names: ["--secret"], hidden: true },
+            description: [{ type: "text", text: "This is a long description" }],
+          }],
+        }],
+      };
+      // maxWidth: 1 would normally be too small for entries, but since all
+      // entries are filtered out, it should not throw.
+      assert.doesNotThrow(() => {
+        formatDocPage("app", page, { colors: false, maxWidth: 1 });
+      });
+    });
+  });
+});
+
+describe("isDocEntryHidden", () => {
+  it("should follow hidden flags for doc-hideable terms", () => {
+    const entries: readonly DocEntry[] = [
+      { term: { type: "argument", metavar: "FILE", hidden: true } },
+      { term: { type: "option", names: ["--secret"], hidden: "doc" } },
+      { term: { type: "command", name: "internal", hidden: "help" } },
+      { term: { type: "passthrough", hidden: true } },
+    ];
+
+    for (const entry of entries) {
+      assert.ok(isDocEntryHidden(entry));
+    }
+  });
+
+  it("should keep usage-only and structural terms visible in docs", () => {
+    const entries: readonly DocEntry[] = [
+      { term: { type: "option", names: ["--verbose"], hidden: "usage" } },
+      { term: { type: "literal", value: "--" } },
+      { term: { type: "ellipsis" } },
+      { term: { type: "optional", terms: [] } },
+    ];
+
+    for (const entry of entries) {
+      assert.ok(!isDocEntryHidden(entry));
+    }
+  });
+});
+
+describe("cloneDocEntry", () => {
+  it("should clone an entry with all fields", () => {
+    const entry: DocEntry = {
+      term: { type: "option", names: ["-v", "--verbose"] },
+      description: [{ type: "text", text: "Enable verbose output" }],
+      default: [{ type: "value", value: "false" }],
+      choices: [{ type: "value", value: "true" }, {
+        type: "value",
+        value: "false",
+      }],
+    };
+    const cloned = cloneDocEntry(entry);
+    assert.deepEqual(cloned, entry);
+    assert.notEqual(cloned, entry);
+    assert.notEqual(cloned.term, entry.term);
+    assert.notEqual(cloned.description, entry.description);
+    assert.notEqual(cloned.default, entry.default);
+    assert.notEqual(cloned.choices, entry.choices);
+  });
+
+  it("should clone an entry with only a term", () => {
+    const entry: DocEntry = {
+      term: { type: "argument", metavar: "FILE" },
+    };
+    const cloned = cloneDocEntry(entry);
+    assert.deepEqual(cloned, entry);
+    assert.notEqual(cloned, entry);
+    assert.notEqual(cloned.term, entry.term);
+    assert.equal(cloned.description, undefined);
+    assert.equal(cloned.default, undefined);
+    assert.equal(cloned.choices, undefined);
+  });
+
+  it("should not leak mutations back to the original", () => {
+    const entry: DocEntry = {
+      term: { type: "argument", metavar: "FILE" },
+      description: [{ type: "text", text: "original" }],
+    };
+    const cloned = cloneDocEntry(entry);
+    // @ts-expect-error -- intentionally mutating readonly field to test isolation
+    cloned.description[0].text = "mutated";
+    assert.equal(
+      (entry.description![0] as { type: "text"; text: string }).text,
+      "original",
+    );
+  });
+
+  it("should clone an entry whose description contains a URL term", () => {
+    const entry: DocEntry = {
+      term: { type: "argument", metavar: "FILE" },
+      description: [
+        { type: "text", text: "See " },
+        { type: "url", url: new URL("https://example.com") },
+      ],
+    };
+    const cloned = cloneDocEntry(entry);
+    assert.deepEqual(cloned, entry);
+    assert.notEqual(cloned, entry);
+    assert.notEqual(cloned.description, entry.description);
+    assert.notEqual(cloned.description![1], entry.description![1]);
+  });
+});
+
+// Regression: deduplication should prefer visible entries over hidden ones
+// https://github.com/dahlia/optique/issues/494
+describe("deduplicateDocEntries: hidden visibility preference", () => {
+  it("should prefer visible entry when hidden copy comes first", () => {
+    const entries: DocEntry[] = [
+      {
+        term: { type: "option", names: ["--x"], hidden: "doc" },
+        description: message`Hidden.`,
+      },
+      {
+        term: { type: "option", names: ["--x"] },
+        description: message`Visible.`,
+      },
+    ];
+
+    const result = deduplicateDocEntries(entries);
+    assert.equal(result.length, 1);
+    assert.ok(
+      result[0].term.type === "option" && !result[0].term.hidden,
+      "should keep the visible entry",
+    );
+  });
+
+  it("should prefer visible entry when hidden copy comes second", () => {
+    const entries: DocEntry[] = [
+      {
+        term: { type: "option", names: ["--x"] },
+        description: message`Visible.`,
+      },
+      {
+        term: { type: "option", names: ["--x"], hidden: true },
+        description: message`Hidden.`,
+      },
+    ];
+
+    const result = deduplicateDocEntries(entries);
+    assert.equal(result.length, 1);
+    assert.ok(
+      result[0].term.type === "option" && !result[0].term.hidden,
+      "should keep the visible entry",
+    );
+  });
+
+  it("should keep first entry when both are visible", () => {
+    const entries: DocEntry[] = [
+      {
+        term: { type: "option", names: ["--x"] },
+        description: message`First.`,
+      },
+      {
+        term: { type: "option", names: ["--x"] },
+        description: message`Second.`,
+      },
+    ];
+
+    const result = deduplicateDocEntries(entries);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].description![0].type, "text");
+    assert.equal(
+      (result[0].description![0] as { text: string }).text,
+      "First.",
+    );
+  });
+
+  it("should omit entries when both are hidden", () => {
+    const entries: DocEntry[] = [
+      {
+        term: { type: "option", names: ["--x"], hidden: true },
+        description: message`First hidden.`,
+      },
+      {
+        term: { type: "option", names: ["--x"], hidden: "doc" },
+        description: message`Second hidden.`,
+      },
+    ];
+
+    const result = deduplicateDocEntries(entries);
+    assert.equal(result.length, 0);
+  });
+
+  it("should not let hidden entries influence visible ordering", () => {
+    const entries: DocEntry[] = [
+      {
+        term: { type: "option", names: ["--x"], hidden: "doc" },
+      },
+      {
+        term: { type: "option", names: ["--y"] },
+        description: message`Y.`,
+      },
+      {
+        term: { type: "option", names: ["--x"] },
+        description: message`X.`,
+      },
+    ];
+
+    const result = deduplicateDocEntries(entries);
+    assert.equal(result.length, 2);
+    assert.ok(
+      result[0].term.type === "option" &&
+        result[0].term.names.includes("--y"),
+      "first visible entry should come first",
+    );
+    assert.ok(
+      result[1].term.type === "option" &&
+        result[1].term.names.includes("--x"),
+      "visible --x should follow --y, not precede it",
+    );
+  });
+});
+
+describe("deduplicateDocFragments: hidden visibility preference", () => {
+  it("should keep visible entry and discard hidden duplicate", () => {
+    const result = deduplicateDocFragments([
+      {
+        type: "entry",
+        term: { type: "option", names: ["--x"], hidden: "doc" },
+      },
+      {
+        type: "entry",
+        term: { type: "option", names: ["--x"] },
+        description: message`Visible.`,
+      },
+    ]);
+
+    const entries = result.flatMap((f) => f.type === "entry" ? [f] : f.entries);
+    assert.equal(entries.length, 1);
+    assert.ok(
+      entries[0].term.type === "option" && !entries[0].term.hidden,
+      "should keep the visible entry",
+    );
+  });
+
+  it("should not let hidden entries reorder visible ones", () => {
+    const result = deduplicateDocFragments([
+      {
+        type: "entry",
+        term: { type: "option", names: ["--x"], hidden: "doc" },
+      },
+      {
+        type: "entry",
+        term: { type: "option", names: ["--y"] },
+      },
+      {
+        type: "entry",
+        term: { type: "option", names: ["--x"] },
+      },
+    ]);
+
+    const entries = result.flatMap((f) => f.type === "entry" ? [f] : f.entries);
+    assert.equal(entries.length, 2);
+    assert.ok(
+      entries[0].term.type === "option" &&
+        entries[0].term.names.includes("--y"),
+      "first visible entry --y should come first",
+    );
+    assert.ok(
+      entries[1].term.type === "option" &&
+        entries[1].term.names.includes("--x"),
+      "visible --x should follow --y",
+    );
+  });
+
+  it("should prefer visible entry in titled sections", () => {
+    const result = deduplicateDocFragments([
+      {
+        type: "section",
+        title: "Opts",
+        entries: [
+          {
+            term: { type: "option", names: ["--x"], hidden: true },
+          },
+        ],
+      },
+      {
+        type: "section",
+        title: "Opts",
+        entries: [
+          {
+            term: { type: "option", names: ["--x"] },
+            description: message`Visible.`,
+          },
+        ],
+      },
+    ]);
+
+    const sections = result.filter((f) =>
+      f.type === "section" && f.title === "Opts"
+    );
+    assert.equal(sections.length, 1);
+    const entries = (sections[0] as DocSection & { type: "section" }).entries;
+    assert.equal(entries.length, 1);
+    assert.ok(
+      entries[0].term.type === "option" && !entries[0].term.hidden,
+      "titled section dedup should prefer visible entry",
+    );
+  });
+
+  it("should prefer visible entry in untitled sections", () => {
+    const result = deduplicateDocFragments([
+      {
+        type: "section",
+        entries: [
+          {
+            term: { type: "option", names: ["--x"], hidden: "help" },
+          },
+        ],
+      },
+      {
+        type: "section",
+        entries: [
+          {
+            term: { type: "option", names: ["--x"] },
+            description: message`Visible.`,
+          },
+        ],
+      },
+    ]);
+
+    const entries = result.flatMap((f) =>
+      f.type === "entry" ? [f] : f.type === "section" ? f.entries : []
+    );
+    assert.equal(entries.length, 1);
+    assert.ok(
+      entries[0].term.type === "option" && !entries[0].term.hidden,
+      "untitled section dedup should prefer visible entry",
+    );
+  });
+
+  it("should position titled section at first visible fragment", () => {
+    const result = deduplicateDocFragments([
+      {
+        type: "section",
+        title: "A",
+        entries: [
+          { term: { type: "option", names: ["--x"], hidden: "doc" } },
+        ],
+      },
+      {
+        type: "section",
+        title: "B",
+        entries: [
+          { term: { type: "option", names: ["--y"] } },
+        ],
+      },
+      {
+        type: "section",
+        title: "A",
+        entries: [
+          { term: { type: "option", names: ["--x"] } },
+        ],
+      },
+    ]);
+
+    const titles = result
+      .filter((f) => f.type === "section" && f.title != null)
+      .map((f) => (f as DocSection & { type: "section" }).title);
+    assert.deepEqual(
+      titles,
+      ["B", "A"],
+      "A should appear after B because A's first visible entry comes later",
+    );
+  });
+
+  it("should omit titled section when all entries are hidden", () => {
+    const result = deduplicateDocFragments([
+      {
+        type: "section",
+        title: "Hidden",
+        entries: [
+          { term: { type: "option", names: ["--x"], hidden: true } },
+        ],
+      },
+      {
+        type: "section",
+        title: "Visible",
+        entries: [
+          { term: { type: "option", names: ["--y"] } },
+        ],
+      },
+    ]);
+
+    const titles = result
+      .filter((f) => f.type === "section" && f.title != null)
+      .map((f) => (f as DocSection & { type: "section" }).title);
+    assert.deepEqual(titles, ["Visible"]);
+  });
+});

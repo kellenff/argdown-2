@@ -1,0 +1,162 @@
+import * as annotations from "@optique/core/annotations";
+import * as dependency from "@optique/core/dependency";
+import * as extension from "@optique/core/extension";
+import * as fluent from "@optique/core/fluent";
+import * as parser from "@optique/core/parser";
+import * as root from "@optique/core";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+function readJson(relativePath: string): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(new URL(relativePath, import.meta.url), "utf8"),
+  ) as Record<string, unknown>;
+}
+
+function readTsdownEntries(): string[] {
+  const config = readFileSync(
+    new URL("../tsdown.config.ts", import.meta.url),
+    "utf8",
+  );
+  return [...config.matchAll(/"(src\/[^"]+\.ts)"/g)]
+    .map((match) => match[1])
+    .sort();
+}
+
+test("package manifests expose only supported public subpaths", () => {
+  const packageJson = readJson("../package.json");
+  const denoJson = readJson("../deno.json");
+  const packageExports = Object.keys(
+    packageJson.exports as Record<string, unknown>,
+  ).sort();
+  const denoExports = Object.keys(
+    denoJson.exports as Record<string, unknown>,
+  ).sort();
+  const tsdownEntries = readTsdownEntries();
+  const expected = [
+    ".",
+    "./annotations",
+    "./completion",
+    "./constructs",
+    "./context",
+    "./dependency",
+    "./dependency-runtime",
+    "./doc",
+    "./extension",
+    "./facade",
+    "./fluent",
+    "./message",
+    "./modifiers",
+    "./nonempty",
+    "./parser",
+    "./primitives",
+    "./program",
+    "./suggestion",
+    "./usage",
+    "./valueparser",
+  ].sort();
+
+  assert.deepEqual(packageExports, expected);
+  assert.deepEqual(denoExports, expected);
+  assert.deepEqual(tsdownEntries, [
+    "src/annotation-state.ts",
+    "src/annotations.ts",
+    "src/completion.ts",
+    "src/constructs.ts",
+    "src/context.ts",
+    "src/dependency-metadata.ts",
+    "src/dependency-runtime.ts",
+    "src/dependency.ts",
+    "src/displaywidth.ts",
+    "src/doc.ts",
+    "src/execution-context.ts",
+    "src/extension.ts",
+    "src/facade.ts",
+    "src/fluent.ts",
+    "src/index.ts",
+    "src/input-trace.ts",
+    "src/internal/annotations.ts",
+    "src/internal/dependency.ts",
+    "src/internal/parser.ts",
+    "src/message.ts",
+    "src/modifiers.ts",
+    "src/nonempty.ts",
+    "src/parser.ts",
+    "src/phase2-seed.ts",
+    "src/primitives.ts",
+    "src/program.ts",
+    "src/suggestion.ts",
+    "src/usage.ts",
+    "src/validate.ts",
+    "src/valueparser.ts",
+  ]);
+  assert.ok(!packageExports.includes("./mode-dispatch"));
+  assert.ok(!denoExports.includes("./mode-dispatch"));
+});
+
+test("annotations module only exposes the annotation read API", () => {
+  assert.deepEqual(Object.keys(annotations).sort(), ["getAnnotations"]);
+});
+
+test("extension module exposes the supported extension helpers", () => {
+  assert.deepEqual(Object.keys(extension).sort(), [
+    "defineTraits",
+    "delegateSuggestNodes",
+    "dispatchByMode",
+    "extractPhase2SeedKey",
+    "getTraits",
+    "inheritAnnotations",
+    "injectAnnotations",
+    "isInjectedAnnotationState",
+    "mapModeValue",
+    "mapSourceMetadata",
+    "unwrapInjectedAnnotationState",
+    "withAnnotationView",
+    "wrapForMode",
+  ]);
+});
+
+test("fluent module exposes fluent parser helpers", () => {
+  assert.deepEqual(Object.keys(fluent).sort(), ["fluent"]);
+});
+
+test("dependency module hides internal replay machinery", () => {
+  assert.deepEqual(Object.keys(dependency).sort(), [
+    "dependency",
+    "deriveFrom",
+    "deriveFromAsync",
+    "deriveFromSync",
+    "isDependencySource",
+    "isDerivedValueParser",
+  ]);
+});
+
+test("parser module hides constructs and parser-internal helpers", () => {
+  assert.deepEqual(Object.keys(parser).sort(), [
+    "createParserContext",
+    "getDocPage",
+    "getDocPageAsync",
+    "getDocPageSync",
+    "parse",
+    "parseAsync",
+    "parseSync",
+    "suggest",
+    "suggestAsync",
+    "suggestSync",
+  ]);
+});
+
+test("root module keeps user-facing APIs but not internal machinery", () => {
+  assert.equal(typeof root.object, "function");
+  assert.equal(typeof root.seq, "function");
+  assert.equal(typeof root.option, "function");
+  assert.equal(typeof root.negatableFlag, "function");
+  assert.equal(typeof root.parse, "function");
+  assert.equal(typeof root.dependency, "function");
+  assert.equal(typeof root.fluent, "function");
+  assert.ok(!Object.hasOwn(root, "annotationKey"));
+  assert.ok(!Object.hasOwn(root, "dependencyId"));
+  assert.ok(!Object.hasOwn(root, "getParserSuggestRuntimeNodes"));
+  assert.ok(!Object.hasOwn(root, "dispatchByMode"));
+});

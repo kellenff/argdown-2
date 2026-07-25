@@ -1,0 +1,29 @@
+packages:
+- packages/*
+- examples/*
+- docs
+
+catalog:
+  "@clack/prompts": ^1.6.0
+  "@inquirer/prompts": ^8.3.0
+  "@logtape/file": ^2.2.2
+  "@logtape/logtape": ^2.2.2
+  "@standard-schema/spec": ^1.1.0
+  "@types/node": ^24.0.0
+  fast-check: ^4.7.0
+  isomorphic-git: ^1.36.1
+  tsdown: ^0.13.0
+  tsx: ^4.21.0
+  typescript: ^5.8.3
+  valibot: ^1.2.0
+  zod: "^3.25.0 || ^4.0.0"
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true
+
+engineStrict: true
+nodeVersion: 24.15.0
+patchedDependencies:
+  vite@7.3.5: patches/vite@7.3.5.patch

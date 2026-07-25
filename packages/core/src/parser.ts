@@ -1,0 +1,30 @@
+export type { ParseOptions } from "./annotations.ts";
+export type {
+  CombineModes,
+  DocState,
+  ExecutionContext,
+  ExecutionPhase,
+  InferMode,
+  InferValue,
+  Mode,
+  ModeIterable,
+  ModeValue,
+  ParseFrame,
+  Parser,
+  ParserContext,
+  ParserResult,
+  Result,
+  Suggestion,
+} from "./internal/parser.ts";
+export {
+  createParserContext,
+  getDocPage,
+  getDocPageAsync,
+  getDocPageSync,
+  parse,
+  parseAsync,
+  parseSync,
+  suggest,
+  suggestAsync,
+  suggestSync,
+} from "./internal/parser.ts";

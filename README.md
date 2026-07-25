@@ -1,0 +1,255 @@
+<!-- hongdown-disable-next-line -->
+
+<img src="docs/public/optique.svg" width="128" height="58" align="right" alt="Optique logo">
+
+Optique: Type-safe combinatorial CLI parser for TypeScript
+==========================================================
+
+[![JSR][JSR badge]][JSR]
+[![npm][npm badge]][npm]
+[![GitHub Actions][GitHub Actions badge]][GitHub Actions]
+[![Codecov][Codecov badge]][Codecov]
+
+Type-safe combinatorial CLI parser for TypeScript inspired by Haskell's
+[optparse-applicative] and TypeScript's [Zod]. Build composable parsers for
+command-line interfaces with full type safety, automatic type inference, and
+built-in shell completion support for Bash, zsh, fish, PowerShell, and Nushell,
+plus config file integration and man page generation from the same parser
+definitions.
+
+> [!NOTE]
+> Optique is a parsing library that focuses on extracting and validating
+> command-line arguments. It doesn't dictate your application's structure,
+> handle command execution, or provide scaffolding—it simply transforms
+> command-line input into well-typed data structures.
+
+[JSR badge]: https://jsr.io/badges/@optique/core
+[JSR]: https://jsr.io/@optique
+[npm badge]: https://img.shields.io/npm/v/@optique/core?logo=npm
+[npm]: https://www.npmjs.com/package/@optique/core
+[GitHub Actions badge]: https://github.com/dahlia/optique/actions/workflows/main.yaml/badge.svg
+[GitHub Actions]: https://github.com/dahlia/optique/actions/workflows/main.yaml
+[Codecov badge]: https://codecov.io/gh/dahlia/optique/graph/badge.svg?token=Dw50j2DTjG
+[Codecov]: https://codecov.io/gh/dahlia/optique
+[optparse-applicative]: https://github.com/pcapriotti/optparse-applicative
+[Zod]: https://zod.dev/
+
+
+Why Optique
+-----------
+
+ -  *Composable by default*: Build small parser pieces and combine them into
+    larger CLIs without losing readability or types.
+ -  *Types that model real CLI rules*: Optional flags, mutually exclusive
+    branches, and dependent options are reflected directly in inferred types.
+ -  *One parser, many outputs*: Derive help text, shell completions, and
+    (with *@optique/man*) man pages from the same parser definition.
+ -  *Practical integrations*: Extend parsers with config files, environment
+    variables, schema validators, interactive prompts, and git-aware parsing.
+ -  *Command discovery*: Split larger command trees into files with
+    *@optique/discover* while keeping parser-driven help and completion.
+ -  *Cross-runtime consistency*: Use the same parser model in Deno, Node.js,
+    and Bun.
+
+
+Features
+--------
+
+ -  *Parser combinators*: `object()`, `or()`, `merge()`, `optional()`,
+    `multiple()`, `map()`, `conditional()`, `passThrough()`, and more
+    for composable CLI parsing
+ -  *Full type safety*: Automatic TypeScript type inference for all parser
+    compositions with compile-time validation
+ -  *Rich value parsers*: Built-in parsers for strings, numbers, URLs, locales,
+    UUIDs, networking types (`port()`, `ipv4()`, `hostname()`, `email()`, etc.),
+    Temporal types (via *@optique/temporal*), Standard Schema validators (via
+    *@optique/standard-schema*), Zod schemas (via *@optique/zod*), and Valibot
+    schemas (via *@optique/valibot*)
+ -  *Config file support*: Load config from files with Standard Schema
+    validation (via *@optique/config*), supporting Zod, Valibot, ArkType, and
+    more
+ -  *Environment variable support*: Bind options to environment variables
+    with type-safe parsing and fallback behavior (via *@optique/env*)
+ -  *Derived defaults*: Compute default values from the first-pass parse result
+    without lowering CLI argument priority (via *@optique/derived-defaults*)
+ -  *Interactive prompts*: Prompt users for missing values via Inquirer.js or
+    Clack with parser-integrated fallback flows (via *@optique/inquirer* and
+    *@optique/clack*)
+ -  *Inter-option dependencies*: Options whose valid values depend on other
+    options, with dynamic validation and context-aware shell completion
+ -  *Async parser support*: Type-safe sync/async mode distinction for parsers
+    that validate against external sources like git refs or remote APIs
+ -  *Man page generation*: Generate Unix man pages directly from parser
+    definitions (via *@optique/man*), keeping documentation always in sync
+ -  *Command discovery*: Discover command modules from a directory and dispatch
+    to type-checked handlers (via *@optique/discover*)
+ -  *Shell completion*: Automatic completion script generation for Bash, zsh,
+    fish, PowerShell, and Nushell
+ -  *Smart error messages*: “Did you mean?” suggestions for typos with
+    context-aware error formatting
+ -  *Automatic help generation*: Beautiful help text with usage formatting,
+    labeled sections, and colored output
+ -  *Multi-runtime support*: Works seamlessly with Deno, Node.js, and Bun
+ -  *CLI integration*: Complete CLI setup with `run()` function including help,
+    version, and completion support
+
+
+Quick example
+-------------
+
+~~~~ typescript
+import { option, constant } from "@optique/core/primitives";
+import { object, or, merge } from "@optique/core/constructs";
+import { optional } from "@optique/core/modifiers";
+import { string, integer } from "@optique/core/valueparser";
+import { run, print } from "@optique/run";
+
+// Reusable parser components
+const commonOptions = object({
+  verbose: option("-v", "--verbose"),
+  config: optional(option("-c", "--config", string())),
+});
+
+// Mutually exclusive deployment strategies
+const localDeploy = object({
+  mode: constant("local" as const),
+  path: option("--path", string()),
+  port: option("--port", integer({ min: 1000 })),
+});
+
+const cloudDeploy = object({
+  mode: constant("cloud" as const),
+  provider: option("--provider", string()),
+  region: option("--region", string()),
+  apiKey: option("--api-key", string()),
+});
+
+// Compose parsers with type-safe constraints
+const parser = merge(
+  commonOptions,
+  or(localDeploy, cloudDeploy)
+);
+
+const config = run(parser, { help: "both" });
+// config: {
+//   readonly verbose: boolean;
+//   readonly config: string | undefined;
+// } & (
+//   | {
+//       readonly mode: "local";
+//       readonly path: string;
+//       readonly port: number;
+//   }
+//   | {
+//       readonly mode: "cloud";
+//       readonly provider: string;
+//       readonly region: string;
+//       readonly apiKey: string;
+//   }
+// )
+
+// TypeScript knows exactly what's available based on the mode
+if (config.mode === "local") {
+  print(`Deploying to ${config.path} on port ${config.port}.`);
+} else {
+  print(`Deploying to ${config.provider} in ${config.region}.`);
+}
+~~~~
+
+
+Docs
+----
+
+Optique provides comprehensive documentation to help you get started quickly:
+<https://optique.dev/>.
+
+New to Optique? Start with the [tutorial] and then explore the [cookbook].
+
+ -  [Why Optique?] — What makes Optique different from other CLI libraries
+ -  [Tutorial] — Step-by-step guide from simple options to nested subcommands
+ -  [Cookbook] — Practical recipes for common CLI patterns including shell
+    completion
+
+API reference documentation for each package is available on JSR (see below).
+
+[tutorial]: https://optique.dev/tutorial
+[cookbook]: https://optique.dev/cookbook
+[Why Optique?]: https://optique.dev/why
+[Tutorial]: https://optique.dev/tutorial
+[Cookbook]: https://optique.dev/cookbook
+
+
+Packages
+--------
+
+Optique is a monorepo which contains multiple packages.  The main package is
+*@optique/core*, which provides the shared types and parser combinators.
+The following is a list of the available packages:
+
+| Package                                                  | JSR                                  | npm                                  | Description                                 |
+| -------------------------------------------------------- | ------------------------------------ | ------------------------------------ | ------------------------------------------- |
+| [@optique/core](/packages/core/)                         | [JSR][jsr:@optique/core]             | [npm][npm:@optique/core]             | Shared types and parser combinators         |
+| [@optique/run](/packages/run/)                           | [JSR][jsr:@optique/run]              | [npm][npm:@optique/run]              | Runner for Node.js/Deno/Bun                 |
+| [@optique/discover](/packages/discover/)                 | [JSR][jsr:@optique/discover]         | [npm][npm:@optique/discover]         | Runtime-aware command discovery             |
+| [@optique/config](/packages/config/)                     | [JSR][jsr:@optique/config]           | [npm][npm:@optique/config]           | Config file support with [Standard Schema]  |
+| [@optique/clack](/packages/clack/)                       | [JSR][jsr:@optique/clack]            | [npm][npm:@optique/clack]            | [Clack] prompt support                      |
+| [@optique/derived-defaults](/packages/derived-defaults/) | [JSR][jsr:@optique/derived-defaults] | [npm][npm:@optique/derived-defaults] | Defaults derived from parsed values         |
+| [@optique/env](/packages/env/)                           | [JSR][jsr:@optique/env]              | [npm][npm:@optique/env]              | Environment variable integration            |
+| [@optique/git](/packages/git/)                           | [JSR][jsr:@optique/git]              | [npm][npm:@optique/git]              | Git reference parsers (branches, tags, etc) |
+| [@optique/logtape](/packages/logtape/)                   | [JSR][jsr:@optique/logtape]          | [npm][npm:@optique/logtape]          | [LogTape] logging integration               |
+| [@optique/man](/packages/man/)                           | [JSR][jsr:@optique/man]              | [npm][npm:@optique/man]              | Man page generation from parsers            |
+| [@optique/standard-schema](/packages/standard-schema/)   | [JSR][jsr:@optique/standard-schema]  | [npm][npm:@optique/standard-schema]  | [Standard Schema] value parser integration  |
+| [@optique/temporal](/packages/temporal/)                 | [JSR][jsr:@optique/temporal]         | [npm][npm:@optique/temporal]         | [Temporal] value parsers (date and time)    |
+| [@optique/valibot](/packages/valibot/)                   | [JSR][jsr:@optique/valibot]          | [npm][npm:@optique/valibot]          | [Valibot] schema integration for validation |
+| [@optique/zod](/packages/zod/)                           | [JSR][jsr:@optique/zod]              | [npm][npm:@optique/zod]              | [Zod] schema integration for validation     |
+| [@optique/inquirer](/packages/inquirer/)                 | [JSR][jsr:@optique/inquirer]         | [npm][npm:@optique/inquirer]         | [Inquirer.js] prompt support                |
+| [@optique/prompt](/packages/prompt/)                     | [JSR][jsr:@optique/prompt]           | [npm][npm:@optique/prompt]           | Generic prompt adapter foundation           |
+
+[jsr:@optique/core]: https://jsr.io/@optique/core
+[npm:@optique/core]: https://www.npmjs.com/package/@optique/core
+[jsr:@optique/run]: https://jsr.io/@optique/run
+[npm:@optique/run]: https://www.npmjs.com/package/@optique/run
+[jsr:@optique/discover]: https://jsr.io/@optique/discover
+[npm:@optique/discover]: https://www.npmjs.com/package/@optique/discover
+[jsr:@optique/config]: https://jsr.io/@optique/config
+[npm:@optique/config]: https://www.npmjs.com/package/@optique/config
+[Standard Schema]: https://standardschema.dev/
+[jsr:@optique/clack]: https://jsr.io/@optique/clack
+[npm:@optique/clack]: https://www.npmjs.com/package/@optique/clack
+[Clack]: https://github.com/bombshell-dev/clack
+[jsr:@optique/derived-defaults]: https://jsr.io/@optique/derived-defaults
+[npm:@optique/derived-defaults]: https://www.npmjs.com/package/@optique/derived-defaults
+[jsr:@optique/env]: https://jsr.io/@optique/env
+[npm:@optique/env]: https://www.npmjs.com/package/@optique/env
+[jsr:@optique/git]: https://jsr.io/@optique/git
+[npm:@optique/git]: https://www.npmjs.com/package/@optique/git
+[jsr:@optique/logtape]: https://jsr.io/@optique/logtape
+[npm:@optique/logtape]: https://www.npmjs.com/package/@optique/logtape
+[LogTape]: https://logtape.org/
+[jsr:@optique/man]: https://jsr.io/@optique/man
+[npm:@optique/man]: https://www.npmjs.com/package/@optique/man
+[jsr:@optique/standard-schema]: https://jsr.io/@optique/standard-schema
+[npm:@optique/standard-schema]: https://www.npmjs.com/package/@optique/standard-schema
+[jsr:@optique/temporal]: https://jsr.io/@optique/temporal
+[npm:@optique/temporal]: https://www.npmjs.com/package/@optique/temporal
+[Temporal]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Temporal
+[jsr:@optique/valibot]: https://jsr.io/@optique/valibot
+[npm:@optique/valibot]: https://www.npmjs.com/package/@optique/valibot
+[Valibot]: https://valibot.dev/
+[jsr:@optique/zod]: https://jsr.io/@optique/zod
+[npm:@optique/zod]: https://www.npmjs.com/package/@optique/zod
+[jsr:@optique/inquirer]: https://jsr.io/@optique/inquirer
+[npm:@optique/inquirer]: https://www.npmjs.com/package/@optique/inquirer
+[Inquirer.js]: https://github.com/SBoudrias/Inquirer.js
+[jsr:@optique/prompt]: https://jsr.io/@optique/prompt
+[npm:@optique/prompt]: https://www.npmjs.com/package/@optique/prompt
+
+
+Contributing
+------------
+
+Contributions are welcome!  Read the [contributing guide] before working on a
+change.  If you use an AI tool, also read the [AI usage policy].
+
+[contributing guide]: ./CONTRIBUTING.md
+[AI usage policy]: ./AI_POLICY.md
