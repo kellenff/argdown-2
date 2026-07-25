@@ -1,0 +1,20 @@
+#casualtheorics.argdown2/document
+{:id :mixed-semantics-test
+ :root #casualtheorics.argdown2.solver/grounded
+ {:id :outer
+  :interface {:aggregate #casualtheorics.argdown2.aggregate/identity
+              {:inputs [{:ref :top-a}]}}
+  :elements [
+   #casualtheorics.argdown2.argdown/statement {:id :top-a :text "Top A"}
+   #casualtheorics.argdown2.argdown/statement {:id :top-b :text "Top B"}
+   #casualtheorics.argdown2.argdown/attack
+   {:id :top-attack :from :top-a :to :top-b}
+   #casualtheorics.argdown2.solver/bipolar
+   {:id :inner
+    :interface {:aggregate #casualtheorics.argdown2.aggregate/identity
+                {:inputs [{:ref :inner-x}]}}
+    :elements [
+     #casualtheorics.argdown2.argdown/statement {:id :inner-x :text "Inner X"}
+     #casualtheorics.argdown2.argdown/statement {:id :top-a :text "Top A"}
+     #casualtheorics.argdown2.argdown/support
+     {:id :inner-support :from :inner-x :to :top-a}]}]}}
