@@ -573,6 +573,8 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@optique/core@^1.2.0",
+      "jsr:@optique/run@^1.2.0",
       "jsr:@std/assert@1",
       "jsr:@std/expect@1",
       "jsr:@std/testing@1",
