@@ -59,14 +59,14 @@ Callers that need a synchronous return value use
 `Effect.runSync(Effect.match(...))`. `Effect.match` folds an
 `Effect<A, E>` into `Effect<UnionType, never>` (the result has no
 failure channel), so a subsequent `Effect.runSync` is guaranteed safe.
-The typical pattern preserves the existing `ReadResult` discriminated
-union:
+The typical pattern preserves the call-site's existing boundary
+discriminated union (e.g., `LoadResult`, `SoftParseResult`):
 
 ```ts
 return Effect.runSync(
   Effect.match(readEdn(source), {
     onFailure: (err) => ({ ok: false, errors: [err.diagnostic] }),
-    onSuccess: (value) => ({ ok: true, value }),
+    onSuccess: (value) => validate(value),
   }),
 );
 ```
@@ -95,8 +95,8 @@ const validated = readEdn(source).pipe(
 
 For sync pure functions, run tests via
 `Effect.runSync(Effect.match(fn(input), { onFailure, onSuccess }))`
-and assert on the resulting tagged union. Prefer one assertion per
-tag variant over a single large `toMatchObject`.
+and assert on the resulting tagged union. One test per tag variant;
+prefer focused per-field assertions over a single `toMatchObject`.
 
 `Effect.catchTag` tests belong to the first consumer that uses the
 tag discriminators — don't add them speculatively.
