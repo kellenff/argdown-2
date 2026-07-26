@@ -38,6 +38,7 @@
   },
   "imports": {
     "edn-parser-js": "./vendor/edn-parser-js/lib/index.js",
+    "effect": "npm:effect@^4.0.0-beta.101",
     "zod": "npm:zod@4.4.3",
     "@modelcontextprotocol/sdk/": "npm:/@modelcontextprotocol/sdk@1.29.0/",
     "@std/assert": "jsr:@std/assert@1",
