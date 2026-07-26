@@ -6,6 +6,7 @@ DENO_JSON="${1:-$ROOT/deno.json}"
 
 ALLOWED=(
   'npm:zod@'
+  'npm:effect@'
   'npm:@modelcontextprotocol/sdk@'
   'npm:/@modelcontextprotocol/sdk@'
 )
