@@ -1,36 +1,34 @@
+import { Effect } from "effect";
 import { ednParseMulti } from "edn-parser-js";
 
-import type { Diagnostic, ReadResult } from "./model.js";
+import type { Diagnostic, EdnError } from "./model.js";
 
-function rootCountFailure(): ReadResult {
+const ROOT_COUNT: Diagnostic = {
+  code: "edn/root-count",
+  message: "Expected exactly one top-level EDN value",
+};
+
+function toDiagnostic(error: unknown): Diagnostic {
   return {
-    ok: false,
-    errors: [
-      {
-        code: "edn/root-count",
-        message: "Expected exactly one top-level EDN value",
-      },
-    ],
-  };
-}
-
-function readFailure(error: unknown): ReadResult {
-  const message = error instanceof Error ? error.message : String(error);
-  const diagnostic: Diagnostic = {
     code: "edn/read-error",
-    message,
+    message: error instanceof Error ? error.message : String(error),
   };
-  return { ok: false, errors: [diagnostic] };
 }
 
-export function readEdn(source: string): ReadResult {
-  try {
-    const forms = ednParseMulti(source);
-    if (forms.length !== 1) return rootCountFailure();
-    const value = forms[0];
-    if (value === undefined) return rootCountFailure();
-    return { ok: true, value };
-  } catch (error: unknown) {
-    return readFailure(error);
-  }
+export function readEdn(
+  source: string,
+): Effect.Effect<unknown, EdnError, never> {
+  return Effect.gen(function* () {
+    const forms = yield* Effect.try({
+      try: () => ednParseMulti(source),
+      catch: (error) =>
+        ({ _tag: "ReadError", diagnostic: toDiagnostic(error) }) as const,
+    });
+    if (forms.length !== 1 || forms[0] === undefined) {
+      return yield* Effect.fail(
+        { _tag: "RootCount", diagnostic: ROOT_COUNT } as const,
+      );
+    }
+    return forms[0];
+  });
 }
