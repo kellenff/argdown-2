@@ -1,5 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { parseSync } from "@optique/core/parser";
+import { formatUsage } from "@optique/core/usage";
+import { HELP_FOOTER } from "./help-footer.ts";
 import { normalize, parser } from "./parser.ts";
 import type { CliResult } from "./parser.ts";
 
@@ -92,4 +94,11 @@ Deno.test("parser: extra positional is a parse error", () => {
   if (!r.message || r.message === "undefined") {
     throw new Error("expected non-empty error message");
   }
+});
+
+Deno.test("help text snapshot", async () => {
+  const text = formatUsage("argdown-2", parser.usage) + HELP_FOOTER;
+  const snapshotPath = new URL("./__snapshots__/help.txt", import.meta.url);
+  const expected = await Deno.readTextFile(snapshotPath);
+  assertEquals(text, expected);
 });
