@@ -1,0 +1,24 @@
+{
+  "root": {
+    "id": "outer",
+    "solver": "grounded",
+    "labels": {
+      "top-a": "in",
+      "top-b": "out",
+      "inner": "in"
+    },
+    "children": [
+      {
+        "id": "inner",
+        "solver": "bipolar",
+        "labels": {
+          "inner-x": "in",
+          "top-a": "in"
+        },
+        "children": []
+      }
+    ]
+  },
+  "diagnostics": [],
+  "warnings": []
+}

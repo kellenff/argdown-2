@@ -1,0 +1,17 @@
+## solver/grounded
+
+### IN
+
+- [#top-a] Top A
+- [#inner]
+
+### OUT
+
+- [#top-b] Top B
+
+## solver/bipolar
+
+### IN
+
+- [#inner-x] Inner X
+- [#top-a] Top A

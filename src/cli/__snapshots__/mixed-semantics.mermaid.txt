@@ -1,0 +1,10 @@
+graph LR
+subgraph grounded
+  top-a[in]
+  top-b[out]
+  inner[in]
+  subgraph bipolar
+    inner-x[in]
+    top-a[in]
+  end
+end

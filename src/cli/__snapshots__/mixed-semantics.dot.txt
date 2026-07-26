@@ -1,0 +1,13 @@
+digraph arguments { rankdir=LR;
+subgraph cluster_outer {
+  label = "solver/grounded";
+  "top-a" [color=green];
+  "top-b" [color=red];
+  "inner" [color=green];
+  subgraph cluster_inner {
+    label = "solver/bipolar";
+    "inner-x" [color=green];
+    "top-a" [color=green];
+  }
+}
+}
