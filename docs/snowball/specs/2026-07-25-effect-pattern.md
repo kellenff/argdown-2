@@ -106,6 +106,8 @@ tag discriminators — don't add them speculatively.
 - Don't throw from inside an `Effect.gen` body — use `Effect.fail`.
 - Don't construct `Effect.try` with a `catch` that swallows the
   error — always surface as a typed failure.
-- Don't expose `ReadResult` from new modules — let the call site
-  unwrap. `ReadResult` stays as a boundary type until all consumers
-  migrate.
+- Don't invent a new ok/errors boundary type for Effect modules —
+  unwrap with `Effect.match` + `Effect.runSync` into the call site's
+  existing result type (`LoadResult`, `SoftParseResult`, etc.), or
+  keep the Effect until the outermost sync boundary. The old
+  `ReadResult` type was removed after the EDN reader migration.
