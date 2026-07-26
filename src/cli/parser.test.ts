@@ -102,3 +102,48 @@ Deno.test("help text snapshot", async () => {
   const expected = await Deno.readTextFile(snapshotPath);
   assertEquals(text, expected);
 });
+
+Deno.test("exit code: --help exits 0", async () => {
+  const cmd = new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", "src/cli.ts", "--help"],
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const out = await cmd.output();
+  assertEquals(out.code, 0);
+  const stdout = new TextDecoder().decode(out.stdout);
+  if (!stdout.includes("argdown-2")) {
+    throw new Error(`expected 'argdown-2' in stdout, got: ${stdout.slice(0, 200)}`);
+  }
+  if (!stdout.includes("Exit codes")) {
+    throw new Error(`expected 'Exit codes' in stdout, got: ${stdout.slice(0, 200)}`);
+  }
+});
+
+Deno.test("exit code: unknown flag exits 2", async () => {
+  const cmd = new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", "src/cli.ts", "--bogus-flag"],
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const out = await cmd.output();
+  assertEquals(out.code, 2);
+  const stderr = new TextDecoder().decode(out.stderr);
+  if (stderr.length === 0) {
+    throw new Error("expected non-empty stderr for usage error");
+  }
+});
+
+Deno.test("exit code: missing file exits 1", async () => {
+  const cmd = new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", "src/cli.ts", "does-not-exist.edn"],
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const out = await cmd.output();
+  assertEquals(out.code, 1);
+  const stderr = new TextDecoder().decode(out.stderr);
+  if (!stderr.includes("No such file")) {
+    throw new Error(`expected 'No such file' in stderr, got: ${stderr.slice(0, 200)}`);
+  }
+});
