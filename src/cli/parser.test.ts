@@ -32,6 +32,7 @@ Deno.test("parser: bare invocation defaults to solve", () => {
 Deno.test("parser: --format=json sets format", () => {
   const r = ok(["--format=json", "foo.edn"]);
   assertEquals(r.action, "solve");
+  if (r.action !== "solve") throw new Error("expected solve variant");
   assertEquals(r.format, "json");
 });
 
@@ -44,6 +45,7 @@ Deno.test("parser: --dry-run flips to validate", () => {
 Deno.test("parser: solve subcommand with --format=dot", () => {
   const r = ok(["solve", "--format=dot", "foo.edn"]);
   assertEquals(r.action, "solve");
+  if (r.action !== "solve") throw new Error("expected solve variant");
   assertEquals(r.format, "dot");
 });
 
