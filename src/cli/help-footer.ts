@@ -1,3 +1,4 @@
+// ponytail: hardcoded — bump on release; decoupled from deno.json version
 export const VERSION = "0.2.0";
 
 export const HELP_FOOTER = `
