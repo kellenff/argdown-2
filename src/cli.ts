@@ -1,81 +1,31 @@
 #!/usr/bin/env -S deno run -A
-import { HELP, VERSION } from "./cli/help.js";
-import { writeStderr, writeStdout } from "./cli/output.js";
+import { formatUsage } from "@optique/core/usage";
+import { run } from "@optique/run";
+import { dispatch } from "./cli/dispatch.ts";
+import { HELP_FOOTER, VERSION } from "./cli/help-footer.ts";
+import { parser } from "./cli/parser.ts";
 
-interface Args {
-  path: string;
-  format: "table" | "dot" | "mermaid" | "json";
-  dryRun: boolean;
-  quiet: boolean;
+const programName = "argdown-2";
+const args = Deno.args;
+
+// Short-circuit --help so we can render the auto-gen block + the footer
+// as plain text. Optique 1.2.0's `footer` option takes a Message, but
+// `message` template literals collapse newlines into spaces, which would
+// ruin the formatted footer. Printing the help ourselves is simpler.
+if (args.includes("--help") || args.includes("-h")) {
+  const text = formatUsage(programName, parser.usage) + HELP_FOOTER;
+  Deno.stdout.writeSync(new TextEncoder().encode(text));
+  Deno.exit(0);
 }
 
-const VALID_FORMATS = ["table", "dot", "mermaid", "json"] as const;
-
-function parseArgs(argv: string[]): Args | { error: string } {
-  let path: string | null = null;
-  let format: Args["format"] = "table";
-  let dryRun = false;
-  let quiet = false;
-
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--help") {
-      writeStdout(HELP);
-      Deno.exit(0);
-    } else if (arg === "--version") {
-      writeStdout(`argdown-2 ${VERSION}\n`);
-      Deno.exit(0);
-    } else if (arg === "--dry-run") {
-      dryRun = true;
-    } else if (arg === "--quiet") {
-      quiet = true;
-    } else if (arg.startsWith("--format=")) {
-      const value = arg.slice("--format=".length);
-      if (!VALID_FORMATS.includes(value as Args["format"])) {
-        return {
-          error: `Unknown format '${value}'. Valid: ${
-            VALID_FORMATS.join(", ")
-          }.\n`,
-        };
-      }
-      format = value as Args["format"];
-    } else if (arg.startsWith("--")) {
-      return { error: `Unknown flag '${arg}'.\n` };
-    } else if (path === null) {
-      path = arg;
-    } else {
-      return { error: `Unexpected positional argument '${arg}'.\n` };
-    }
-  }
-
-  if (path === null) {
-    return { error: "Missing required argument <path|->.\n" };
-  }
-
-  return { path, format, dryRun, quiet };
-}
-
-async function main(argv: string[]): Promise<number> {
-  const parsed = parseArgs(argv);
-  if ("error" in parsed) {
-    writeStderr(`Usage: argdown-2 [flags] <path|->\n\n${parsed.error}`);
-    return 2;
-  }
-
-  const { runValidate } = await import("./cli/validate.js");
-  const { runSolve } = await import("./cli/solve.js");
-  const { readInput } = await import("./cli/input.js");
-
-  const source = await readInput(parsed.path);
-  if (parsed.dryRun) {
-    return runValidate(source, { quiet: parsed.quiet });
-  }
-  return runSolve(source, { quiet: parsed.quiet, format: parsed.format });
-}
-
-if (import.meta.main) {
-  const code = await main(Deno.args);
-  Deno.exit(code);
-}
-
-export { main, parseArgs };
+// Optique handles --version (via `version` option) and exit 2 for usage
+// errors (via `errorExitCode`). All other paths land here with a parsed
+// value, which the dispatcher routes to runValidate or runSolve.
+const exitCode = await dispatch(
+  run(parser, {
+    programName,
+    version: { value: VERSION, option: true },
+    errorExitCode: 2,
+  }),
+);
+Deno.exit(exitCode);

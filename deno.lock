@@ -2,6 +2,7 @@
   "version": "5",
   "specifiers": {
     "jsr:@optique/core@^1.2.0": "1.2.0",
+    "jsr:@optique/run@^1.2.0": "1.2.0",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/assert@^1.0.19": "1.0.19",
     "jsr:@std/expect@1": "1.0.20",
@@ -16,6 +17,12 @@
   "jsr": {
     "@optique/core@1.2.0": {
       "integrity": "727c9f863239f2924032e5600e9c4245102cd13873372fe37a4e5c4634b28c55"
+    },
+    "@optique/run@1.2.0": {
+      "integrity": "660454ca733969cd04e4292ae9774e0a7445fa67a754189d40e0be8f10f57345",
+      "dependencies": [
+        "jsr:@optique/core"
+      ]
     },
     "@std/assert@1.0.19": {
       "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
