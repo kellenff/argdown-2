@@ -64,6 +64,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - Cursor plugin / marketplace (`.cursor-plugin/`) and project-local
   `.cursor/mcp.json` one-click install path.
+- `ReadResult` type removed from `src/model.ts`. It was an internal
+  boundary type for the pre-Effect `readEdn` signature and is unused
+  after the EDN reader Effect refactor. Not a public API break —
+  `ReadResult` was never re-exported from the package entrypoint.
 
 ## [0.2.0-alpha4] - 2026-07-19
 
