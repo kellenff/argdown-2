@@ -184,7 +184,7 @@ git commit -m "test(cli): add failing parser-shape tests for Optique rewrite"
 **Files:**
 - Create: `src/cli/parser.ts`
 
-This file exports `parser` (the combinator), `ParserOutput` (the raw shape Optique produces — every field optional except `action` and `path`), and the `CliResult` discriminated union. The dispatcher will narrow `ParserOutput` to `CliResult` in Task 4.
+This file exports `parser` (the combinator), `ParserOutput` (the raw shape Optique produces — every field optional except `action` and `path`), the `CliResult` discriminated union, and the `normalize()` function that collapses a `ParserOutput` to a `CliResult`. Tests in Task 2 call `normalize()` directly; Task 4's dispatcher consumes it from this module.
 
 - [ ] **Step 1: Write `src/cli/parser.ts`**
 
@@ -216,6 +216,19 @@ export type ParserOutput = {
   quiet?: boolean;
   dryRun?: boolean;
 };
+
+/** Collapse a parser output to the dispatcher's typed input. */
+export function normalize(p: ParserOutput): CliResult {
+  if (p.action === "validate" || p.dryRun === true) {
+    return { action: "validate", path: p.path, quiet: p.quiet ?? false };
+  }
+  return {
+    action: "solve",
+    path: p.path,
+    format: p.format ?? "table",
+    quiet: p.quiet ?? false,
+  };
+}
 
 const sharedQuiet = option("--quiet");
 const sharedFormat = option(
@@ -257,7 +270,8 @@ export const parser = or(solveCommand, validateCommand, bareInvocation);
 
 Notes:
 - `dryRun` is on every shape (with default `false`) so `ParserOutput.dryRun` is always a defined boolean.
-- The bare invocation's `action` is always `"solve"` at parse time; the dispatcher flips it to `"validate"` when `dryRun === true`.
+- The bare invocation's `action` is always `"solve"` at parse time; `normalize()` flips it to `"validate"` when `dryRun === true`.
+- `normalize` lives here (not in `dispatch.ts`) because it operates on parser output and is the natural input to the dispatcher. The test file imports it from this module.
 
 - [ ] **Step 2: Run the parser tests**
 
@@ -283,30 +297,18 @@ git commit -m "feat(cli): Optique parser combinator with solve/validate subcomma
 **Files:**
 - Create: `src/cli/dispatch.ts`
 
-The dispatcher owns the `normalize()` step and the `switch` that routes to `runValidate` / `runSolve`. No new tests — the parser tests in Task 3 cover the normalization logic indirectly through the subprocess tests in Task 8, and the dispatcher's typed `switch` is structurally correct by virtue of the discriminated union.
+The dispatcher is a thin `switch` that routes a `CliResult` to `runValidate` / `runSolve`. It does NOT define `normalize` — that's in `parser.ts` (Task 3). The dispatcher just imports `normalize` and uses it. No new tests — the parser tests in Task 3 cover normalization; the dispatcher's typed `switch` is structurally correct by virtue of the discriminated union.
 
 - [ ] **Step 1: Write `src/cli/dispatch.ts`**
 
 Create `src/cli/dispatch.ts` with this exact content:
 
 ```ts
+import { readInput } from "./input.ts";
+import { normalize } from "./parser.ts";
+import type { ParserOutput } from "./parser.ts";
 import { runSolve } from "./solve.ts";
 import { runValidate } from "./validate.ts";
-import { readInput } from "./input.ts";
-import type { CliResult, ParserOutput } from "./parser.ts";
-
-/** Collapse a parser output to the dispatcher's typed input. */
-export function normalize(p: ParserOutput): CliResult {
-  if (p.action === "validate" || p.dryRun === true) {
-    return { action: "validate", path: p.path, quiet: p.quiet ?? false };
-  }
-  return {
-    action: "solve",
-    path: p.path,
-    format: p.format ?? "table",
-    quiet: p.quiet ?? false,
-  };
-}
 
 /** Route a parsed CLI invocation to its action handler. */
 export async function dispatch(parsed: ParserOutput): Promise<number> {
