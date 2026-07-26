@@ -51,6 +51,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   (`semantic/unsupported-relation-kind`) and are refused by the builder
   (`builder/unsupported-relation-kind`), instead of being silently omitted at
   reduce time.
+- `readEdn` now returns `Effect.Effect<unknown, EdnError, never>`
+  instead of a synchronous `ReadResult`. Errors are a tagged union
+  (`RootCount` / `ReadError`) carrying the existing `Diagnostic`
+  shape. Two internal consumers (`src/index.ts`, `src/builder/soft-parse.ts`)
+  unwrap via `Effect.match` + `Effect.runSync` and preserve the
+  existing `LoadResult` / `SoftParseResult` boundary types. Public
+  `load()` / `softParse()` / `validate()` signatures are unchanged.
+  Adds `effect` (npm:4.0.0-beta.101) as a runtime dependency.
 
 ### Removed
 
