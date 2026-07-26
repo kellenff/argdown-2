@@ -37,6 +37,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **CLI:** Argument parser rewritten on `@optique/core` + `@optique/run`. New
+  `solve` and `validate` subcommands; the bare invocation (`argdown-2 foo.edn`)
+  and `--dry-run` flag remain as back-compat synonyms. Exit codes (0/1/2) and
+  output formats (table/dot/mermaid/json) are preserved.
 - Replace bare solver-vector roots with tagged document maps containing an
   identified root component. This is an intentional pre-1.0 wire break.
 - `solve()` now returns per-component `native`, `aggregate`, `boundary`,
