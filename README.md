@@ -254,6 +254,21 @@ import { load, solve } from "jsr:@casualtheorics/argdown-2";
 
 Use the checked-in launcher (`bash scripts/argdown-2-mcp`) which downloads the pinned native binary from GitHub Releases. No Deno or Node required on the consumer machine.
 
+## CLI
+
+The `argdown-2` binary (`deno task cli`) reads an EDN file, runs the per-component solver, and renders the result. The bare invocation solves; `--dry-run` validates; the new `solve` and `validate` subcommands are explicit synonyms.
+
+```bash
+argdown-2 foo.edn                              # solve, table output
+argdown-2 --format=dot foo.edn > foo.dot       # solve, Graphviz DOT
+argdown-2 --dry-run foo.edn                    # validate only
+argdown-2 validate foo.edn                     # subcommand synonym
+argdown-2 solve --format=json foo.edn          # subcommand synonym
+cat foo.edn | argdown-2 -                      # stdin
+```
+
+Exit codes: `0` success, `1` parse/validation/solve error, `2` usage error. See `argdown-2 --help` for the full surface.
+
 ## Development
 
 Requires Deno matching [`scripts/deno-version`](scripts/deno-version).
