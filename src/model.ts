@@ -62,6 +62,10 @@ export type Diagnostic = {
   path?: DiagnosticPath;
 };
 
+export type EdnError =
+  | { readonly _tag: "RootCount"; readonly diagnostic: Diagnostic }
+  | { readonly _tag: "ReadError"; readonly diagnostic: Diagnostic };
+
 export type ExtraEntry = readonly [unknown, unknown];
 
 export type CandidateInference = {
