@@ -82,13 +82,12 @@ Create `src/cli/parser.test.ts` with this exact content:
 
 ```ts
 import { assertEquals } from "@std/assert";
-import { isFailure, isSuccess } from "@optique/core/parser";
 import { parseSync } from "@optique/core/parser";
 import { parser, type ParserOutput } from "./parser.ts";
 
 function ok(args: readonly string[]): ParserOutput {
   const r = parseSync(parser, args);
-  if (!isSuccess(r)) {
+  if (!r.success) {
     throw new Error(`expected success, got error: ${JSON.stringify(r.error)}`);
   }
   return r.value;
@@ -96,7 +95,7 @@ function ok(args: readonly string[]): ParserOutput {
 
 function err(args: readonly string[]): { success: false; message: string } {
   const r = parseSync(parser, args);
-  if (isSuccess(r)) {
+  if (r.success) {
     throw new Error(`expected failure, got value: ${JSON.stringify(r.value)}`);
   }
   // Failure result contains an error message; just confirm it's non-empty.
