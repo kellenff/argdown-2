@@ -218,10 +218,6 @@ export type DungFramework = {
   attackersByTarget: ReadonlyMap<EntityId, ReadonlySet<EntityId>>;
 };
 
-export type ReadResult =
-  | { ok: true; value: unknown }
-  | { ok: false; errors: readonly Diagnostic[] };
-
 export type ValidationResult =
   | { ok: true; document: Document }
   | { ok: false; errors: readonly Diagnostic[] };
