@@ -1,0 +1,22 @@
+export const VERSION = "0.2.0";
+
+export const HELP_FOOTER = `
+
+Output formats (solve only):
+  table       Markdown-flavored; per-solver headings (## solver/<tag>,
+              ### IN / ### OUT / ### UNDETERMINED). Empty groups omitted.
+              Default.
+  dot         Graphviz DOT with nested subgraphs per solver.
+  mermaid     Mermaid markdown with nested subgraphs per solver.
+  json        EDN-shaped JSON with per-component labels and per-statement
+              labels threaded through. Machine-parseable.
+
+Exit codes:
+  0   Success
+  1   Parse / validation / solve error (diagnostics on stderr)
+  2   Usage error (unknown flag, missing path, unknown subcommand)
+
+Solver semantics are read from the document's per-component solver tags
+(#casualtheorics.argdown2.solver/grounded, .../bipolar, .../evidential,
+etc.). There is no --semantics flag.
+`;
