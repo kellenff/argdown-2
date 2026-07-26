@@ -1,11 +1,6 @@
 import { object, or } from "@optique/core/constructs";
 import { optional, withDefault } from "@optique/core/modifiers";
-import {
-  argument,
-  command,
-  constant,
-  option,
-} from "@optique/core/primitives";
+import { argument, command, constant, option } from "@optique/core/primitives";
 import { choice, string } from "@optique/core/valueparser";
 import type { FormatName } from "./format.ts";
 

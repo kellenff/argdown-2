@@ -23,7 +23,9 @@ if (args.includes("--help") || args.includes("-h")) {
 // the value (e.g. "0.2.0"), which would break `cli.test.ts` and any
 // scripts that match on the program-name prefix.
 if (args.includes("--version")) {
-  Deno.stdout.writeSync(new TextEncoder().encode(`${programName} ${VERSION}\n`));
+  Deno.stdout.writeSync(
+    new TextEncoder().encode(`${programName} ${VERSION}\n`),
+  );
   Deno.exit(0);
 }
 

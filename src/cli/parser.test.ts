@@ -113,10 +113,14 @@ Deno.test("exit code: --help exits 0", async () => {
   assertEquals(out.code, 0);
   const stdout = new TextDecoder().decode(out.stdout);
   if (!stdout.includes("argdown-2")) {
-    throw new Error(`expected 'argdown-2' in stdout, got: ${stdout.slice(0, 200)}`);
+    throw new Error(
+      `expected 'argdown-2' in stdout, got: ${stdout.slice(0, 200)}`,
+    );
   }
   if (!stdout.includes("Exit codes")) {
-    throw new Error(`expected 'Exit codes' in stdout, got: ${stdout.slice(0, 200)}`);
+    throw new Error(
+      `expected 'Exit codes' in stdout, got: ${stdout.slice(0, 200)}`,
+    );
   }
 });
 
@@ -144,6 +148,8 @@ Deno.test("exit code: missing file exits 1", async () => {
   assertEquals(out.code, 1);
   const stderr = new TextDecoder().decode(out.stderr);
   if (!stderr.includes("No such file")) {
-    throw new Error(`expected 'No such file' in stderr, got: ${stderr.slice(0, 200)}`);
+    throw new Error(
+      `expected 'No such file' in stderr, got: ${stderr.slice(0, 200)}`,
+    );
   }
 });

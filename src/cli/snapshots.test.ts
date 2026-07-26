@@ -5,7 +5,9 @@ const FIXTURE_PATH = new URL(
   import.meta.url,
 ).pathname;
 
-async function runCli(args: string[]): Promise<{ stdout: string; code: number }> {
+async function runCli(
+  args: string[],
+): Promise<{ stdout: string; code: number }> {
   const cmd = new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", "src/cli.ts", ...args, FIXTURE_PATH],
     stdout: "piped",
