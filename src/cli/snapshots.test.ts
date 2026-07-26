@@ -1,9 +1,11 @@
 import { assertEquals } from "@std/assert";
 
 const FIXTURE_PATH = new URL(
-  "../../bench.fixtures/mixed-semantics.edn",
+  "../bench.fixtures/mixed-semantics.edn",
   import.meta.url,
 ).pathname;
+
+const FORMATS = ["table", "json", "dot", "mermaid"] as const;
 
 async function runCli(
   args: string[],
@@ -17,42 +19,21 @@ async function runCli(
   return { code, stdout: new TextDecoder().decode(stdout) };
 }
 
-Deno.test("snapshot: --format=table", async () => {
-  const { code, stdout } = await runCli(["--format=table"]);
-  assertEquals(code, 0);
-  const expected = await Deno.readTextFile(
-    new URL("./__snapshots__/mixed-semantics.table.txt", import.meta.url)
-      .pathname,
-  );
-  assertEquals(stdout, expected);
-});
-
-Deno.test("snapshot: --format=json", async () => {
-  const { code, stdout } = await runCli(["--format=json"]);
-  assertEquals(code, 0);
-  const expected = await Deno.readTextFile(
-    new URL("./__snapshots__/mixed-semantics.json.txt", import.meta.url)
-      .pathname,
-  );
-  assertEquals(stdout, expected);
-});
-
-Deno.test("snapshot: --format=dot", async () => {
-  const { code, stdout } = await runCli(["--format=dot"]);
-  assertEquals(code, 0);
-  const expected = await Deno.readTextFile(
-    new URL("./__snapshots__/mixed-semantics.dot.txt", import.meta.url)
-      .pathname,
-  );
-  assertEquals(stdout, expected);
-});
-
-Deno.test("snapshot: --format=mermaid", async () => {
-  const { code, stdout } = await runCli(["--format=mermaid"]);
-  assertEquals(code, 0);
-  const expected = await Deno.readTextFile(
-    new URL("./__snapshots__/mixed-semantics.mermaid.txt", import.meta.url)
-      .pathname,
-  );
-  assertEquals(stdout, expected);
-});
+for (const format of FORMATS) {
+  Deno.test(`snapshot: --format=${format}`, async () => {
+    const { code, stdout } = await runCli([`--format=${format}`]);
+    // Always assert the CLI succeeds, even in update mode — a non-zero exit
+    // would write garbage to the snapshot file.
+    assertEquals(code, 0);
+    const snapshotPath = new URL(
+      `./__snapshots__/mixed-semantics.${format}.txt`,
+      import.meta.url,
+    ).pathname;
+    if (Deno.env.get("UPDATE_SNAPSHOTS") === "1") {
+      await Deno.writeTextFile(snapshotPath, stdout);
+      return;
+    }
+    const expected = await Deno.readTextFile(snapshotPath);
+    assertEquals(stdout, expected);
+  });
+}
