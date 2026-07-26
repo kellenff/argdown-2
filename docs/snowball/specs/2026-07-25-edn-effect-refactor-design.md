@@ -144,7 +144,7 @@ Combinators this enables:
 | `Effect.catchTag(readEdn(src), "RootCount", handler)` | Recover from a root-count error (e.g., retry after stripping comments) |
 | `Effect.catchTag(readEdn(src), "ReadError", handler)` | Surface the parser error with extra context |
 | `Effect.matchEffect(readEdn(src), { onFailure, onSuccess })` | Branch on success/failure for the load pipeline |
-| `Effect.either(readEdn(src))` → `Either.match` | Convert to `ReadResult` at sync boundaries without throwing |
+| `Effect.match(readEdn(src), { onFailure, onSuccess })` | Fold `Effect<A, E>` into a value (typically the existing `ReadResult` shape) at sync boundaries |
 
 Convention for future modules (`validate.ts`, `BuilderError`, etc.):
 each module owns its own tagged error union that includes its
@@ -321,8 +321,8 @@ for (const [name, source] of [...root-count cases...] as const) {
 | `deno.json` | Add `"effect": "npm:effect@^4.0.0-beta.101"` to imports |
 | `src/model.ts` | Export `EdnError` (tagged union) next to `Diagnostic` |
 | `src/edn.ts` | Refactor `readEdn` to return `Effect.Effect<unknown, EdnError, never>`; remove `rootCountFailure` / `readFailure` helpers |
-| `src/edn.test.ts` | Update tests to use `Effect.runSync(Effect.either(...))` + `Either.match`; assert on `_tag` and `diagnostic` |
-| `src/index.ts` | Replace `const read = readEdn(source)` with `Either.match` form preserving `ReadResult` shape |
+| `src/edn.test.ts` | Update tests to use `Effect.runSync(Effect.match(...))`; assert on `_tag` and `diagnostic` |
+| `src/index.ts` | Replace `const read = readEdn(source)` with `Effect.match` form preserving `ReadResult` shape |
 | `src/builder/soft-parse.ts` | Same migration pattern as `index.ts` |
 | `docs/snowball/specs/2026-07-25-effect-pattern.md` | New: convention reference for future modules |
 
