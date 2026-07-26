@@ -1,13 +1,14 @@
 import { assertEquals } from "@std/assert";
 import { parseSync } from "@optique/core/parser";
-import { parser, type ParserOutput } from "./parser.ts";
+import { normalize, parser } from "./parser.ts";
+import type { CliResult } from "./parser.ts";
 
-function ok(args: readonly string[]): ParserOutput {
+function ok(args: readonly string[]): CliResult {
   const r = parseSync(parser, args);
   if (!r.success) {
     throw new Error(`expected success, got error: ${JSON.stringify(r.error)}`);
   }
-  return r.value;
+  return normalize(r.value);
 }
 
 function err(args: readonly string[]): { success: false; message: string } {
@@ -15,6 +16,7 @@ function err(args: readonly string[]): { success: false; message: string } {
   if (r.success) {
     throw new Error(`expected failure, got value: ${JSON.stringify(r.value)}`);
   }
+  // Failure result contains an error message; just confirm it's non-empty.
   return { success: false, message: JSON.stringify(r.error) };
 }
 
@@ -24,7 +26,6 @@ Deno.test("parser: bare invocation defaults to solve", () => {
     path: "foo.edn",
     format: "table",
     quiet: false,
-    dryRun: false,
   });
 });
 
@@ -62,19 +63,31 @@ Deno.test("parser: stdin path '-'", () => {
 Deno.test("parser: unknown flag is a parse error", () => {
   const r = err(["--bogus"]);
   assertEquals(r.success, false);
+  if (!r.message || r.message === "undefined") {
+    throw new Error("expected non-empty error message");
+  }
 });
 
 Deno.test("parser: missing path is a parse error", () => {
   const r = err([]);
   assertEquals(r.success, false);
+  if (!r.message || r.message === "undefined") {
+    throw new Error("expected non-empty error message");
+  }
 });
 
 Deno.test("parser: subcommand with missing path is a parse error", () => {
   const r = err(["solve"]);
   assertEquals(r.success, false);
+  if (!r.message || r.message === "undefined") {
+    throw new Error("expected non-empty error message");
+  }
 });
 
 Deno.test("parser: extra positional is a parse error", () => {
   const r = err(["foo.edn", "bar.edn"]);
   assertEquals(r.success, false);
+  if (!r.message || r.message === "undefined") {
+    throw new Error("expected non-empty error message");
+  }
 });
