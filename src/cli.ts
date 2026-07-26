@@ -18,6 +18,15 @@ if (args.includes("--help") || args.includes("-h")) {
   Deno.exit(0);
 }
 
+// Short-circuit --version to preserve the "argdown-2 0.2.0" output format
+// the old hand-rolled CLI used. Optique's `version` option prints only
+// the value (e.g. "0.2.0"), which would break `cli.test.ts` and any
+// scripts that match on the program-name prefix.
+if (args.includes("--version")) {
+  Deno.stdout.writeSync(new TextEncoder().encode(`${programName} ${VERSION}\n`));
+  Deno.exit(0);
+}
+
 // Optique handles --version (via `version` option) and exit 2 for usage
 // errors (via `errorExitCode`). All other paths land here with a parsed
 // value, which the dispatcher routes to runValidate or runSolve.
