@@ -9,6 +9,8 @@ import type {
 import { decodeWire } from "./schema.js";
 import { validateCandidate } from "./validate.js";
 
+import { Effect } from "effect";
+
 export type {
   AggregateResult,
   Argument,
@@ -61,8 +63,12 @@ export function validate(value: unknown): ValidationResult {
 }
 
 export function load(source: string): LoadResult {
-  const read = readEdn(source);
-  return read.ok ? validate(read.value) : read;
+  return Effect.runSync(
+    Effect.match(readEdn(source), {
+      onFailure: (err) => ({ ok: false, errors: [err.diagnostic] }),
+      onSuccess: (value) => validate(value),
+    }),
+  );
 }
 
 export function solve(document: Document): ComponentSolveResult {
