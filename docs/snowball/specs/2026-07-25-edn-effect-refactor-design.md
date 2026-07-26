@@ -51,7 +51,7 @@ consumers), or the file layout.
 | Error shape | Tagged union `{ _tag: "RootCount" \| "ReadError", diagnostic: Diagnostic }` | Enables `Effect.catchTag`. Keeps `Diagnostic` shape unchanged. |
 | Error type location | `EdnError` exported from `src/model.ts` | Co-located with `Diagnostic`, `ReadResult`. Pattern: each module owns its own union, reuses `Diagnostic` inside. |
 | `Effect` wiring | `"effect": "npm:effect@^4.0.0-beta.101"` in `deno.json` | Decouples from `vendor/effect/`. Vendor stays as reference. |
-| Sync boundary | Caller owns `Effect.runSync(Effect.either(...))` | No helper module — two call sites is the right count to inline the unwrap. |
+| Sync boundary | Caller owns `Effect.runSync(Effect.match(...))` | No helper module — two call sites is the right count to inline the unwrap. `Effect.match` folds an `Effect<A, E>` into `Effect<UnionType, never>`; `Effect.runSync` then yields the union value safely. |
 | Scope | `src/edn.ts`, `src/edn.test.ts`, `src/index.ts`, `src/builder/soft-parse.ts`, `src/model.ts`, `deno.json` + a pattern note | Establishes the convention end-to-end without leaving the codebase mid-migration. |
 | `ReadResult` | Kept in `src/model.ts` for now | Boundary type until consumers migrate to `Effect.gen` pipelines. |
 | Pattern note | `docs/snowball/specs/2026-07-25-effect-pattern.md` | Convention reference for future modules. |
@@ -199,31 +199,39 @@ function that throws, wrapped as an Effect with a failure channel.
 Both call sites currently do `const read = readEdn(source)` and read
 it as a `ReadResult`. After the refactor, each picks its own unwrapper.
 
+Note: `effect@4.0.0-beta` removed the top-level `Either` export and
+`Effect.either` in favor of `Effect.match` + `Effect.runSyncExit`. The
+idiomatic pattern for a sync boundary is `Effect.match` (which folds
+`Effect<A, E>` into `Effect<UnionType, never>`) followed by
+`Effect.runSync`. `Effect.runSync` on a `Effect<_, never>` is safe.
+
 ### `src/index.ts`
 
 ```ts
-import { Effect, Either } from "effect";
+import { Effect } from "effect";
 import { readEdn } from "./edn.js";
 
-const result = Effect.runSync(Effect.either(readEdn(source)));
-if (Either.isLeft(result)) {
-  return { ok: false, errors: [result.left.diagnostic] };
-}
-return { ok: true, value: result.right };
+const result = Effect.runSync(
+  Effect.match(readEdn(source), {
+    onFailure: (err) => ({ ok: false as const, errors: [err.diagnostic] }),
+    onSuccess: (value) => ({ ok: true as const, value }),
+  }),
+);
+return result;
 ```
 
 ### `src/builder/soft-parse.ts`
 
-Same pattern — `Effect.either` + `Either.match` to recover the
-`ReadResult` shape that downstream code expects.
+Same pattern — `Effect.match` + `Effect.runSync` to recover the
+`SoftParseResult` shape that downstream code expects.
 
-### Why `Either` (not `Effect.runSyncExit`)
+### Why `Effect.match` (not `Effect.runSyncExit`)
 
 `Effect.runSyncExit` returns an `Exit<A, E>` whose failure carries a
 `Cause<E>` — more than we need for a sync failure (no defects, no
-interruptions in this code path). `Effect.either` returns a plain
-`Either<E, A>` whose shape matches the existing `ReadResult.ok`
-boolean — one mental step instead of two.
+interruptions in this code path). `Effect.match` lets us fold the
+`Effect<A, E>` directly into a value of our choosing — typically the
+existing `ReadResult` shape — in one expression.
 
 ### Future migration (out of scope for this spec)
 
@@ -238,51 +246,53 @@ it.
 
 | Layer | What it asserts | Tooling |
 |---|---|---|
-| **`readEdn` direct** | Effect returns `Right(value)` for valid, `Left(EdnError)` for invalid; `_tag` and `diagnostic.code` match the table | `Effect.runSync(Effect.either(...))` |
-| **Consumers** (`index.ts`, `soft-parse.ts`) | Existing `ReadResult` shape is preserved after the unwrap | No new tests — existing tests already cover this |
+| **`readEdn` direct** | `Effect.match` returns `{ ok: true, value }` for valid, `{ ok: false, error }` for invalid; `error._tag` and `error.diagnostic` match the table | `Effect.runSync(Effect.match(...))` |
+| **Consumers** (`index.ts`, `soft-parse.ts`) | Existing `ReadResult` / `SoftParseResult` shape is preserved after the unwrap | No new tests — existing tests already cover this |
 
 ### `src/edn.test.ts` — updated shape
 
 ```ts
-import { Effect, Either } from "effect";
+import { Effect } from "effect";
 import { readEdn } from "./edn.js";
 
 function runRead(source: string) {
-  return Effect.runSync(Effect.either(readEdn(source)));
+  return Effect.runSync(
+    Effect.match(readEdn(source), {
+      onFailure: (err) => ({ ok: false as const, error: err }),
+      onSuccess: (value) => ({ ok: true as const, value }),
+    }),
+  );
 }
 
 it("preserves namespaced tags, keyword ids, maps, sets, and vectors", () => {
   const result = runRead(
     "#casualtheorics.argdown2.solver/grounded [...]",
   );
-  expect(Either.isRight(result)).toBe(true);
-  if (Either.isRight(result)) {
-    expect(result.right).toEqual({ tag: { ... }, value: [...] });
-  }
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.value).toEqual({ tag: { ... }, value: [...] });
 });
 
 for (const [name, source] of [...error cases...] as const) {
   it(`returns ReadError for ${name}`, () => {
     const result = runRead(source);
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) {
-      expect(result.left._tag).toBe("ReadError");
-      expect(result.left.diagnostic.code).toBe("edn/read-error");
-    }
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error._tag).toBe("ReadError");
+    expect(result.error.diagnostic.code).toBe("edn/read-error");
   });
 }
 
 for (const [name, source] of [...root-count cases...] as const) {
   it(`returns RootCount for ${name}`, () => {
     const result = runRead(source);
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) {
-      expect(result.left._tag).toBe("RootCount");
-      expect(result.left.diagnostic).toEqual({
-        code: "edn/root-count",
-        message: "Expected exactly one top-level EDN value",
-      });
-    }
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error._tag).toBe("RootCount");
+    expect(result.error.diagnostic).toEqual({
+      code: "edn/root-count",
+      message: "Expected exactly one top-level EDN value",
+    });
   });
 }
 ```

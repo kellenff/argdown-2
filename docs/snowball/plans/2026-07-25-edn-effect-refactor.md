@@ -152,19 +152,26 @@ git commit -m "feat(model): add EdnError tagged union for Effect read errors"
 
 This task proves the test design before the implementation. The tests will fail because `readEdn` still returns `ReadResult`.
 
+> **API note:** `effect@4.0.0-beta` removed the top-level `Either` export and `Effect.either` in favor of `Effect.match`. The idiomatic pattern for a sync boundary is `Effect.match(effect, { onFailure, onSuccess })` (returns `Effect<UnionType, never>`) followed by `Effect.runSync`. The test helper below uses this pattern.
+
 - [ ] **Step 1: Replace the test file**
 
 Replace `src/edn.test.ts` with:
 
 ```ts
-import { Effect, Either } from "effect";
+import { Effect } from "effect";
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
 import { readEdn } from "./edn.js";
 
 function runRead(source: string) {
-  return Effect.runSync(Effect.either(readEdn(source)));
+  return Effect.runSync(
+    Effect.match(readEdn(source), {
+      onFailure: (err) => ({ ok: false as const, error: err }),
+      onSuccess: (value) => ({ ok: true as const, value }),
+    }),
+  );
 }
 
 describe("readEdn", () => {
@@ -172,23 +179,22 @@ describe("readEdn", () => {
     const result = runRead(
       "#casualtheorics.argdown2.solver/grounded [#casualtheorics.argdown2.argdown/statement {:id :a :tags #{:pro}}]",
     );
-    expect(Either.isRight(result)).toBe(true);
-    if (Either.isRight(result)) {
-      expect(result.right).toEqual({
-        tag: { ns: "casualtheorics.argdown2.solver", symbol: "grounded" },
-        value: [
-          {
-            tag: { ns: "casualtheorics.argdown2.argdown", symbol: "statement" },
-            value: {
-              map: [
-                [{ keyword: "id" }, { keyword: "a" }],
-                [{ keyword: "tags" }, { set: [{ keyword: "pro" }] }],
-              ],
-            },
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({
+      tag: { ns: "casualtheorics.argdown2.solver", symbol: "grounded" },
+      value: [
+        {
+          tag: { ns: "casualtheorics.argdown2.argdown", symbol: "statement" },
+          value: {
+            map: [
+              [{ keyword: "id" }, { keyword: "a" }],
+              [{ keyword: "tags" }, { set: [{ keyword: "pro" }] }],
+            ],
           },
-        ],
-      });
-    }
+        },
+      ],
+    });
   });
 
   for (
@@ -203,11 +209,10 @@ describe("readEdn", () => {
   ) {
     it(`returns ReadError for ${name}`, () => {
       const result = runRead(source);
-      expect(Either.isLeft(result)).toBe(true);
-      if (Either.isLeft(result)) {
-        expect(result.left._tag).toBe("ReadError");
-        expect(result.left.diagnostic.code).toBe("edn/read-error");
-      }
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error._tag).toBe("ReadError");
+      expect(result.error.diagnostic.code).toBe("edn/read-error");
     });
   }
 
@@ -219,14 +224,13 @@ describe("readEdn", () => {
   ) {
     it(`returns RootCount for ${name}`, () => {
       const result = runRead(source);
-      expect(Either.isLeft(result)).toBe(true);
-      if (Either.isLeft(result)) {
-        expect(result.left._tag).toBe("RootCount");
-        expect(result.left.diagnostic).toEqual({
-          code: "edn/root-count",
-          message: "Expected exactly one top-level EDN value",
-        });
-      }
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error._tag).toBe("RootCount");
+      expect(result.error.diagnostic).toEqual({
+        code: "edn/root-count",
+        message: "Expected exactly one top-level EDN value",
+      });
     });
   }
 });
@@ -240,7 +244,7 @@ Run:
 deno test -A --frozen src/edn.test.ts
 ```
 
-Expected: FAIL — `Property 'ok' does not exist on type 'Either<EdnError, unknown>'` (or similar TS-level error at the test boundary). Compile-time failure surfaces because `readEdn` still returns `ReadResult`, not `Effect`.
+Expected: FAIL — `Argument of type 'ReadResult' is not assignable to parameter of type 'Effect<unknown, EdnError, never>'` (or similar TS-level error at the test boundary). Compile-time failure surfaces because `readEdn` still returns `ReadResult`, not `Effect`.
 
 If only test-runtime failures appear (no TS errors), the import path is wired but the public signature is unchanged — that's the **green-for-typed-signature** state we want to confirm.
 
@@ -340,12 +344,12 @@ Effect idiom for follow-on migrations of validate.ts and builders."
 
 `src/index.test.ts` already covers `load()` end-to-end (5 tests across success and three failure modes). It serves as the regression contract.
 
-- [ ] **Step 1: Add the Effect / Either import**
+- [ ] **Step 1: Add the Effect import**
 
 In `src/index.ts`, add to the import block at the top:
 
 ```ts
-import { Effect, Either } from "effect";
+import { Effect } from "effect";
 ```
 
 Place it after the existing local imports (line 10, after `validateCandidate`).
@@ -356,11 +360,12 @@ Replace the body of `load` (lines 63–66):
 
 ```ts
 export function load(source: string): LoadResult {
-  const read = Effect.runSync(Effect.either(readEdn(source)));
-  if (Either.isLeft(read)) {
-    return { ok: false, errors: [read.left.diagnostic] };
-  }
-  return validate(read.right);
+  return Effect.runSync(
+    Effect.match(readEdn(source), {
+      onFailure: (err) => ({ ok: false, errors: [err.diagnostic] }),
+      onSuccess: (value) => validate(value),
+    }),
+  );
 }
 ```
 
@@ -372,13 +377,13 @@ Run:
 deno test -A --frozen src/index.test.ts
 ```
 
-Expected: PASS — all 5 tests. The "returns reader diagnostics without throwing" test (`load("{:broken")`) confirms the `Left(_tag === "ReadError", diagnostic.code === "edn/read-error")` round-trip through `Either.match`.
+Expected: PASS — all 5 tests. The "returns reader diagnostics without throwing" test (`load("{:broken")`) confirms the `ReadError` round-trip through `Effect.match`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add src/index.ts
-git commit -m "refactor(index): consume readEdn via Effect.either + Either.match"
+git commit -m "refactor(index): consume readEdn via Effect.match + Effect.runSync"
 ```
 
 ---
@@ -390,12 +395,12 @@ git commit -m "refactor(index): consume readEdn via Effect.either + Either.match
 
 `src/builder/soft-parse.test.ts` covers this (3 tests: round-trip, fixture decode, empty input).
 
-- [ ] **Step 1: Add the Effect / Either import**
+- [ ] **Step 1: Add the Effect import**
 
 Replace the import block of `src/builder/soft-parse.ts`:
 
 ```ts
-import { Effect, Either } from "effect";
+import { Effect } from "effect";
 
 import { readEdn } from "../edn.js";
 import type { CandidateDocument, Diagnostic } from "../model.js";
@@ -408,11 +413,12 @@ Replace the body of `softParse`:
 
 ```ts
 export function softParse(source: string): SoftParseResult {
-  const read = Effect.runSync(Effect.either(readEdn(source)));
-  if (Either.isLeft(read)) {
-    return { ok: false, errors: [read.left.diagnostic] };
-  }
-  return decodeWire(read.right);
+  return Effect.runSync(
+    Effect.match(readEdn(source), {
+      onFailure: (err) => ({ ok: false, errors: [err.diagnostic] }),
+      onSuccess: (value) => decodeWire(value),
+    }),
+  );
 }
 ```
 
@@ -503,17 +509,24 @@ return Effect.gen(function* () {
 ## Sync boundary
 
 Callers that need a synchronous return value use
-`Effect.runSync(Effect.either(...))` + `Either.match`. The `Either`
-shape (Left = failure, Right = success) maps cleanly to the existing
-`ReadResult` discriminated union.
+`Effect.runSync(Effect.match(...))`. `Effect.match` folds an
+`Effect<A, E>` into `Effect<UnionType, never>` (the result has no
+failure channel), so a subsequent `Effect.runSync` is guaranteed safe.
+The typical pattern preserves the existing `ReadResult` discriminated
+union:
 
 ```ts
-const result = Effect.runSync(Effect.either(readEdn(source)));
-if (Either.isLeft(result)) {
-  return { ok: false, errors: [result.left.diagnostic] };
-}
-return { ok: true, value: result.right };
+return Effect.runSync(
+  Effect.match(readEdn(source), {
+    onFailure: (err) => ({ ok: false, errors: [err.diagnostic] }),
+    onSuccess: (value) => ({ ok: true, value }),
+  }),
+);
 ```
+
+> **Note:** `effect@4.0.0-beta` removed the top-level `Either` export
+> and `Effect.either` in favor of `Effect.match`. Avoid `Either` in
+> new code.
 
 When the consumer is itself an `Effect.gen` pipeline, prefer
 `yield* readEdn(source)` directly — no unwrap until the outermost
@@ -521,12 +534,11 @@ sync boundary.
 
 ## Composition
 
-When downstream modules need to combine errors, use `Effect.flatMap`
-with `Effect.mapError` to remap or widen:
+When downstream modules need to combine errors, compose with
+`Effect.flatMap` and remap with `Effect.mapError`:
 
 ```ts
-const validated = pipe(
-  readEdn(source),
+const validated = readEdn(source).pipe(
   Effect.flatMap(validate),
   Effect.mapError((e) => wrapWithStage("validate", e)),
 );
@@ -535,9 +547,9 @@ const validated = pipe(
 ## Testing
 
 For sync pure functions, run tests via
-`Effect.runSync(Effect.either(fn(input)))` and assert on
-`Either.isLeft` / `Either.isRight`. Prefer one assertion per tag
-variant over a single large `toMatchObject`.
+`Effect.runSync(Effect.match(fn(input), { onFailure, onSuccess }))`
+and assert on the resulting tagged union. Prefer one assertion per
+tag variant over a single large `toMatchObject`.
 
 `Effect.catchTag` tests belong to the first consumer that uses the
 tag discriminators — don't add them speculatively.
