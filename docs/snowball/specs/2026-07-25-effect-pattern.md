@@ -149,5 +149,6 @@ tag discriminators — don't add them speculatively.
 - Don't invent a new shared ok/errors boundary type for Effect modules
   — keep the Effect until the outermost sync boundary (CLI, MCP, test)
   and unwrap there into a local shape (`LoadReport`, `LoadDocResult`,
-  test-only union). The old `ReadResult`, `LoadResult`, and
-  `SoftParseResult` types were removed after the schema/Effect refactor.
+  test-only union). The old `ReadResult`, `LoadResult`, `SoftParseResult`,
+  `ValidationResult`, and `DecodeResult` types were removed after the
+  schema/Effect refactor.

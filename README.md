@@ -11,9 +11,11 @@ EDN is a Clojure-origin data notation that maps directly to JS values. Keywords 
 ## Quick start
 
 ```ts
+import { Effect } from "effect";
 import { load, solve } from "jsr:@casualtheorics/argdown-2";
 
-const loaded = load(`
+const result = Effect.runSync(
+  Effect.match(load(`
   #casualtheorics.argdown2/document
   {:id :quick-start
    :root
@@ -28,17 +30,26 @@ const loaded = load(`
      #casualtheorics.argdown2.argdown/statement {:id :b :text "B"}
      #casualtheorics.argdown2.argdown/attack
      {:id :attack-a-b :from :a :to :b}]}}
-`);
+`), {
+    onFailure: (err) => ({
+      ok: false as const,
+      errors: err._tag === "RootCount" || err._tag === "ReadError"
+        ? [err.diagnostic]
+        : err.diagnostics,
+    }),
+    onSuccess: (document) => ({ ok: true as const, document }),
+  }),
+);
 
-if (!loaded.ok) {
-  console.error(loaded.errors);
+if (!result.ok) {
+  console.error(result.errors);
 } else {
-  console.log(solve(loaded.document).native);
+  console.log(solve(result.document).native);
   // { kind: "labels", values: Map(2) { "a" => "in", "b" => "out" } }
 }
 ```
 
-Three functions, one return shape: `{ ok: true, ... } | { ok: false, errors }`. The library never throws and never produces a partial document.
+`load`, `validate`, and `parseCandidate` return `Effect` values — unwrap at the edge with `Effect.match` + `Effect.runSync`. Failures are tagged (`EdnError` | `SchemaError` | `ValidateError`); the library never throws and never produces a partial document on failure.
 
 Three install paths:
 
@@ -226,9 +237,9 @@ IDs and references are EDN keywords. IDs are unique within one solver component 
 
 ## Validation
 
-`load(source)` performs three checks in order: strict EDN parsing, Zod schema validation of tagged values and fields, and identity, reference, and endpoint validation. Failure returns `{ ok: false, errors }` with semantic paths (e.g., `[2, ':inferences', 0, ':premises', 3]`). A malformed document never produces a partial document.
+`load(source)` performs three checks in order: strict EDN parsing, Zod schema validation of tagged values and fields, and identity, reference, and endpoint validation. On failure the Effect fails with a tagged error carrying diagnostics (semantic paths like `[2, ':inferences', 0, ':premises', 3]`). A malformed document never produces a partial document.
 
-Use `validate(value)` when EDN has already been read with `edn-parser-js` and you only need the schema and semantic checks.
+Use `validate(value)` when EDN has already been read with `edn-parser-js` and you only need the schema and semantic checks. Use `parseCandidate(source)` when you want wire decode only (no semantic validation).
 
 ## Project status
 
