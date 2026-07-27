@@ -565,7 +565,8 @@ export function runSolveEffect(
       }),
     );
     if ("content" in loaded) return loaded;
-    return jsonResult({ ok: true, ...serializeSolveResult(solve(loaded)) });
+    const solved = yield* solve(loaded);
+    return jsonResult({ ok: true, ...serializeSolveResult(solved) });
   });
 }
 

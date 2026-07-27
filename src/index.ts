@@ -4,6 +4,7 @@ import type {
   Document,
   LoadError,
   SchemaError,
+  SolveError,
   ValidateError,
 } from "./model.js";
 import { parseCandidate } from "./builder/parse-candidate.js";
@@ -35,6 +36,7 @@ export type {
   MultiSolveResult,
   Relation,
   SchemaError,
+  SolveError,
   SolverComponent,
   SolveResult,
   SolverInterface,
@@ -45,6 +47,8 @@ export type {
   ValidateError,
 } from "./model.js";
 export type { ParseCandidateError } from "./builder/parse-candidate.js";
+export type { BuilderCode, BuilderError } from "./builder/types.js";
+export { apply, emptyDocument } from "./builder/apply.js";
 
 export {
   AGGREGATE_IDENTITY_TAG,
@@ -80,6 +84,8 @@ export function load(
   });
 }
 
-export function solve(document: Document): ComponentSolveResult {
-  return evaluateComponent(document.root);
+export function solve(
+  document: Document,
+): Effect.Effect<ComponentSolveResult, SolveError> {
+  return Effect.sync(() => evaluateComponent(document.root));
 }
