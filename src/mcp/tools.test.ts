@@ -137,6 +137,24 @@ describe("mcp tool handlers", () => {
     expect(await readFile(path, "utf8")).toBe(before);
   });
 
+  it("refused mutation responses always include refused.code + warnings + empty diff", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "argdown-mcp-"));
+    const path = join(dir, "doc.edn");
+    await runCreateDocument({ path });
+    await runAddStatement({ path, id: "a", text: "A" });
+    const refused = await runAddStatement({ path, id: "a", text: "B" });
+    const body = parseBody(refused) as {
+      ok: boolean;
+      refused?: { code: string };
+      warnings: unknown[];
+      diff: unknown[];
+    };
+    expect(body.ok).toBe(false);
+    expect(body.refused?.code).toBe("builder/duplicate-id");
+    expect(Array.isArray(body.warnings)).toBe(true);
+    expect(body.diff).toEqual([]);
+  });
+
   it("rejects path and source together on add_statement", async () => {
     const refused = await runAddStatement({
       path: "/tmp/unused.edn",
