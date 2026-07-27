@@ -2,11 +2,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { Effect } from "effect";
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
 import { apply, emptyDocument } from "./builder/apply.js";
-import { softParse } from "./builder/soft-parse.js";
+import { parseCandidate } from "./builder/parse-candidate.js";
 import { writeEdn } from "./edn-write.js";
 import { load } from "./index.js";
 
@@ -14,6 +15,15 @@ const fixtureDir = join(
   dirname(fileURLToPath(import.meta.url)),
   "builder/fixtures",
 );
+
+function runParseCandidate(source: string) {
+  return Effect.runSync(
+    Effect.match(parseCandidate(source), {
+      onFailure: (err) => ({ ok: false as const, error: err }),
+      onSuccess: (document) => ({ ok: true as const, document }),
+    }),
+  );
+}
 
 describe("writeEdn", () => {
   it("round-trips a builder-built attack document through load", () => {
@@ -43,7 +53,7 @@ describe("writeEdn", () => {
     expect(load(source).ok).toBe(true);
   });
 
-  it("round-trips unresolved prose refs through softParse", () => {
+  it("round-trips unresolved prose refs through parseCandidate", () => {
     let doc = emptyDocument();
     doc = apply(doc, {
       type: "add_argument",
@@ -58,7 +68,7 @@ describe("writeEdn", () => {
       conclusion: "Censorship is wrong",
     }).document;
     const edn = writeEdn(doc);
-    const parsed = softParse(edn);
+    const parsed = runParseCandidate(edn);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     const arg = parsed.document.root.elements.find((e) =>

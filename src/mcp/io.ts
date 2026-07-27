@@ -1,8 +1,10 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { Effect } from "effect";
+
 import { emptyDocument } from "../builder/apply.js";
-import { softParse } from "../builder/soft-parse.js";
+import { parseCandidate } from "../builder/parse-candidate.js";
 import { writeEdn } from "../edn-write.js";
 import type { CandidateDocument, Diagnostic, SolverTag } from "../model.js";
 import { GROUNDED_SOLVER_TAG } from "../model.js";
@@ -21,6 +23,10 @@ export type SaveDocResult =
   | { ok: true; text: string }
   | { ok: false; errors: readonly Diagnostic[]; isError?: boolean };
 
+type ParseDocumentSourceResult =
+  | { ok: true; document: CandidateDocument }
+  | { ok: false; errors: readonly Diagnostic[] };
+
 function isPathRef(ref: DocumentRef): ref is { path: string } {
   return (
     typeof (ref as { path?: string }).path === "string" &&
@@ -35,13 +41,25 @@ function isTextRef(ref: DocumentRef): ref is { text: string } {
   );
 }
 
+function parseDocumentSource(source: string): ParseDocumentSourceResult {
+  return Effect.runSync(
+    Effect.match(parseCandidate(source), {
+      onFailure: (err) => ({
+        ok: false as const,
+        errors: err._tag === "Schema" ? err.diagnostics : [err.diagnostic],
+      }),
+      onSuccess: (document) => ({ ok: true as const, document }),
+    }),
+  );
+}
+
 export async function loadDocumentRef(
   ref: DocumentRef,
 ): Promise<LoadDocResult> {
   if (isPathRef(ref)) {
     try {
       const source = await readFile(ref.path, "utf8");
-      const parsed = softParse(source);
+      const parsed = parseDocumentSource(source);
       if (!parsed.ok) return parsed;
       return { ok: true, document: parsed.document, ref };
     } catch (error: unknown) {
@@ -54,7 +72,7 @@ export async function loadDocumentRef(
     }
   }
   if (isTextRef(ref)) {
-    const parsed = softParse(ref.text);
+    const parsed = parseDocumentSource(ref.text);
     if (!parsed.ok) return parsed;
     return { ok: true, document: parsed.document, ref };
   }
