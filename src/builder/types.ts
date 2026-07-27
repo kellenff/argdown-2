@@ -42,6 +42,31 @@ export type ApplyResult = {
   diff: readonly DiffOp[];
 };
 
+/**
+ * Stable refusal codes from `apply`. Each maps 1:1 to a branch in
+ * `apply()` that previously set `ApplyResult.refused`.
+ */
+export type BuilderCode =
+  | "builder/invalid-id"
+  | "builder/duplicate-id"
+  | "builder/missing-id"
+  | "builder/unsupported-relation-kind"
+  | "builder/unsupported-solver"
+  | "builder/invalid-projection-bounds";
+
+/**
+ * Typed failure for `apply()` and `applyMutation()`. Mirrors the
+ * shape previously embedded in `ApplyResult.refused` so the MCP
+ * JSON response stays byte-compatible.
+ */
+export type BuilderError = {
+  readonly _tag: "Builder";
+  readonly code: BuilderCode;
+  readonly message: string;
+  readonly path: ReadonlyArray<string | number>;
+  readonly warnings: readonly BuilderWarning[];
+};
+
 type Scoped = { parentId?: string };
 
 export type DocumentEdit =
