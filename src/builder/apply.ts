@@ -29,6 +29,11 @@ import type {
   DocumentEdit,
 } from "./types.js";
 
+/**
+ * Successful builder update. `document` is the post-edit candidate document,
+ * `warnings` are non-fatal soft warnings (e.g., unresolved prose refs), and
+ * `diff` describes the structural change for tooling consumers.
+ */
 export type AppliedEdit = {
   readonly document: CandidateDocument;
   readonly warnings: readonly BuilderWarning[];
@@ -723,8 +728,8 @@ export function apply(
 }
 
 /**
- * Re-export `ApplyResult` for callers that still want the
- * `Result<{ document, warnings, diff }, BuilderError>` shape. After
- * Task 7, MCP handlers consume this type instead of `ApplyResult`.
+ * Legacy `{ document, warnings, refused?, diff }` shape retained for any
+ * third-party callers. `apply()` now returns an `Effect`; see `AppliedEdit`
+ * for the success-shape and `BuilderError` for the failure-shape.
  */
 export type { ApplyResult };

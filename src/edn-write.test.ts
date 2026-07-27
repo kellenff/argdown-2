@@ -8,7 +8,9 @@ import { describe, it } from "@std/testing/bdd";
 
 import { apply, emptyDocument } from "./builder/apply.js";
 import { parseCandidate } from "./builder/parse-candidate.js";
+import type { DocumentEdit } from "./builder/types.js";
 import { writeEdn } from "./edn-write.js";
+import type { CandidateDocument } from "./model.js";
 import { runLoad } from "./test-support.js";
 
 const fixtureDir = join(
@@ -25,19 +27,26 @@ function runParseCandidate(source: string) {
   );
 }
 
+function applyOk(
+  doc: CandidateDocument,
+  edit: DocumentEdit,
+): CandidateDocument {
+  const result = Effect.runSync(apply(doc, edit));
+  return result.document;
+}
+
 describe("writeEdn", () => {
   it("round-trips a builder-built attack document through load", () => {
     let doc = emptyDocument();
-    doc =
-      apply(doc, { type: "add_statement", id: "a", text: "Alpha" }).document;
-    doc = apply(doc, { type: "add_statement", id: "b", text: "Beta" }).document;
-    doc = apply(doc, {
+    doc = applyOk(doc, { type: "add_statement", id: "a", text: "Alpha" });
+    doc = applyOk(doc, { type: "add_statement", id: "b", text: "Beta" });
+    doc = applyOk(doc, {
       type: "add_relation",
       id: "attack-a-b",
       kind: "attack",
       from: "a",
       to: "b",
-    }).document;
+    });
     const edn = writeEdn(doc);
     const loaded = runLoad(edn);
     expect(loaded.ok).toBe(true);
@@ -55,18 +64,18 @@ describe("writeEdn", () => {
 
   it("round-trips unresolved prose refs through parseCandidate", () => {
     let doc = emptyDocument();
-    doc = apply(doc, {
+    doc = applyOk(doc, {
       type: "add_argument",
       id: "freedom",
       description: "Freedom argument",
-    }).document;
-    doc = apply(doc, {
+    });
+    doc = applyOk(doc, {
       type: "add_inference",
       argumentId: "freedom",
       id: "freedom-main",
       premises: ["Absolute freedom is a right"],
       conclusion: "Censorship is wrong",
-    }).document;
+    });
     const edn = writeEdn(doc);
     const parsed = runParseCandidate(edn);
     expect(parsed.ok).toBe(true);
@@ -84,31 +93,35 @@ describe("writeEdn", () => {
 
   it("round-trips an argument with inference through load", () => {
     let doc = emptyDocument();
-    doc =
-      apply(doc, { type: "add_statement", id: "premise-a", text: "Premise A" })
-        .document;
-    doc =
-      apply(doc, { type: "add_statement", id: "premise-b", text: "Premise B" })
-        .document;
-    doc = apply(doc, {
+    doc = applyOk(doc, {
+      type: "add_statement",
+      id: "premise-a",
+      text: "Premise A",
+    });
+    doc = applyOk(doc, {
+      type: "add_statement",
+      id: "premise-b",
+      text: "Premise B",
+    });
+    doc = applyOk(doc, {
       type: "add_statement",
       id: "conclusion",
       text: "Conclusion",
-    }).document;
-    doc = apply(doc, {
+    });
+    doc = applyOk(doc, {
       type: "add_argument",
       id: "main-argument",
       description: "A simple inference chain",
       tags: ["pro"],
-    }).document;
-    doc = apply(doc, {
+    });
+    doc = applyOk(doc, {
       type: "add_inference",
       argumentId: "main-argument",
       id: "main-inference",
       premises: ["premise-a", "premise-b"],
       conclusion: "conclusion",
       rules: ["modus-ponens"],
-    }).document;
+    });
     const edn = writeEdn(doc);
     const loaded = runLoad(edn);
     expect(loaded.ok).toBe(true);

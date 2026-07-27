@@ -147,8 +147,7 @@ async function applyMutation(
         diff: [] as readonly DiffOp[],
       }),
       onSuccess: (value) => ({
-        document: value.document,
-        warnings: value.warnings,
+        ...value,
         diff: value.diff as readonly DiffOp[],
       }),
     }),
