@@ -78,18 +78,19 @@ See `ValidateError` in `src/model.ts` and `src/validate.ts`.
 
 ## Sync boundary
 
-Callers that need a synchronous return value use
-`Effect.runSync(Effect.match(...))`. `Effect.match` folds an
-`Effect<A, E>` into `Effect<UnionType, never>` (the result has no
-failure channel), so a subsequent `Effect.runSync` is guaranteed safe.
-The typical pattern preserves the call-site's existing boundary
-discriminated union (e.g., `LoadResult`, `SoftParseResult`):
+Prefer keeping `Effect` until the outermost edge (CLI, MCP, test).
+Unwrap only there with `Effect.runSync(Effect.match(...))` into a
+**local** shape defined at that call site — e.g. `LoadReport` in
+`src/cli/load.ts`, `LoadDocResult` in `src/mcp/io.ts`, or a test-only
+union. Do **not** add new shared ok/errors `Result` types for Effect
+modules.
 
 ```ts
-return Effect.runSync(
-  Effect.match(readEdn(source), {
-    onFailure: (err) => ({ ok: false, errors: [err.diagnostic] }),
-    onSuccess: (value) => validate(value),
+// CLI boundary (LoadReport)
+const result = Effect.runSync(
+  Effect.match(load(source), {
+    onFailure: (err) => ({ ok: false as const, err }),
+    onSuccess: (document) => ({ ok: true as const, document }),
   }),
 );
 ```
@@ -99,8 +100,24 @@ return Effect.runSync(
 > new code.
 
 When the consumer is itself an `Effect.gen` pipeline, prefer
-`yield* readEdn(source)` directly — no unwrap until the outermost
-sync boundary.
+`yield* parseCandidate(source)` (or `yield* load(source)`) directly —
+no unwrap until the outermost sync boundary.
+
+## Parse compositions
+
+Public parse/load functions compose smaller Effect steps. None of these
+add shared ok/errors boundary types — they stay as `Effect` until an
+outer edge unwraps.
+
+| Function | Pipeline | Success | Failure |
+|----------|----------|---------|---------|
+| `parseCandidate(source)` | `readEdn` → `decodeWire` | `CandidateDocument` | `EdnError \| SchemaError` |
+| `validate(value)` | `decodeWire` → `validateCandidate` | `Document` | `SchemaError \| ValidateError` |
+| `load(source)` | `parseCandidate` → `validateCandidate` | `Document` | `LoadError` |
+
+`parseCandidate` performs wire decode only — it never runs semantic
+validation (`validateCandidate`). Full document loading goes through
+`load`, which chains parse then validate.
 
 ## Composition
 
@@ -129,8 +146,8 @@ tag discriminators — don't add them speculatively.
 - Don't throw from inside an `Effect.gen` body — use `Effect.fail`.
 - Don't construct `Effect.try` with a `catch` that swallows the
   error — always surface as a typed failure.
-- Don't invent a new ok/errors boundary type for Effect modules —
-  unwrap with `Effect.match` + `Effect.runSync` into the call site's
-  existing result type (`LoadResult`, `SoftParseResult`, etc.), or
-  keep the Effect until the outermost sync boundary. The old
-  `ReadResult` type was removed after the EDN reader migration.
+- Don't invent a new shared ok/errors boundary type for Effect modules
+  — keep the Effect until the outermost sync boundary (CLI, MCP, test)
+  and unwrap there into a local shape (`LoadReport`, `LoadDocResult`,
+  test-only union). The old `ReadResult`, `LoadResult`, and
+  `SoftParseResult` types were removed after the schema/Effect refactor.
