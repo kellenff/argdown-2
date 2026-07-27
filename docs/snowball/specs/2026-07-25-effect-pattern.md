@@ -2,7 +2,9 @@
 
 > **Reference for future Effect migrations.** Established by the
 > EDN reader refactor (spec
-> `2026-07-25-edn-effect-refactor-design.md`).
+> `2026-07-25-edn-effect-refactor-design.md`). The Effect-native
+> migration (2026-07-26) extended these conventions to builders, MCP
+> I/O, and `solve`.
 
 ## Public API
 
@@ -81,9 +83,8 @@ See `ValidateError` in `src/model.ts` and `src/validate.ts`.
 Prefer keeping `Effect` until the outermost edge (CLI, MCP, test).
 Unwrap only there with `Effect.runSync(Effect.match(...))` into a
 **local** shape defined at that call site — e.g. `LoadReport` in
-`src/cli/load.ts`, `LoadDocResult` in `src/mcp/io.ts`, or a test-only
-union. Do **not** add new shared ok/errors `Result` types for Effect
-modules.
+`src/cli/load.ts`, or a test-only union. Do **not** add new shared
+ok/errors `Result` types for Effect modules.
 
 ```ts
 // CLI boundary (LoadReport)
@@ -148,7 +149,56 @@ tag discriminators — don't add them speculatively.
   error — always surface as a typed failure.
 - Don't invent a new shared ok/errors boundary type for Effect modules
   — keep the Effect until the outermost sync boundary (CLI, MCP, test)
-  and unwrap there into a local shape (`LoadReport`, `LoadDocResult`,
+  and unwrap there into a local shape (`LoadReport` for CLI, or a
   test-only union). The old `ReadResult`, `LoadResult`, `SoftParseResult`,
-  `ValidationResult`, and `DecodeResult` types were removed after the
-  schema/Effect refactor.
+  `ValidationResult`, `DecodeResult`, and `LoadDocResult` types were
+  removed after the schema/Effect refactor.
+
+## Effect-returning builders
+
+Builder functions refuse edits with `Effect.fail(BuilderError)`:
+
+```ts
+export function apply(
+  doc: CandidateDocument,
+  edit: DocumentEdit,
+): Effect.Effect<AppliedEdit, BuilderError> { /* ... */ }
+```
+
+Successes carry `{ document, warnings, diff }`. Warnings are
+metadata, not failures. The tagged union enables
+`Effect.catchTag(builderEffect, "Builder", handler)` for downstream
+tooling that wants to recover from a refusal.
+
+## Async I/O
+
+For filesystem work, use `Effect.tryPromise`. Map raw errors to a
+tagged `McpIoError` so consumers branch with `Effect.catchTag`:
+
+```ts
+return Effect.tryPromise({
+  try: async () => readFile(ref.path, "utf8"),
+  catch: (error) => ({
+    _tag: "Read" as const,
+    diagnostic: { code: "mcp/io-error", message: String(error) },
+  }),
+});
+```
+
+## MCP Promise adapter
+
+The MCP SDK requires `Promise<McpResult>` handlers. Use one
+helper at the outer edge of each tool:
+
+```ts
+export function runMcpEffect(
+  eff: Effect.Effect<McpResult, never>,
+): Promise<McpResult> {
+  return Effect.runPromise(eff);
+}
+```
+
+Internal tool bodies compose Effects with `Effect.gen` and end in
+`return yield* runMutation(...)` or short-circuit with
+`Effect.succeed(jsonResult(...))` / returning `jsonResult(...)`
+from inside `Effect.gen`.
