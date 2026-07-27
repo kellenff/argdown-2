@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 
+import { Effect } from "effect";
+
 import { apply } from "../builder/apply.js";
 import type { DocumentEdit } from "../builder/types.js";
 import { load, solve } from "../index.js";
@@ -503,7 +505,17 @@ export async function runValidate(args: DocRefInput): Promise<McpResult> {
       sourceResult.isError ?? false,
     );
   }
-  const result = load(sourceResult.source);
+  const result = Effect.runSync(
+    Effect.match(load(sourceResult.source), {
+      onFailure: (err) => ({
+        ok: false as const,
+        errors: err._tag === "RootCount" || err._tag === "ReadError"
+          ? [err.diagnostic]
+          : err.diagnostics,
+      }),
+      onSuccess: (document) => ({ ok: true as const, document }),
+    }),
+  );
   if (!result.ok) {
     return jsonResult({ ok: false, errors: result.errors });
   }
@@ -518,7 +530,17 @@ export async function runSolve(args: DocRefInput): Promise<McpResult> {
       sourceResult.isError ?? false,
     );
   }
-  const result = load(sourceResult.source);
+  const result = Effect.runSync(
+    Effect.match(load(sourceResult.source), {
+      onFailure: (err) => ({
+        ok: false as const,
+        errors: err._tag === "RootCount" || err._tag === "ReadError"
+          ? [err.diagnostic]
+          : err.diagnostics,
+      }),
+      onSuccess: (document) => ({ ok: true as const, document }),
+    }),
+  );
   if (!result.ok) {
     return jsonResult({ ok: false, errors: result.errors });
   }
