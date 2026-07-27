@@ -53,6 +53,29 @@ return Effect.gen(function* () {
 });
 ```
 
+## Multi-error validation
+
+When a module must report **all** diagnostics (not fail-fast), prefer:
+
+- `Effect.sync` / success-channel `diagnostics` arrays for phases that
+  must continue after soft errors (e.g. build an endpoints map while
+  recording duplicate ids).
+- `Effect.validate` when every element must be checked and successes
+  can be discarded on any failure.
+- `Effect.partition` / `Effect.match` when successes must be kept
+  alongside failures (e.g. child solvers).
+
+Collapse to a single tagged error at the module boundary:
+
+```ts
+Effect.mapError(diagnostics => ({
+  _tag: "Semantic" as const,
+  diagnostics,
+}))
+```
+
+See `ValidateError` in `src/model.ts` and `src/validate.ts`.
+
 ## Sync boundary
 
 Callers that need a synchronous return value use
