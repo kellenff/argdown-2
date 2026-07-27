@@ -66,6 +66,18 @@ export type EdnError =
   | { readonly _tag: "RootCount"; readonly diagnostic: Diagnostic }
   | { readonly _tag: "ReadError"; readonly diagnostic: Diagnostic };
 
+export type ValidateError = {
+  readonly _tag: "Semantic";
+  readonly diagnostics: readonly Diagnostic[];
+};
+
+export type SchemaError = {
+  readonly _tag: "Schema";
+  readonly diagnostics: readonly Diagnostic[];
+};
+
+export type LoadError = EdnError | SchemaError | ValidateError;
+
 export type ExtraEntry = readonly [unknown, unknown];
 
 export type CandidateInference = {
