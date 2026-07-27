@@ -1,5 +1,6 @@
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
+import { Effect } from "effect";
 
 import { evaluateComponent } from "./component-eval.js";
 import { solve } from "./index.js";
@@ -118,7 +119,7 @@ describe("first-class component solve result", () => {
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
 
-    const solved = solve(loaded.document) as unknown as {
+    const solved = Effect.runSync(solve(loaded.document)) as unknown as {
       id: string;
       native: { kind: string; values: ReadonlyMap<string, string> };
       aggregate: { kind: string; value: string };

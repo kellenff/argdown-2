@@ -1,5 +1,6 @@
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
+import { Effect } from "effect";
 
 import { solve } from "./index.js";
 import {
@@ -70,7 +71,7 @@ describe("solver component dispatch", () => {
       ));
       expect(loaded.ok).toBe(true);
       if (!loaded.ok) return;
-      const result = solve(loaded.document);
+      const result = Effect.runSync(solve(loaded.document));
       expect(result.native.kind).toBe("labels");
       if (result.native.kind !== "labels") return;
       expect(Object.fromEntries(result.native.values)).toEqual(expected);
@@ -84,9 +85,9 @@ describe("solver component dispatch", () => {
     expect(preferred.ok && stable.ok && complete.ok).toBe(true);
     if (!preferred.ok || !stable.ok || !complete.ok) return;
 
-    const preferredResult = solve(preferred.document);
-    const stableResult = solve(stable.document);
-    const completeResult = solve(complete.document);
+    const preferredResult = Effect.runSync(solve(preferred.document));
+    const stableResult = Effect.runSync(solve(stable.document));
+    const completeResult = Effect.runSync(solve(complete.document));
     expect(preferredResult.native).toMatchObject({
       kind: "extensions",
       values: [new Set()],

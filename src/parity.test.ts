@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
+import { Effect } from "effect";
 
 import { solve } from "./index.js";
 import type { EntityId } from "./model.js";
@@ -42,7 +43,7 @@ describe("Argdown 1.x censorship parity", () => {
   it("matches the pure-attack grounded labels", () => {
     const loaded = runLoad(source);
     if (!loaded.ok) throw new Error("fixture did not load");
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;
     expect(result.native.values.get(id("inclusive-debate"))).toBe("in");

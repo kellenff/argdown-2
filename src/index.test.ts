@@ -27,7 +27,7 @@ describe("public API", () => {
     const loaded = runLoad(source);
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;
     expect(Object.fromEntries(result.native.values)).toEqual({

@@ -1,5 +1,6 @@
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
+import { Effect } from "effect";
 
 import { solve } from "./index.js";
 import { runLoad } from "./test-support.js";
@@ -74,7 +75,7 @@ describe("bottom-up grounded boundary import", () => {
     const loaded = runLoad(document(stmt("child-claim")));
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
 
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;
@@ -91,7 +92,7 @@ describe("bottom-up grounded boundary import", () => {
     `));
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
 
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;
@@ -111,7 +112,7 @@ describe("bottom-up grounded boundary import", () => {
     `));
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
 
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;
@@ -130,7 +131,7 @@ describe("bottom-up grounded boundary import", () => {
     ));
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
 
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;
