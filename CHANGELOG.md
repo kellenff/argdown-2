@@ -59,6 +59,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
   existing `LoadResult` / `SoftParseResult` boundary types. Public
   `load()` / `softParse()` / `validate()` signatures are unchanged.
   Adds `effect` (npm:4.0.0-beta.101) as a runtime dependency.
+- Semantic validation (`validateCandidate`) now returns
+  `Effect.Effect<Document, ValidateError, never>`. Added `SchemaError`
+  and `LoadError` (`EdnError | SchemaError | ValidateError`). New
+  `loadEffect(source)` composes `readEdn` → schema decode → validate.
+  Public `load()` / `validate()` still return `LoadResult` /
+  `ValidationResult` via `Effect.match` + `Effect.runSync`.
 
 ### Removed
 
