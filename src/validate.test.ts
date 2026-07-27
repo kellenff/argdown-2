@@ -1,7 +1,11 @@
+import { Effect } from "effect";
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
+import { readEdn } from "./edn.js";
 import { load } from "./index.js";
+import { decodeWire } from "./schema.js";
+import { validateCandidate } from "./validate.js";
 
 const stmt = (id: string): string =>
   `#casualtheorics.argdown2.argdown/statement {:id :${id}}`;
@@ -164,5 +168,52 @@ describe("component semantic validation", () => {
     expect(result.errors.map((error) => error.code)).toContain(
       "semantic/invalid-projection-bounds",
     );
+  });
+});
+
+function candidateFrom(source: string) {
+  const raw = Effect.runSync(
+    Effect.match(readEdn(source), {
+      onFailure: (e) => {
+        throw new Error(`edn failed: ${e._tag}`);
+      },
+      onSuccess: (value) => value,
+    }),
+  );
+  const decoded = decodeWire(raw);
+  if (!decoded.ok) throw new Error("schema failed");
+  return decoded.document;
+}
+
+function runValidate(source: string) {
+  return Effect.runSync(
+    Effect.match(validateCandidate(candidateFrom(source)), {
+      onFailure: (err) => ({ ok: false as const, error: err }),
+      onSuccess: (document) => ({ ok: true as const, document }),
+    }),
+  );
+}
+
+describe("validateCandidate Effect API", () => {
+  it("returns Document on success", () => {
+    const result = runValidate(document(`${stmt("a")}`));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.id).toBe("validation-test");
+    expect(result.document.root.kind).toBe("solver");
+  });
+
+  it("returns Semantic ValidateError with diagnostics on duplicate id", () => {
+    const result = runValidate(document(`
+      ${stmt("a")}
+      #casualtheorics.argdown2.argdown/attack
+      {:id :a :from :a :to :a}
+    `));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error._tag).toBe("Semantic");
+    expect(
+      result.error.diagnostics.some((d) => d.code === "semantic/duplicate-id"),
+    ).toBe(true);
   });
 });
