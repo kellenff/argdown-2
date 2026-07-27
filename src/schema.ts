@@ -1,4 +1,5 @@
 import type { EDN } from "edn-parser-js";
+import { Effect } from "effect";
 import { z } from "zod";
 
 import {
@@ -18,6 +19,7 @@ import {
   isSolverTag,
   PROJECTION_THRESHOLD_TAG,
   type RelationKind,
+  type SchemaError,
   type SolverInterface,
   type ThresholdProjection,
 } from "./model.js";
@@ -67,9 +69,6 @@ ednValueSchema = z.union([
   metadataSchema,
 ]);
 
-type DecodeResult =
-  | { ok: true; document: CandidateDocument }
-  | { ok: false; errors: readonly Diagnostic[] };
 type Fields = {
   known: ReadonlyMap<string, unknown>;
   extra: readonly ExtraEntry[];
@@ -106,6 +105,12 @@ const defaultInferences: readonly CandidateInference[] = [];
 
 function fullName(value: { ns?: string | undefined; symbol: string }): string {
   return value.ns === undefined ? value.symbol : `${value.ns}/${value.symbol}`;
+}
+
+function schemaFail(
+  diagnostics: readonly Diagnostic[],
+): Effect.Effect<never, SchemaError, never> {
+  return Effect.fail({ _tag: "Schema" as const, diagnostics });
 }
 
 function keywordName(value: unknown): string | undefined {
@@ -814,64 +819,71 @@ function decodeElement(
   }
 }
 
-export function decodeWire(value: unknown): DecodeResult {
-  const wire = ednValueSchema.safeParse(value);
-  if (!wire.success) {
-    return {
-      ok: false,
-      errors: [{
+export function decodeWire(
+  value: unknown,
+): Effect.Effect<CandidateDocument, SchemaError, never> {
+  return Effect.gen(function* () {
+    const wire = ednValueSchema.safeParse(value);
+    if (!wire.success) {
+      return yield* schemaFail([{
         code: "schema/invalid-edn-value",
         message: "Invalid EDN value",
-      }],
-    };
-  }
-  const validatedWireValue = wire.data as EDN;
-  const duplicateErrors = validateCollectionUniqueness(validatedWireValue);
-  if (duplicateErrors.length > 0) return { ok: false, errors: duplicateErrors };
+      }]);
+    }
+    const validatedWireValue = wire.data as EDN;
+    const duplicateErrors = validateCollectionUniqueness(validatedWireValue);
+    if (duplicateErrors.length > 0) {
+      return yield* schemaFail(duplicateErrors);
+    }
 
-  const root = taggedSchema.safeParse(validatedWireValue);
-  if (!root.success) {
-    return {
-      ok: false,
-      errors: [{
+    const root = taggedSchema.safeParse(validatedWireValue);
+    if (!root.success) {
+      return yield* schemaFail([{
         code: "schema/missing-document-tag",
         message: `Expected #${DOCUMENT_TAG}`,
-      }],
-    };
-  }
-  const rootName = fullName(root.data.tag);
-  if (
-    root.data.tag.ns !== DOCUMENT_NAMESPACE ||
-    root.data.tag.symbol !== "document"
-  ) {
-    return {
-      ok: false,
-      errors: [{
+      }]);
+    }
+    const rootName = fullName(root.data.tag);
+    if (
+      root.data.tag.ns !== DOCUMENT_NAMESPACE ||
+      root.data.tag.symbol !== "document"
+    ) {
+      return yield* schemaFail([{
         code: "schema/missing-document-tag",
         message: `Expected #${DOCUMENT_TAG}; received #${rootName}`,
-      }],
-    };
-  }
-  const errors: Diagnostic[] = [];
-  const fields = expectMap(root.data.value, documentKeys, [], errors);
-  if (fields === undefined) return { ok: false, errors };
-  const id = requiredKeyword(fields, "id", [], errors);
-  let component: CandidateSolverComponent | undefined;
-  if (!fields.known.has("root")) {
-    pushMissing(errors, [], "root");
-  } else {
-    const tagged = taggedSchema.safeParse(fields.known.get("root"));
-    if (!tagged.success) {
-      pushInvalid(errors, [], "root", "Expected tagged solver component");
-    } else {
-      component = decodeSolverComponent(tagged.data, [":root"], errors);
+      }]);
     }
-  }
-  if (id === undefined || component === undefined || errors.length > 0) {
-    return { ok: false, errors };
-  }
-  return {
-    ok: true,
-    document: { id, root: component, extra: fields.extra },
-  };
+
+    const decoded = yield* Effect.sync(() => {
+      const errors: Diagnostic[] = [];
+      const fields = expectMap(root.data.value, documentKeys, [], errors);
+      if (fields === undefined) {
+        return { ok: false as const, errors };
+      }
+      const id = requiredKeyword(fields, "id", [], errors);
+      let component: CandidateSolverComponent | undefined;
+      if (!fields.known.has("root")) {
+        pushMissing(errors, [], "root");
+      } else {
+        const tagged = taggedSchema.safeParse(fields.known.get("root"));
+        if (!tagged.success) {
+          pushInvalid(errors, [], "root", "Expected tagged solver component");
+        } else {
+          component = decodeSolverComponent(tagged.data, [":root"], errors);
+        }
+      }
+      if (id === undefined || component === undefined || errors.length > 0) {
+        return { ok: false as const, errors };
+      }
+      return {
+        ok: true as const,
+        document: { id, root: component, extra: fields.extra },
+      };
+    });
+
+    if (!decoded.ok) {
+      return yield* schemaFail(decoded.errors);
+    }
+    return decoded.document;
+  });
 }
