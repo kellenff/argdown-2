@@ -1,4 +1,4 @@
-import { Array as Arr, Effect } from "effect";
+import { type Array as Arr, Effect } from "effect";
 
 import type {
   Argument,
