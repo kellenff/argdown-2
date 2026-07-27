@@ -1,7 +1,9 @@
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
+import { Effect } from "effect";
 
-import { load, solve, validate } from "./index.js";
+import { solve, validate } from "./index.js";
+import { runLoad } from "./test-support.js";
 
 const source = `
   #casualtheorics.argdown2/document
@@ -22,10 +24,10 @@ const source = `
 
 describe("public API", () => {
   it("loads and solves a valid EDN document", () => {
-    const loaded = load(source);
+    const loaded = runLoad(source);
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;
     expect(Object.fromEntries(result.native.values)).toEqual({
@@ -37,21 +39,21 @@ describe("public API", () => {
   });
 
   it("returns reader diagnostics without throwing", () => {
-    expect(load("{:broken")).toMatchObject({
+    expect(runLoad("{:broken")).toMatchObject({
       ok: false,
       errors: [{ code: "edn/read-error" }],
     });
   });
 
   it("returns schema diagnostics without throwing", () => {
-    expect(load("#other/solver []")).toMatchObject({
+    expect(runLoad("#other/solver []")).toMatchObject({
       ok: false,
       errors: [{ code: "schema/missing-document-tag" }],
     });
   });
 
   it("returns semantic diagnostics without a partial document", () => {
-    const result = load(`
+    const result = runLoad(`
       #casualtheorics.argdown2/document
       {:id :invalid
        :root
@@ -77,6 +79,12 @@ describe("public API", () => {
   it("validates a pre-parsed raw EDN value", async () => {
     const { ednParseMulti } = await import("edn-parser-js");
     const raw = ednParseMulti(source)[0];
-    expect(validate(raw).ok).toBe(true);
+    const validated = Effect.runSync(
+      Effect.match(validate(raw), {
+        onFailure: () => ({ ok: false as const }),
+        onSuccess: () => ({ ok: true as const }),
+      }),
+    );
+    expect(validated.ok).toBe(true);
   });
 });

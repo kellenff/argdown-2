@@ -1,4 +1,5 @@
 import { ednParseMulti } from "edn-parser-js";
+import { Effect } from "effect";
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
@@ -15,9 +16,18 @@ const document = (elements: string, interfaceBody = identity()): string =>
     :root #casualtheorics.argdown2.solver/grounded
     {:id :root ${interfaceBody} :elements [${elements}]}}`;
 
+function runDecode(value: unknown) {
+  return Effect.runSync(
+    Effect.match(decodeWire(value), {
+      onFailure: (err) => ({ ok: false as const, error: err }),
+      onSuccess: (document) => ({ ok: true as const, document }),
+    }),
+  );
+}
+
 describe("first-class wire schema", () => {
   it("decodes statement defaults and preserves unknown fields", () => {
-    const result = decodeWire(raw(document(`
+    const result = runDecode(raw(document(`
       #casualtheorics.argdown2.argdown/statement
       {:id :a :future/value 42}
     `)));
@@ -33,7 +43,7 @@ describe("first-class wire schema", () => {
   });
 
   it("decodes arguments and identified relations", () => {
-    const result = decodeWire(raw(document(`
+    const result = runDecode(raw(document(`
       #casualtheorics.argdown2.argdown/statement {:id :a}
       #casualtheorics.argdown2.argdown/argument
       {:id :arg
@@ -57,25 +67,32 @@ describe("first-class wire schema", () => {
   });
 
   it("requires a document tag and relation id", () => {
-    expect(decodeWire(raw(
+    const missingTag = runDecode(raw(
       "#casualtheorics.argdown2.solver/grounded []",
-    ))).toMatchObject({
-      ok: false,
-      errors: [{ code: "schema/missing-document-tag" }],
-    });
-    const result = decodeWire(raw(document(`
+    ));
+    expect(missingTag.ok).toBe(false);
+    if (missingTag.ok) return;
+    expect(missingTag.error._tag).toBe("Schema");
+    expect(missingTag.error.diagnostics).toMatchObject([
+      { code: "schema/missing-document-tag" },
+    ]);
+
+    const result = runDecode(raw(document(`
       #casualtheorics.argdown2.argdown/statement {:id :a}
       #casualtheorics.argdown2.argdown/attack {:from :a :to :a}
     `)));
     expect(result.ok).toBe(false);
     if (result.ok) return;
+    expect(result.error._tag).toBe("Schema");
     expect(
-      result.errors.some((error) => error.code === "schema/missing-required"),
+      result.error.diagnostics.some((error) =>
+        error.code === "schema/missing-required"
+      ),
     ).toBe(true);
   });
 
   it("requires identity aggregates to have exactly one input", () => {
-    const result = decodeWire(raw(document(
+    const result = runDecode(raw(document(
       "#casualtheorics.argdown2.argdown/statement {:id :a}",
       `:interface {:aggregate
        #casualtheorics.argdown2.aggregate/identity
@@ -83,15 +100,17 @@ describe("first-class wire schema", () => {
     )));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors[0]?.code).toBe("schema/invalid-field");
+    expect(result.error._tag).toBe("Schema");
+    expect(result.error.diagnostics[0]?.code).toBe("schema/invalid-field");
   });
 
   it("rejects duplicate EDN map keys before decoding", () => {
-    const result = decodeWire(raw(document(
+    const result = runDecode(raw(document(
       "#casualtheorics.argdown2.argdown/statement {:id :a :id :b}",
     )));
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors[0]?.code).toBe("schema/duplicate-map-key");
+    expect(result.error._tag).toBe("Schema");
+    expect(result.error.diagnostics[0]?.code).toBe("schema/duplicate-map-key");
   });
 });

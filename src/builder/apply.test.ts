@@ -1,13 +1,36 @@
+import { Effect } from "effect";
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
 import { apply, emptyDocument } from "./apply.js";
+import type { AppliedEdit } from "./apply.js";
+import type { BuilderError } from "./types.js";
+import type { CandidateDocument } from "../model.js";
+import type { DocumentEdit } from "./types.js";
 import {
   BIPOLAR_SOLVER_TAG,
   EXTENSION_PROPORTION_OBSERVER_TAG,
   GROUNDED_SOLVER_TAG,
   PREFERRED_SOLVER_TAG,
 } from "../model.js";
+
+function runOk(doc: CandidateDocument, edit: DocumentEdit): AppliedEdit {
+  return Effect.runSync(apply(doc, edit));
+}
+
+function runOutcome(
+  doc: CandidateDocument,
+  edit: DocumentEdit,
+):
+  | { ok: true; value: AppliedEdit }
+  | { ok: false; err: BuilderError } {
+  return Effect.runSync(
+    Effect.match(apply(doc, edit), {
+      onFailure: (err) => ({ ok: false as const, err }),
+      onSuccess: (value) => ({ ok: true as const, value }),
+    }),
+  );
+}
 
 describe("emptyDocument", () => {
   it("returns a grounded candidate with no elements", () => {
@@ -28,15 +51,15 @@ describe("emptyDocument", () => {
 
 describe("apply statements and arguments", () => {
   it("bootstraps and repairs a preferred interface with its observer", () => {
-    let result = apply(emptyDocument(PREFERRED_SOLVER_TAG), {
+    let result = runOk(emptyDocument(PREFERRED_SOLVER_TAG), {
       type: "add_statement",
       id: "a",
     });
     expect(result.document.root.interface?.observer).toEqual({
       tag: EXTENSION_PROPORTION_OBSERVER_TAG,
     });
-    result = apply(result.document, { type: "add_statement", id: "b" });
-    result = apply(result.document, { type: "remove_element", id: "a" });
+    result = runOk(result.document, { type: "add_statement", id: "b" });
+    result = runOk(result.document, { type: "remove_element", id: "a" });
     expect(result.document.root.interface).toMatchObject({
       aggregate: { inputs: [{ ref: "b" }] },
       observer: { tag: EXTENSION_PROPORTION_OBSERVER_TAG },
@@ -44,20 +67,21 @@ describe("apply statements and arguments", () => {
   });
 
   it("refuses ids that cannot be emitted as EDN keywords", () => {
-    const result = apply(emptyDocument(), {
+    const result = runOutcome(emptyDocument(), {
       type: "add_statement",
       id: "bad id",
     });
-    expect(result.refused?.code).toBe("builder/invalid-id");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.err.code).toBe("builder/invalid-id");
   });
 
   it("adds a statement", () => {
-    const result = apply(emptyDocument(), {
+    const result = runOk(emptyDocument(), {
       type: "add_statement",
       id: "censorship",
       text: "Censorship is not wrong in principle.",
     });
-    expect(result.refused).toBeUndefined();
     expect(result.document.root.elements).toHaveLength(1);
     expect(result.document.root.elements[0]).toMatchObject({
       kind: "statement",
@@ -72,50 +96,48 @@ describe("apply statements and arguments", () => {
   });
 
   it("refuses duplicate statement id", () => {
-    const once = apply(emptyDocument(), {
+    const once = runOk(emptyDocument(), {
       type: "add_statement",
       id: "a",
       text: "one",
     });
-    const twice = apply(once.document, {
+    const twice = runOutcome(once.document, {
       type: "add_statement",
       id: "a",
       text: "two",
     });
-    expect(twice.refused?.code).toBe("builder/duplicate-id");
-    expect(twice.document).toEqual(once.document);
-    expect(twice.diff).toEqual([]);
+    expect(twice.ok).toBe(false);
+    if (twice.ok) return;
+    expect(twice.err.code).toBe("builder/duplicate-id");
   });
 
   it("updates statement text", () => {
-    const base = apply(emptyDocument(), {
+    const base = runOk(emptyDocument(), {
       type: "add_statement",
       id: "a",
       text: "old",
     });
-    const updated = apply(base.document, {
+    const updated = runOk(base.document, {
       type: "update_statement",
       id: "a",
       text: "new",
     });
-    expect(updated.refused).toBeUndefined();
     expect(updated.document.root.elements[0]).toMatchObject({ text: "new" });
   });
 
   it("adds argument and inference; soft-warns unresolved premise text", () => {
-    const withArg = apply(emptyDocument(), {
+    const withArg = runOk(emptyDocument(), {
       type: "add_argument",
       id: "freedom",
       description: "Freedom argument",
     });
-    const withInf = apply(withArg.document, {
+    const withInf = runOk(withArg.document, {
       type: "add_inference",
       argumentId: "freedom",
       id: "freedom-main",
       premises: ["Absolute freedom is a right"],
       conclusion: "Censorship is wrong",
     });
-    expect(withInf.refused).toBeUndefined();
     expect(withInf.warnings.length).toBeGreaterThan(0);
     expect(withInf.warnings.every((w) => w.message.includes("stored as id")))
       .toBe(true);
@@ -134,15 +156,14 @@ describe("apply statements and arguments", () => {
 
   it("keeps already-valid keyword ids when resolution fails", () => {
     let doc = emptyDocument();
-    doc = apply(doc, { type: "add_statement", id: "a", text: "A" }).document;
-    const result = apply(doc, {
+    doc = runOk(doc, { type: "add_statement", id: "a", text: "A" }).document;
+    const result = runOk(doc, {
       type: "add_relation",
       id: "attack-missing",
       kind: "attack",
       from: "a",
       to: "missing-target",
     });
-    expect(result.refused).toBeUndefined();
     const attack = result.document.root.elements.find((e) =>
       e.kind === "attack"
     );
@@ -153,22 +174,22 @@ describe("apply statements and arguments", () => {
 
   it("resolves premise refs to ids when statements exist", () => {
     let doc = emptyDocument();
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_statement",
       id: "p1",
       text: "Premise one",
     }).document;
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_statement",
       id: "c1",
       text: "Conclusion one",
     }).document;
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_argument",
       id: "arg",
       description: "A",
     }).document;
-    const result = apply(doc, {
+    const result = runOk(doc, {
       type: "add_inference",
       argumentId: "arg",
       id: "inf1",
@@ -189,19 +210,18 @@ describe("apply statements and arguments", () => {
 describe("apply relations and remove", () => {
   it("adds attack with resolved ids and warns on missing endpoint", () => {
     let doc = emptyDocument();
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_statement",
       id: "a",
       text: "A",
     }).document;
-    const withWarn = apply(doc, {
+    const withWarn = runOk(doc, {
       type: "add_relation",
       id: "attack-missing",
       kind: "attack",
       from: "a",
       to: "missing-target",
     });
-    expect(withWarn.refused).toBeUndefined();
     expect(withWarn.warnings.some((w) => w.code === "builder/unresolved-ref"))
       .toBe(true);
     expect(
@@ -212,38 +232,40 @@ describe("apply relations and remove", () => {
   it("adds undercut to inference id", () => {
     let doc = emptyDocument(BIPOLAR_SOLVER_TAG);
     // undercut is unsupported by every current solver — refused at builder
-    doc = apply(doc, { type: "add_statement", id: "p", text: "P" }).document;
-    doc = apply(doc, { type: "add_statement", id: "c", text: "C" }).document;
-    doc = apply(doc, {
+    doc = runOk(doc, { type: "add_statement", id: "p", text: "P" }).document;
+    doc = runOk(doc, { type: "add_statement", id: "c", text: "C" }).document;
+    doc = runOk(doc, {
       type: "add_argument",
       id: "arg",
       description: "Arg",
     }).document;
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_inference",
       argumentId: "arg",
       id: "inf1",
       premises: ["p"],
       conclusion: "c",
     }).document;
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_statement",
       id: "attacker",
       text: "Attacker",
     }).document;
-    const refused = apply(doc, {
+    const refused = runOutcome(doc, {
       type: "add_relation",
       id: "undercut-inf1",
       kind: "undercut",
       from: "attacker",
       to: "inf1",
     });
-    expect(refused.refused?.code).toBe("builder/unsupported-relation-kind");
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.err.code).toBe("builder/unsupported-relation-kind");
   });
 
   it("refuses support under grounded and accepts it under bipolar", () => {
-    const grounded = apply(
-      apply(emptyDocument(), { type: "add_statement", id: "a", text: "A" })
+    const grounded = runOutcome(
+      runOk(emptyDocument(), { type: "add_statement", id: "a", text: "A" })
         .document,
       {
         type: "add_relation",
@@ -253,21 +275,22 @@ describe("apply relations and remove", () => {
         to: "a",
       },
     );
-    expect(grounded.refused?.code).toBe("builder/unsupported-relation-kind");
+    expect(grounded.ok).toBe(false);
+    if (grounded.ok) return;
+    expect(grounded.err.code).toBe("builder/unsupported-relation-kind");
 
     let bipolar = emptyDocument(BIPOLAR_SOLVER_TAG);
-    bipolar = apply(bipolar, { type: "add_statement", id: "a", text: "A" })
+    bipolar = runOk(bipolar, { type: "add_statement", id: "a", text: "A" })
       .document;
-    bipolar = apply(bipolar, { type: "add_statement", id: "b", text: "B" })
+    bipolar = runOk(bipolar, { type: "add_statement", id: "b", text: "B" })
       .document;
-    const accepted = apply(bipolar, {
+    const accepted = runOk(bipolar, {
       type: "add_relation",
       id: "s",
       kind: "support",
       from: "a",
       to: "b",
     });
-    expect(accepted.refused).toBeUndefined();
     expect(accepted.document.root.elements.at(-1)).toMatchObject({
       kind: "support",
       id: "s",
@@ -275,27 +298,27 @@ describe("apply relations and remove", () => {
   });
 
   it("removes statement by id", () => {
-    const base = apply(emptyDocument(), {
+    const base = runOk(emptyDocument(), {
       type: "add_statement",
       id: "a",
       text: "A",
     });
-    const removed = apply(base.document, { type: "remove_element", id: "a" });
+    const removed = runOk(base.document, { type: "remove_element", id: "a" });
     expect(removed.document.root.elements).toEqual([]);
   });
 
   it("removes relation by id", () => {
     let doc = emptyDocument();
-    doc = apply(doc, { type: "add_statement", id: "a", text: "A" }).document;
-    doc = apply(doc, { type: "add_statement", id: "b", text: "B" }).document;
-    doc = apply(doc, {
+    doc = runOk(doc, { type: "add_statement", id: "a", text: "A" }).document;
+    doc = runOk(doc, { type: "add_statement", id: "b", text: "B" }).document;
+    doc = runOk(doc, {
       type: "add_relation",
       id: "attack-a-b",
       kind: "attack",
       from: "a",
       to: "b",
     }).document;
-    const removed = apply(doc, {
+    const removed = runOk(doc, {
       type: "remove_relation",
       id: "attack-a-b",
     });
@@ -305,33 +328,33 @@ describe("apply relations and remove", () => {
   });
 
   it("refuses remove of unknown id", () => {
-    const result = apply(emptyDocument(), {
+    const result = runOutcome(emptyDocument(), {
       type: "remove_element",
       id: "nope",
     });
-    expect(result.refused?.code).toBe("builder/missing-id");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.err.code).toBe("builder/missing-id");
   });
 });
 
 describe("apply nested solver components", () => {
   it("adds a child solver and scoped statements under parentId", () => {
     let doc = emptyDocument();
-    doc = apply(doc, { type: "add_statement", id: "target", text: "Target" })
+    doc = runOk(doc, { type: "add_statement", id: "target", text: "Target" })
       .document;
-    const child = apply(doc, {
+    const child = runOk(doc, {
       type: "add_solver",
       id: "child",
       solver: GROUNDED_SOLVER_TAG,
     });
-    expect(child.refused).toBeUndefined();
     doc = child.document;
-    const claim = apply(doc, {
+    const claim = runOk(doc, {
       type: "add_statement",
       id: "claim",
       text: "Child claim",
       parentId: "child",
     });
-    expect(claim.refused).toBeUndefined();
     const nested = claim.document.root.elements.find((element) =>
       element.kind === "solver" && element.id === "child"
     );
@@ -347,23 +370,22 @@ describe("apply nested solver components", () => {
 
   it("sets and removes import projections for immediate children", () => {
     let doc = emptyDocument();
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_solver",
       id: "child",
       solver: PREFERRED_SOLVER_TAG,
     }).document;
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_statement",
       id: "claim",
       parentId: "child",
     }).document;
-    const set = apply(doc, {
+    const set = runOk(doc, {
       type: "set_import",
       childId: "child",
       outAtMost: 0.2,
       inAtLeast: 0.8,
     });
-    expect(set.refused).toBeUndefined();
     expect(set.document.root.imports).toEqual([
       [
         "child",
@@ -375,56 +397,54 @@ describe("apply nested solver components", () => {
         },
       ],
     ]);
-    const removed = apply(set.document, {
+    const removed = runOk(set.document, {
       type: "remove_import",
       childId: "child",
     });
-    expect(removed.refused).toBeUndefined();
     expect(removed.document.root.imports).toEqual([]);
   });
 
   it("clears imports when a child solver is removed", () => {
     let doc = emptyDocument();
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_solver",
       id: "child",
       solver: GROUNDED_SOLVER_TAG,
     }).document;
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "set_import",
       childId: "child",
       outAtMost: 0,
       inAtLeast: 1,
     }).document;
-    const removed = apply(doc, { type: "remove_element", id: "child" });
-    expect(removed.refused).toBeUndefined();
+    const removed = runOk(doc, { type: "remove_element", id: "child" });
     expect(removed.document.root.imports).toEqual([]);
     expect(removed.document.root.elements).toEqual([]);
   });
 
   it("allows the same local id in sibling child scopes", () => {
     let doc = emptyDocument();
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_solver",
       id: "left",
       solver: GROUNDED_SOLVER_TAG,
     }).document;
-    doc = apply(doc, {
+    doc = runOk(doc, {
       type: "add_solver",
       id: "right",
       solver: GROUNDED_SOLVER_TAG,
     }).document;
-    const left = apply(doc, {
+    const left = runOk(doc, {
       type: "add_statement",
       id: "claim",
       parentId: "left",
     });
-    const right = apply(left.document, {
+    const right = runOk(left.document, {
       type: "add_statement",
       id: "claim",
       parentId: "right",
     });
-    expect(left.refused).toBeUndefined();
-    expect(right.refused).toBeUndefined();
+    expect(left.document.root.elements.length).toBeGreaterThan(0);
+    expect(right.document.root.elements.length).toBeGreaterThan(0);
   });
 });

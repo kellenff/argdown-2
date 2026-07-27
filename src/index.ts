@@ -1,14 +1,13 @@
 import { evaluateComponent } from "./component-eval.js";
-import { readEdn } from "./edn.js";
 import type {
-  CandidateDocument,
   ComponentSolveResult,
   Document,
   LoadError,
-  LoadResult,
   SchemaError,
-  ValidationResult,
+  SolveError,
+  ValidateError,
 } from "./model.js";
+import { parseCandidate } from "./builder/parse-candidate.js";
 import { decodeWire } from "./schema.js";
 import { validateCandidate } from "./validate.js";
 
@@ -24,6 +23,7 @@ export type {
   Diagnostic,
   Document,
   DungFramework,
+  EdnError,
   EntityId,
   ExtensionNativeResult,
   GroundedDocument,
@@ -33,10 +33,10 @@ export type {
   Label,
   LabelNativeResult,
   LoadError,
-  LoadResult,
   MultiSolveResult,
   Relation,
   SchemaError,
+  SolveError,
   SolverComponent,
   SolveResult,
   SolverInterface,
@@ -45,8 +45,10 @@ export type {
   TheoryElement,
   ThresholdProjection,
   ValidateError,
-  ValidationResult,
 } from "./model.js";
+export type { ParseCandidateError } from "./builder/parse-candidate.js";
+export type { BuilderCode, BuilderError } from "./builder/types.js";
+export { apply, emptyDocument } from "./builder/apply.js";
 
 export {
   AGGREGATE_IDENTITY_TAG,
@@ -62,59 +64,28 @@ export {
   STABLE_SOLVER_TAG,
   supportedRelationKinds,
 } from "./model.js";
+export { parseCandidate } from "./builder/parse-candidate.js";
 
-function decodeWireEffect(
+export function validate(
   value: unknown,
-): Effect.Effect<CandidateDocument, SchemaError, never> {
-  const decoded = decodeWire(value);
-  if (!decoded.ok) {
-    return Effect.fail({
-      _tag: "Schema" as const,
-      diagnostics: decoded.errors,
-    });
-  }
-  return Effect.succeed(decoded.document);
-}
-
-export function loadEffect(
-  source: string,
-): Effect.Effect<Document, LoadError, never> {
+): Effect.Effect<Document, SchemaError | ValidateError, never> {
   return Effect.gen(function* () {
-    const raw = yield* readEdn(source);
-    const candidate = yield* decodeWireEffect(raw);
+    const candidate = yield* decodeWire(value);
     return yield* validateCandidate(candidate);
   });
 }
 
-export function validate(value: unknown): ValidationResult {
-  return Effect.runSync(
-    Effect.match(
-      Effect.gen(function* () {
-        const candidate = yield* decodeWireEffect(value);
-        return yield* validateCandidate(candidate);
-      }),
-      {
-        onFailure: (err) => ({ ok: false, errors: err.diagnostics }),
-        onSuccess: (document) => ({ ok: true, document }),
-      },
-    ),
-  );
+export function load(
+  source: string,
+): Effect.Effect<Document, LoadError, never> {
+  return Effect.gen(function* () {
+    const candidate = yield* parseCandidate(source);
+    return yield* validateCandidate(candidate);
+  });
 }
 
-export function load(source: string): LoadResult {
-  return Effect.runSync(
-    Effect.match(loadEffect(source), {
-      onFailure: (err) => ({
-        ok: false,
-        errors: err._tag === "RootCount" || err._tag === "ReadError"
-          ? [err.diagnostic]
-          : err.diagnostics,
-      }),
-      onSuccess: (document) => ({ ok: true, document }),
-    }),
-  );
-}
-
-export function solve(document: Document): ComponentSolveResult {
-  return evaluateComponent(document.root);
+export function solve(
+  document: Document,
+): Effect.Effect<ComponentSolveResult, SolveError> {
+  return Effect.sync(() => evaluateComponent(document.root));
 }

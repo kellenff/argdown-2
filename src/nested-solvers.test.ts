@@ -1,7 +1,9 @@
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
+import { Effect } from "effect";
 
-import { load, solve } from "./index.js";
+import { solve } from "./index.js";
+import { runLoad } from "./test-support.js";
 
 const stmt = (id: string): string =>
   `#casualtheorics.argdown2.argdown/statement {:id :${id}}`;
@@ -35,10 +37,10 @@ const document = (childElements: string, parentRelations = ""): string =>
 
 describe("scoped first-class solver components", () => {
   it("makes a child solver id, but not its internals, visible to its parent", () => {
-    const valid = load(document(stmt("child-claim")));
+    const valid = runLoad(document(stmt("child-claim")));
     expect(valid.ok).toBe(true);
 
-    const invalid = load(document(
+    const invalid = runLoad(document(
       stmt("child-claim"),
       attack("cross-scope", "source", "child-claim"),
     ));
@@ -64,16 +66,16 @@ describe("scoped first-class solver components", () => {
           #casualtheorics.argdown2.solver/grounded
           {:id :right ${identity("claim")} :elements [${stmt("claim")}]}
         ]}}`;
-    expect(load(source).ok).toBe(true);
+    expect(runLoad(source).ok).toBe(true);
   });
 });
 
 describe("bottom-up grounded boundary import", () => {
   it("imports an IN child as an ordinary attacking proxy", () => {
-    const loaded = load(document(stmt("child-claim")));
+    const loaded = runLoad(document(stmt("child-claim")));
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
 
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;
@@ -83,14 +85,14 @@ describe("bottom-up grounded boundary import", () => {
   });
 
   it("imports an OUT child with a private blocker", () => {
-    const loaded = load(document(`
+    const loaded = runLoad(document(`
       ${stmt("child-claim")}
       ${stmt("child-objection")}
       ${attack("child-defeat", "child-objection", "child-claim")}
     `));
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
 
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;
@@ -104,13 +106,13 @@ describe("bottom-up grounded boundary import", () => {
   });
 
   it("imports an undecided child as an intrinsic self-attack", () => {
-    const loaded = load(document(`
+    const loaded = runLoad(document(`
       ${stmt("child-claim")}
       ${attack("child-cycle", "child-claim", "child-claim")}
     `));
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
 
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;
@@ -122,14 +124,14 @@ describe("bottom-up grounded boundary import", () => {
   });
 
   it("lets a parent IN attacker defeat an undecided child proxy", () => {
-    const loaded = load(document(
+    const loaded = runLoad(document(
       `${stmt("child-claim")}
        ${attack("child-cycle", "child-claim", "child-claim")}`,
       attack("parent-defeat", "source", "child"),
     ));
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
-    const result = solve(loaded.document);
+    const result = Effect.runSync(solve(loaded.document));
 
     expect(result.native.kind).toBe("labels");
     if (result.native.kind !== "labels") return;

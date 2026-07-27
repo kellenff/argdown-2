@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+
 import {
   AGGREGATE_IDENTITY_TAG,
   type CandidateArgument,
@@ -19,7 +21,24 @@ import {
   supportedRelationKinds,
 } from "../model.js";
 import { resolveInferenceRef, resolveRef } from "./resolve-ref.js";
-import type { ApplyResult, BuilderWarning, DocumentEdit } from "./types.js";
+import type {
+  ApplyResult,
+  BuilderCode,
+  BuilderError,
+  BuilderWarning,
+  DocumentEdit,
+} from "./types.js";
+
+/**
+ * Successful builder update. `document` is the post-edit candidate document,
+ * `warnings` are non-fatal soft warnings (e.g., unresolved prose refs), and
+ * `diff` describes the structural change for tooling consumers.
+ */
+export type AppliedEdit = {
+  readonly document: CandidateDocument;
+  readonly warnings: readonly BuilderWarning[];
+  readonly diff: ReadonlyArray<unknown>;
+};
 
 export function emptyDocument(
   solver: SolverTag = GROUNDED_SOLVER_TAG,
@@ -65,12 +84,13 @@ function collectIds(component: CandidateSolverComponent): Set<string> {
   return ids;
 }
 
-function refused(
-  doc: CandidateDocument,
-  code: string,
+function refuse(
+  _doc: CandidateDocument,
+  code: BuilderCode,
   message: string,
-): ApplyResult {
-  return { document: doc, warnings: [], refused: { code, message }, diff: [] };
+  warnings: readonly BuilderWarning[] = [],
+): BuilderError {
+  return { _tag: "Builder", code, message, path: [], warnings };
 }
 
 function findComponent(
@@ -109,7 +129,7 @@ type ComponentUpdate =
     document: CandidateDocument;
     component: CandidateSolverComponent;
   }
-  | { ok: false; result: ApplyResult };
+  | { ok: false; error: BuilderError };
 
 function withComponent(
   doc: CandidateDocument,
@@ -118,13 +138,13 @@ function withComponent(
     component: CandidateSolverComponent,
   ) =>
     | { ok: true; component: CandidateSolverComponent }
-    | { ok: false; code: string; message: string },
+    | { ok: false; code: BuilderCode; message: string },
 ): ComponentUpdate {
   const component = findComponent(doc.root, parentId);
   if (component === undefined) {
     return {
       ok: false,
-      result: refused(
+      error: refuse(
         doc,
         "builder/missing-id",
         `No solver component with id "${parentId}"`,
@@ -133,7 +153,10 @@ function withComponent(
   }
   const result = update(component);
   if (!result.ok) {
-    return { ok: false, result: refused(doc, result.code, result.message) };
+    return {
+      ok: false,
+      error: refuse(doc, result.code, result.message),
+    };
   }
   return {
     ok: true,
@@ -204,16 +227,16 @@ function repairInterface(
 function invalidId(
   doc: CandidateDocument,
   id: string,
-): ApplyResult | undefined {
+): BuilderError | undefined {
   return isEdnKeywordName(id)
     ? undefined
-    : refused(doc, "builder/invalid-id", `"${id}" is not a valid EDN keyword`);
+    : refuse(doc, "builder/invalid-id", `"${id}" is not a valid EDN keyword`);
 }
 
 function invalidIdList(
   doc: CandidateDocument,
   ids: readonly string[] | undefined,
-): ApplyResult | undefined {
+): BuilderError | undefined {
   if (ids === undefined) return undefined;
   const invalid = ids.find((id) => !isEdnKeywordName(id));
   return invalid === undefined ? undefined : invalidId(doc, invalid);
@@ -258,7 +281,12 @@ function parentIdOf(
   return edit.parentId === undefined ? doc.root.id : stripColon(edit.parentId);
 }
 
-export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
+export function apply(
+  doc: CandidateDocument,
+  edit: DocumentEdit,
+): Effect.Effect<AppliedEdit, BuilderError> {
+  const failed = (error: BuilderError) => Effect.fail(error);
+  const succeed = (value: AppliedEdit) => Effect.succeed(value);
   const parentId = parentIdOf(doc, edit);
 
   switch (edit.type) {
@@ -266,7 +294,7 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
       const id = stripColon(edit.id);
       const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags) ??
         invalidId(doc, parentId);
-      if (invalid !== undefined) return invalid;
+      if (invalid !== undefined) return failed(invalid);
       const scoped = withComponent(doc, parentId, (component) => {
         if (collectIds(component).has(id)) {
           return {
@@ -290,19 +318,18 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
           ),
         };
       });
-      if (!scoped.ok) return scoped.result;
-      return {
+      if (!scoped.ok) return failed(scoped.error);
+      return succeed({
         document: scoped.document,
         warnings: [],
         diff: [{ op: "add", kind: "statement", id }],
-      };
+      });
     }
-
     case "update_statement": {
       const id = stripColon(edit.id);
       const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags) ??
         invalidId(doc, parentId);
-      if (invalid !== undefined) return invalid;
+      if (invalid !== undefined) return failed(invalid);
       const scoped = withComponent(doc, parentId, (component) => {
         const index = component.elements.findIndex((element) =>
           element.kind === "statement" && element.id === id
@@ -324,19 +351,18 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
         next[index] = updated;
         return { ok: true, component: { ...component, elements: next } };
       });
-      if (!scoped.ok) return scoped.result;
-      return {
+      if (!scoped.ok) return failed(scoped.error);
+      return succeed({
         document: scoped.document,
         warnings: [],
         diff: [{ op: "update", kind: "statement", id }],
-      };
+      });
     }
-
     case "add_argument": {
       const id = stripColon(edit.id);
       const invalid = invalidId(doc, id) ?? invalidIdList(doc, edit.tags) ??
         invalidId(doc, parentId);
-      if (invalid !== undefined) return invalid;
+      if (invalid !== undefined) return failed(invalid);
       const scoped = withComponent(doc, parentId, (component) => {
         if (collectIds(component).has(id)) {
           return {
@@ -363,20 +389,19 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
           ),
         };
       });
-      if (!scoped.ok) return scoped.result;
-      return {
+      if (!scoped.ok) return failed(scoped.error);
+      return succeed({
         document: scoped.document,
         warnings: [],
         diff: [{ op: "add", kind: "argument", id }],
-      };
+      });
     }
-
     case "add_inference": {
       const argumentId = stripColon(edit.argumentId);
       const id = stripColon(edit.id);
       const invalid = invalidId(doc, argumentId) ?? invalidId(doc, id) ??
         invalidIdList(doc, edit.rules) ?? invalidId(doc, parentId);
-      if (invalid !== undefined) return invalid;
+      if (invalid !== undefined) return failed(invalid);
       const warnings: BuilderWarning[] = [];
       const scoped = withComponent(doc, parentId, (component) => {
         if (collectIds(component).has(id)) {
@@ -420,18 +445,17 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
         next[index] = updated;
         return { ok: true, component: { ...component, elements: next } };
       });
-      if (!scoped.ok) return scoped.result;
-      return {
+      if (!scoped.ok) return failed(scoped.error);
+      return succeed({
         document: scoped.document,
         warnings,
         diff: [{ op: "add", kind: "inference", id }],
-      };
+      });
     }
-
     case "add_relation": {
       const id = stripColon(edit.id);
       const invalid = invalidId(doc, id) ?? invalidId(doc, parentId);
-      if (invalid !== undefined) return invalid;
+      if (invalid !== undefined) return failed(invalid);
       const warnings: BuilderWarning[] = [];
       const scoped = withComponent(doc, parentId, (component) => {
         if (collectIds(component).has(id)) {
@@ -466,23 +490,24 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
           },
         };
       });
-      if (!scoped.ok) return scoped.result;
-      return {
+      if (!scoped.ok) return failed(scoped.error);
+      return succeed({
         document: scoped.document,
         warnings,
         diff: [{ op: "add-relation", kind: edit.kind, id }],
-      };
+      });
     }
-
     case "add_solver": {
       const id = stripColon(edit.id);
       const invalid = invalidId(doc, id) ?? invalidId(doc, parentId);
-      if (invalid !== undefined) return invalid;
+      if (invalid !== undefined) return failed(invalid);
       if (!isSolverTag(edit.solver)) {
-        return refused(
-          doc,
-          "builder/unsupported-solver",
-          `Unsupported solver tag "${edit.solver}"`,
+        return failed(
+          refuse(
+            doc,
+            "builder/unsupported-solver",
+            `Unsupported solver tag "${edit.solver}"`,
+          ),
         );
       }
       const scoped = withComponent(doc, parentId, (component) => {
@@ -509,18 +534,17 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
           ),
         };
       });
-      if (!scoped.ok) return scoped.result;
-      return {
+      if (!scoped.ok) return failed(scoped.error);
+      return succeed({
         document: scoped.document,
         warnings: [],
         diff: [{ op: "add", kind: "solver", id }],
-      };
+      });
     }
-
     case "set_import": {
       const childId = stripColon(edit.childId);
       const invalid = invalidId(doc, childId) ?? invalidId(doc, parentId);
-      if (invalid !== undefined) return invalid;
+      if (invalid !== undefined) return failed(invalid);
       const scoped = withComponent(doc, parentId, (component) => {
         const child = component.elements.find((element) =>
           element.kind === "solver" && element.id === childId
@@ -558,18 +582,17 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
           },
         };
       });
-      if (!scoped.ok) return scoped.result;
-      return {
+      if (!scoped.ok) return failed(scoped.error);
+      return succeed({
         document: scoped.document,
         warnings: [],
         diff: [{ op: "set-import", parentId, childId }],
-      };
+      });
     }
-
     case "remove_import": {
       const childId = stripColon(edit.childId);
       const invalid = invalidId(doc, childId) ?? invalidId(doc, parentId);
-      if (invalid !== undefined) return invalid;
+      if (invalid !== undefined) return failed(invalid);
       const scoped = withComponent(doc, parentId, (component) => {
         if (!component.imports.some(([id]) => id === childId)) {
           return {
@@ -586,18 +609,17 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
           },
         };
       });
-      if (!scoped.ok) return scoped.result;
-      return {
+      if (!scoped.ok) return failed(scoped.error);
+      return succeed({
         document: scoped.document,
         warnings: [],
         diff: [{ op: "remove-import", parentId, childId }],
-      };
+      });
     }
-
     case "remove_element": {
       const id = stripColon(edit.id);
       const invalid = invalidId(doc, id) ?? invalidId(doc, parentId);
-      if (invalid !== undefined) return invalid;
+      if (invalid !== undefined) return failed(invalid);
       let removedKind: CandidateElement["kind"] | "inference" | undefined;
       const scoped = withComponent(doc, parentId, (component) => {
         const index = component.elements.findIndex((element) =>
@@ -643,21 +665,22 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
           message: `No element with id "${id}"`,
         };
       });
-      if (!scoped.ok) return scoped.result;
+      if (!scoped.ok) return failed(scoped.error);
       if (removedKind === undefined) {
-        return refused(doc, "builder/missing-id", `No element with id "${id}"`);
+        return failed(
+          refuse(doc, "builder/missing-id", `No element with id "${id}"`),
+        );
       }
-      return {
+      return succeed({
         document: scoped.document,
         warnings: [],
         diff: [{ op: "remove", kind: removedKind, id }],
-      };
+      });
     }
-
     case "remove_relation": {
       const id = stripColon(edit.id);
       const invalid = invalidId(doc, id) ?? invalidId(doc, parentId);
-      if (invalid !== undefined) return invalid;
+      if (invalid !== undefined) return failed(invalid);
       let relationKind: CandidateRelation["kind"] | undefined;
       const scoped = withComponent(doc, parentId, (component) => {
         const index = component.elements.findIndex((element) =>
@@ -685,19 +708,28 @@ export function apply(doc: CandidateDocument, edit: DocumentEdit): ApplyResult {
           },
         };
       });
-      if (!scoped.ok) return scoped.result;
+      if (!scoped.ok) return failed(scoped.error);
       if (relationKind === undefined) {
-        return refused(
-          doc,
-          "builder/missing-id",
-          `No relation with id "${id}"`,
+        return failed(
+          refuse(
+            doc,
+            "builder/missing-id",
+            `No relation with id "${id}"`,
+          ),
         );
       }
-      return {
+      return succeed({
         document: scoped.document,
         warnings: [],
         diff: [{ op: "remove-relation", kind: relationKind, id }],
-      };
+      });
     }
   }
 }
+
+/**
+ * Legacy `{ document, warnings, refused?, diff }` shape retained for any
+ * third-party callers. `apply()` now returns an `Effect`; see `AppliedEdit`
+ * for the success-shape and `BuilderError` for the failure-shape.
+ */
+export type { ApplyResult };

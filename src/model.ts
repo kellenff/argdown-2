@@ -78,6 +78,14 @@ export type SchemaError = {
 
 export type LoadError = EdnError | SchemaError | ValidateError;
 
+/**
+ * Effect failure channel for the public `solve` API. Empty in v1 while
+ * the solver is pure; leaves room for typed solver failures later
+ * (e.g. cycles, missing interface, partition-time warnings) without
+ * another breaking shape change.
+ */
+export type SolveError = never;
+
 export type ExtraEntry = readonly [unknown, unknown];
 
 export type CandidateInference = {
@@ -229,12 +237,6 @@ export type DungFramework = {
   nodes: ReadonlySet<EntityId>;
   attackersByTarget: ReadonlyMap<EntityId, ReadonlySet<EntityId>>;
 };
-
-export type ValidationResult =
-  | { ok: true; document: Document }
-  | { ok: false; errors: readonly Diagnostic[] };
-
-export type LoadResult = ValidationResult;
 
 export type LabelNativeResult = {
   kind: "labels";

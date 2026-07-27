@@ -54,17 +54,22 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `readEdn` now returns `Effect.Effect<unknown, EdnError, never>`
   instead of a synchronous `ReadResult`. Errors are a tagged union
   (`RootCount` / `ReadError`) carrying the existing `Diagnostic`
-  shape. Two internal consumers (`src/index.ts`, `src/builder/soft-parse.ts`)
-  unwrap via `Effect.match` + `Effect.runSync` and preserve the
-  existing `LoadResult` / `SoftParseResult` boundary types. Public
-  `load()` / `softParse()` / `validate()` signatures are unchanged.
-  Adds `effect` (npm:4.0.0-beta.101) as a runtime dependency.
-- Semantic validation (`validateCandidate`) now returns
-  `Effect.Effect<Document, ValidateError, never>`. Added `SchemaError`
-  and `LoadError` (`EdnError | SchemaError | ValidateError`). New
-  `loadEffect(source)` composes `readEdn` → schema decode → validate.
-  Public `load()` / `validate()` still return `LoadResult` /
-  `ValidationResult` via `Effect.match` + `Effect.runSync`.
+  shape. Adds `effect` (npm:4.0.0-beta.101) as a runtime dependency.
+- Schema decode (`decodeWire`) returns
+  `Effect.Effect<CandidateDocument, SchemaError, never>`. Public
+  `load` / `validate` return Effects. Soft-parse renamed to
+  `parseCandidate` (`readEdn → decodeWire`). `load` composes
+  `parseCandidate → validateCandidate`. Call sites unwrap with
+  `Effect.match` + `Effect.runSync`.
+- **Breaking:** `solve(document)` now returns
+  `Effect<ComponentSolveResult, SolveError>`. Wrap with
+  `Effect.runSync(solve(doc))` (sync) or `Effect.runPromise(solve(doc))`
+  (async). `SolveError` is `never` for v1; the alias leaves room for typed
+  failures without another breaking change. Library exports `apply`,
+  `BuilderError`, `BuilderCode`, `emptyDocument`, and `SolveError`. MCP tool
+  handlers remain Promise-returning via a single `runMcpEffect` adapter.
+- Effect-native builder refusals (`BuilderError`) and MCP I/O (`McpIoError`
+  via `Effect.tryPromise`).
 
 ### Removed
 
@@ -74,6 +79,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
   boundary type for the pre-Effect `readEdn` signature and is unused
   after the EDN reader Effect refactor. Not a public API break —
   `ReadResult` was never re-exported from the package entrypoint.
+- `LoadResult`, `ValidationResult`, `SoftParseResult`, and the
+  `loadEffect` / `decodeWireEffect` / `softParse` names. Use the
+  Effect compositions instead.
 
 ## [0.2.0-alpha4] - 2026-07-19
 

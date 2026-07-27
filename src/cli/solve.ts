@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { solve as libSolve } from "../index.js";
 import { formatResult } from "./format.js";
 import type { FormatName } from "./format.js";
@@ -39,7 +40,7 @@ export function runSolve(
   const loaded = loadAndReport(source, options);
   if (!loaded.ok) return 1;
 
-  const solveResult = libSolve(loaded.document);
+  const solveResult = Effect.runSync(libSolve(loaded.document));
   for (const w of solveResult.warnings) {
     if (!options.quiet) {
       writeStderr(writeDiagnostic(w));
