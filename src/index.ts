@@ -1,9 +1,12 @@
 import { evaluateComponent } from "./component-eval.js";
 import { readEdn } from "./edn.js";
 import type {
+  CandidateDocument,
   ComponentSolveResult,
   Document,
+  LoadError,
   LoadResult,
+  SchemaError,
   ValidationResult,
 } from "./model.js";
 import { decodeWire } from "./schema.js";
@@ -29,9 +32,11 @@ export type {
   InferenceId,
   Label,
   LabelNativeResult,
+  LoadError,
   LoadResult,
   MultiSolveResult,
   Relation,
+  SchemaError,
   SolverComponent,
   SolveResult,
   SolverInterface,
@@ -39,6 +44,7 @@ export type {
   Statement,
   TheoryElement,
   ThresholdProjection,
+  ValidateError,
   ValidationResult,
 } from "./model.js";
 
@@ -57,16 +63,54 @@ export {
   supportedRelationKinds,
 } from "./model.js";
 
-export function validate(value: unknown): ValidationResult {
+function decodeWireEffect(
+  value: unknown,
+): Effect.Effect<CandidateDocument, SchemaError, never> {
   const decoded = decodeWire(value);
-  return decoded.ok ? validateCandidate(decoded.document) : decoded;
+  if (!decoded.ok) {
+    return Effect.fail({
+      _tag: "Schema" as const,
+      diagnostics: decoded.errors,
+    });
+  }
+  return Effect.succeed(decoded.document);
+}
+
+export function loadEffect(
+  source: string,
+): Effect.Effect<Document, LoadError, never> {
+  return Effect.gen(function* () {
+    const raw = yield* readEdn(source);
+    const candidate = yield* decodeWireEffect(raw);
+    return yield* validateCandidate(candidate);
+  });
+}
+
+export function validate(value: unknown): ValidationResult {
+  return Effect.runSync(
+    Effect.match(
+      Effect.gen(function* () {
+        const candidate = yield* decodeWireEffect(value);
+        return yield* validateCandidate(candidate);
+      }),
+      {
+        onFailure: (err) => ({ ok: false, errors: err.diagnostics }),
+        onSuccess: (document) => ({ ok: true, document }),
+      },
+    ),
+  );
 }
 
 export function load(source: string): LoadResult {
   return Effect.runSync(
-    Effect.match(readEdn(source), {
-      onFailure: (err) => ({ ok: false, errors: [err.diagnostic] }),
-      onSuccess: (value) => validate(value),
+    Effect.match(loadEffect(source), {
+      onFailure: (err) => ({
+        ok: false,
+        errors: err._tag === "RootCount" || err._tag === "ReadError"
+          ? [err.diagnostic]
+          : err.diagnostics,
+      }),
+      onSuccess: (document) => ({ ok: true, document }),
     }),
   );
 }
