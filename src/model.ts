@@ -230,12 +230,6 @@ export type DungFramework = {
   attackersByTarget: ReadonlyMap<EntityId, ReadonlySet<EntityId>>;
 };
 
-export type ValidationResult =
-  | { ok: true; document: Document }
-  | { ok: false; errors: readonly Diagnostic[] };
-
-export type LoadResult = ValidationResult;
-
 export type LabelNativeResult = {
   kind: "labels";
   values: ReadonlyMap<EntityId, Label>;

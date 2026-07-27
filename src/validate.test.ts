@@ -3,8 +3,8 @@ import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
 import { readEdn } from "./edn.js";
-import { load } from "./index.js";
 import { decodeWire } from "./schema.js";
+import { runLoad } from "./test-support.js";
 import { validateCandidate } from "./validate.js";
 
 const stmt = (id: string): string =>
@@ -21,7 +21,7 @@ const document = (elements: string, ref = "a"): string =>
 
 describe("component semantic validation", () => {
   it("rejects duplicate ids across local endpoint kinds", () => {
-    const result = load(document(`
+    const result = runLoad(document(`
       ${stmt("a")}
       #casualtheorics.argdown2.argdown/attack
       {:id :a :from :a :to :a}
@@ -34,7 +34,7 @@ describe("component semantic validation", () => {
   });
 
   it("allows parallel relations with distinct ids", () => {
-    const result = load(document(`
+    const result = runLoad(document(`
       ${stmt("a")} ${stmt("b")}
       #casualtheorics.argdown2.argdown/attack
       {:id :attack-1 :from :a :to :b}
@@ -45,7 +45,7 @@ describe("component semantic validation", () => {
   });
 
   it("separates addressability from native selectability", () => {
-    const result = load(document(
+    const result = runLoad(document(
       `
       ${stmt("a")} ${stmt("b")}
       #casualtheorics.argdown2.argdown/attack
@@ -63,7 +63,7 @@ describe("component semantic validation", () => {
   });
 
   it("rejects relation endpoints unsupported by grounded semantics", () => {
-    const result = load(document(`
+    const result = runLoad(document(`
       ${stmt("a")} ${stmt("b")}
       #casualtheorics.argdown2.argdown/attack
       {:id :edge :from :a :to :b}
@@ -80,7 +80,7 @@ describe("component semantic validation", () => {
   });
 
   it("rejects relation kinds the solver does not consume", () => {
-    const grounded = load(document(`
+    const grounded = runLoad(document(`
       ${stmt("a")} ${stmt("b")}
       #casualtheorics.argdown2.argdown/support
       {:id :support-edge :from :a :to :b}
@@ -93,7 +93,7 @@ describe("component semantic validation", () => {
       ),
     ).toBe(true);
 
-    const bipolar = load(`
+    const bipolar = runLoad(`
       #casualtheorics.argdown2/document
       {:id :bipolar-undercut
        :root #casualtheorics.argdown2.solver/bipolar
@@ -117,7 +117,7 @@ describe("component semantic validation", () => {
       ),
     ).toBe(true);
 
-    const bipolarSupport = load(`
+    const bipolarSupport = runLoad(`
       #casualtheorics.argdown2/document
       {:id :bipolar-support
        :root #casualtheorics.argdown2.solver/bipolar
@@ -132,7 +132,7 @@ describe("component semantic validation", () => {
   });
 
   it("requires multi-extension components to declare an observer", () => {
-    const result = load(`
+    const result = runLoad(`
       #casualtheorics.argdown2/document
       {:id :preferred-test
        :root #casualtheorics.argdown2.solver/preferred
@@ -146,7 +146,7 @@ describe("component semantic validation", () => {
   });
 
   it("validates threshold bounds and immediate child import keys", () => {
-    const result = load(`
+    const result = runLoad(`
       #casualtheorics.argdown2/document
       {:id :imports-test
        :root #casualtheorics.argdown2.solver/grounded
@@ -180,9 +180,14 @@ function candidateFrom(source: string) {
       onSuccess: (value) => value,
     }),
   );
-  const decoded = decodeWire(raw);
-  if (!decoded.ok) throw new Error("schema failed");
-  return decoded.document;
+  return Effect.runSync(
+    Effect.match(decodeWire(raw), {
+      onFailure: (e) => {
+        throw new Error(`schema failed: ${e._tag}`);
+      },
+      onSuccess: (document) => document,
+    }),
+  );
 }
 
 function runValidate(source: string) {
