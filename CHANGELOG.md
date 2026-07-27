@@ -61,6 +61,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `parseCandidate` (`readEdn → decodeWire`). `load` composes
   `parseCandidate → validateCandidate`. Call sites unwrap with
   `Effect.match` + `Effect.runSync`.
+- **Breaking:** `solve(document)` now returns
+  `Effect<ComponentSolveResult, SolveError>`. Wrap with
+  `Effect.runSync(solve(doc))` (sync) or `Effect.runPromise(solve(doc))`
+  (async). `SolveError` is `never` for v1; the alias leaves room for typed
+  failures without another breaking change. Library exports `apply`,
+  `BuilderError`, `BuilderCode`, `emptyDocument`, and `SolveError`. MCP tool
+  handlers remain Promise-returning via a single `runMcpEffect` adapter.
+- Effect-native builder refusals (`BuilderError`) and MCP I/O (`McpIoError`
+  via `Effect.tryPromise`).
 
 ### Removed
 

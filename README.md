@@ -44,12 +44,12 @@ const result = Effect.runSync(
 if (!result.ok) {
   console.error(result.errors);
 } else {
-  console.log(solve(result.document).native);
+  console.log(Effect.runSync(solve(result.document)).native);
   // { kind: "labels", values: Map(2) { "a" => "in", "b" => "out" } }
 }
 ```
 
-`load`, `validate`, and `parseCandidate` return `Effect` values — unwrap at the edge with `Effect.match` + `Effect.runSync`. Failures are tagged (`EdnError` | `SchemaError` | `ValidateError`); the library never throws and never produces a partial document on failure.
+`load`, `validate`, `parseCandidate`, and `solve` return `Effect` values — unwrap at the edge with `Effect.match` + `Effect.runSync` (or `yield*` inside `Effect.gen`). Failures are tagged (`EdnError` | `SchemaError` | `ValidateError`); `solve` uses `SolveError` (`never` in v1). The library never throws and never produces a partial document on failure.
 
 Three install paths:
 
@@ -138,7 +138,7 @@ A solver is an identified element in its parent's local scope. Child internals r
    {:id :child-attacks-target :from :child :to :target}]}}
 ```
 
-`solve(document).native` is per-solver. `.aggregate` is the parent's view. `.boundary` is the typed confidence projection. `.children` is the per-child evaluation record. `.warnings` collects non-fatal diagnostics. Grounded boundaries map `IN` to `1`, `OUT` to `0`, and `UNDEC` to `nil`. Grounded parents import these as ordinary, intrinsically defeated, or self-attacking proxy nodes. See the [data design](docs/snowball/specs/2026-07-19-first-class-solver-components-design.md) and [formal companion](docs/snowball/specs/2026-07-19-first-class-solver-components-category-theory.md).
+`Effect.runSync(solve(document)).native` is per-solver. `.aggregate` is the parent's view. `.boundary` is the typed confidence projection. `.children` is the per-child evaluation record. `.warnings` collects non-fatal diagnostics. Grounded boundaries map `IN` to `1`, `OUT` to `0`, and `UNDEC` to `nil`. Grounded parents import these as ordinary, intrinsically defeated, or self-attacking proxy nodes. See the [data design](docs/snowball/specs/2026-07-19-first-class-solver-components-design.md) and [formal companion](docs/snowball/specs/2026-07-19-first-class-solver-components-category-theory.md).
 
 ## MCP server
 
