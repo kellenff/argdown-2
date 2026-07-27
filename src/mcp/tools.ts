@@ -1,15 +1,15 @@
-import { readFile } from "node:fs/promises";
-
 import { Effect } from "effect";
 
 import { apply } from "../builder/apply.js";
-import type { ApplyResult, DiffOp, DocumentEdit } from "../builder/types.js";
+import { parseCandidate } from "../builder/parse-candidate.js";
+import type { BuilderError, DocumentEdit } from "../builder/types.js";
 import { load, solve } from "../index.js";
 import type {
   CandidateDocument,
   CandidateSolverComponent,
   ComponentSolveResult,
   Diagnostic,
+  LoadError,
   RelationKind,
 } from "../model.js";
 import {
@@ -18,13 +18,15 @@ import {
   isSolverTag,
 } from "../model.js";
 import {
-  createDocumentRef,
+  createDocumentRefEffect as createDocumentRefEffectIO,
   type DocumentRef,
-  loadDocumentRef,
-  saveDocumentRef,
+  loadDocumentSourceEffect,
+  type McpIoError,
+  saveDocumentRefEffect,
 } from "./io.js";
 
 type DocRefInput = { path?: string | undefined; source?: string | undefined };
+type CreateResult = { readonly path: string } | { readonly text: string };
 
 type McpResult = {
   content: [{ type: "text"; text: string }];
@@ -97,87 +99,478 @@ function normalizeCreateDocRef(
   return { ok: true, ref: toTextRef(input.source ?? "") };
 }
 
-async function readSource(
-  input: DocRefInput,
-): Promise<
-  { ok: true; source: string } | {
-    ok: false;
-    errors: readonly Diagnostic[];
-    isError?: boolean;
-  }
-> {
-  const refResult = normalizeDocRef(input);
-  if (!refResult.ok) {
-    return { ok: false, errors: refResult.errors, isError: true };
-  }
-  if ("path" in refResult.ref && refResult.ref.path !== undefined) {
-    try {
-      const source = await readFile(refResult.ref.path, "utf8");
-      return { ok: true, source };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        ok: false,
-        isError: true,
-        errors: [{ code: "mcp/io-error", message }],
-      };
-    }
-  }
-  return { ok: true, source: refResult.ref.text };
+function savedToBody(saved: CreateResult): Record<string, unknown> {
+  return "path" in saved ? { path: saved.path } : { source: saved.text };
 }
 
-async function applyMutation(
+function extractDiagnostics(
+  err: {
+    _tag: string;
+    diagnostic?: Diagnostic;
+    diagnostics?: readonly Diagnostic[];
+  },
+): readonly Diagnostic[] {
+  if (err._tag === "RootCount" || err._tag === "ReadError") {
+    return [err.diagnostic!];
+  }
+  return err.diagnostics ?? [];
+}
+
+function ioErrorResult(err: McpIoError): McpResult {
+  return jsonResult(
+    { ok: false, errors: [err.diagnostic] },
+    err._tag === "Read" || err._tag === "Write",
+  );
+}
+
+function loadErrorResult(err: LoadError): McpResult {
+  return jsonResult({ ok: false, errors: extractDiagnostics(err) });
+}
+
+function builderErrorResult(err: BuilderError): McpResult {
+  return jsonResult({
+    ok: false,
+    refused: { code: err.code, message: err.message },
+    warnings: err.warnings,
+    diff: [],
+  });
+}
+
+function runMutation(
   ref: DocumentRef,
   edit: DocumentEdit,
-): Promise<McpResult> {
-  const loaded = await loadDocumentRef(ref);
-  if (!loaded.ok) {
-    return jsonResult(
-      { ok: false, errors: loaded.errors },
-      loaded.isError ?? false,
-    );
-  }
-
-  const applied: ApplyResult = Effect.runSync(
-    Effect.match(apply(loaded.document, edit), {
-      onFailure: (err) => ({
-        document: loaded.document,
-        warnings: err.warnings,
-        refused: { code: err.code, message: err.message },
-        diff: [] as readonly DiffOp[],
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const sourceResult = yield* loadDocumentSourceEffect(ref).pipe(
+      Effect.match({
+        onFailure: ioErrorResult,
+        onSuccess: (source) => source,
       }),
-      onSuccess: (value) => ({
-        ...value,
-        diff: value.diff as readonly DiffOp[],
-      }),
-    }),
-  );
-  if (applied.refused) {
-    return jsonResult({
-      ok: false,
-      refused: applied.refused,
-      warnings: applied.warnings,
-      diff: [],
-    });
-  }
-
-  const saved = await saveDocumentRef(ref, applied.document);
-  if (!saved.ok) {
-    return jsonResult(
-      { ok: false, errors: saved.errors },
-      saved.isError ?? false,
     );
-  }
+    if ("content" in sourceResult) return sourceResult;
 
-  const body: Record<string, unknown> = {
-    ok: true,
-    warnings: applied.warnings,
-    diff: applied.diff,
-  };
-  if ("path" in saved) body.path = saved.path;
-  else body.source = saved.text;
-  return jsonResult(body);
+    const parsed = yield* parseCandidate(sourceResult.source).pipe(
+      Effect.match({
+        onFailure: loadErrorResult,
+        onSuccess: (document) => document,
+      }),
+    );
+    if ("content" in parsed) return parsed;
+
+    const applied = yield* apply(parsed, edit).pipe(
+      Effect.match({
+        onFailure: builderErrorResult,
+        onSuccess: (value) => value,
+      }),
+    );
+    if ("content" in applied) return applied;
+
+    return yield* saveDocumentRefEffect(ref, applied.document).pipe(
+      Effect.match({
+        onFailure: ioErrorResult,
+        onSuccess: (saved) =>
+          jsonResult({
+            ok: true,
+            warnings: applied.warnings,
+            diff: applied.diff,
+            ...savedToBody(saved),
+          }),
+      }),
+    );
+  });
 }
+
+export function runMcpEffect(
+  effect: Effect.Effect<McpResult, never>,
+): Promise<McpResult> {
+  return Effect.runPromise(effect);
+}
+
+type CreateDocumentArgs = DocRefInput & {
+  solver?: string | undefined;
+  documentId?: string | undefined;
+  rootId?: string | undefined;
+};
+
+export function runCreateDocumentEffect(
+  args: CreateDocumentArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeCreateDocRef(args);
+    if (!ref.ok) {
+      return jsonResult({ ok: false, errors: ref.errors }, true);
+    }
+    const solver = args.solver ?? GROUNDED_SOLVER_TAG;
+    if (!isSolverTag(solver)) {
+      return jsonResult({
+        ok: false,
+        errors: [{
+          code: "mcp/invalid-solver",
+          message: `Unsupported solver tag: ${solver}`,
+        }],
+      }, true);
+    }
+    const documentId = args.documentId ?? "document";
+    const rootId = args.rootId ?? "root";
+    const invalidId = [documentId, rootId].find((id) => !isEdnKeywordName(id));
+    if (invalidId !== undefined) {
+      return jsonResult({
+        ok: false,
+        errors: [{
+          code: "mcp/invalid-id",
+          message: `"${invalidId}" is not a valid EDN keyword`,
+        }],
+      }, true);
+    }
+    return yield* createDocumentRefEffectIO(
+      ref.ref,
+      solver,
+      documentId,
+      rootId,
+    ).pipe(
+      Effect.match({
+        onFailure: ioErrorResult,
+        onSuccess: (created) =>
+          jsonResult({ ok: true, ...savedToBody(created) }),
+      }),
+    );
+  });
+}
+
+export const runCreateDocument = (args: CreateDocumentArgs) =>
+  runMcpEffect(runCreateDocumentEffect(args));
+
+type StatementArgs = DocRefInput & {
+  id: string;
+  text?: string | undefined;
+  tags?: readonly string[] | undefined;
+  parentId?: string | undefined;
+};
+
+export function runAddStatementEffect(
+  args: StatementArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeStatementDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    return yield* runMutation(ref.ref, {
+      type: "add_statement",
+      id: args.id,
+      ...(ref.statementText !== undefined ? { text: ref.statementText } : {}),
+      ...(args.tags !== undefined ? { tags: args.tags } : {}),
+      ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+    });
+  });
+}
+
+export const runAddStatement = (args: StatementArgs) =>
+  runMcpEffect(runAddStatementEffect(args));
+
+export function runUpdateStatementEffect(
+  args: StatementArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeStatementDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    return yield* runMutation(ref.ref, {
+      type: "update_statement",
+      id: args.id,
+      ...(ref.statementText !== undefined ? { text: ref.statementText } : {}),
+      ...(args.tags !== undefined ? { tags: args.tags } : {}),
+      ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+    });
+  });
+}
+
+export const runUpdateStatement = (args: StatementArgs) =>
+  runMcpEffect(runUpdateStatementEffect(args));
+
+type AddArgumentArgs = DocRefInput & {
+  id: string;
+  description?: string | undefined;
+  tags?: readonly string[] | undefined;
+  parentId?: string | undefined;
+};
+
+export function runAddArgumentEffect(
+  args: AddArgumentArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    return yield* runMutation(ref.ref, {
+      type: "add_argument",
+      id: args.id,
+      ...(args.description !== undefined
+        ? { description: args.description }
+        : {}),
+      ...(args.tags !== undefined ? { tags: args.tags } : {}),
+      ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+    });
+  });
+}
+
+export const runAddArgument = (args: AddArgumentArgs) =>
+  runMcpEffect(runAddArgumentEffect(args));
+
+type AddInferenceArgs = DocRefInput & {
+  argumentId: string;
+  id: string;
+  premises: readonly string[];
+  conclusion: string;
+  rules?: readonly string[] | undefined;
+  parentId?: string | undefined;
+};
+
+export function runAddInferenceEffect(
+  args: AddInferenceArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    return yield* runMutation(ref.ref, {
+      type: "add_inference",
+      argumentId: args.argumentId,
+      id: args.id,
+      premises: args.premises,
+      conclusion: args.conclusion,
+      ...(args.rules !== undefined ? { rules: args.rules } : {}),
+      ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+    });
+  });
+}
+
+export const runAddInference = (args: AddInferenceArgs) =>
+  runMcpEffect(runAddInferenceEffect(args));
+
+type AddRelationArgs = DocRefInput & {
+  id: string;
+  kind: RelationKind;
+  from: string;
+  to: string;
+  parentId?: string | undefined;
+};
+
+export function runAddRelationEffect(
+  args: AddRelationArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    return yield* runMutation(ref.ref, {
+      type: "add_relation",
+      id: args.id,
+      kind: args.kind,
+      from: args.from,
+      to: args.to,
+      ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+    });
+  });
+}
+
+export const runAddRelation = (args: AddRelationArgs) =>
+  runMcpEffect(runAddRelationEffect(args));
+
+type AddSolverArgs = DocRefInput & {
+  id: string;
+  solver: string;
+  parentId?: string | undefined;
+};
+
+export function runAddSolverEffect(
+  args: AddSolverArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    if (!isSolverTag(args.solver)) {
+      return jsonResult({
+        ok: false,
+        refused: {
+          code: "builder/unsupported-solver",
+          message: `Unsupported solver tag "${args.solver}"`,
+        },
+        warnings: [],
+        diff: [],
+      });
+    }
+    return yield* runMutation(ref.ref, {
+      type: "add_solver",
+      id: args.id,
+      solver: args.solver,
+      ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+    });
+  });
+}
+
+export const runAddSolver = (args: AddSolverArgs) =>
+  runMcpEffect(runAddSolverEffect(args));
+
+type SetImportArgs = DocRefInput & {
+  childId: string;
+  outAtMost: number;
+  inAtLeast: number;
+  parentId?: string | undefined;
+};
+
+export function runSetImportEffect(
+  args: SetImportArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    return yield* runMutation(ref.ref, {
+      type: "set_import",
+      childId: args.childId,
+      outAtMost: args.outAtMost,
+      inAtLeast: args.inAtLeast,
+      ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+    });
+  });
+}
+
+export const runSetImport = (args: SetImportArgs) =>
+  runMcpEffect(runSetImportEffect(args));
+
+type RemoveImportArgs = DocRefInput & {
+  childId: string;
+  parentId?: string | undefined;
+};
+
+export function runRemoveImportEffect(
+  args: RemoveImportArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    return yield* runMutation(ref.ref, {
+      type: "remove_import",
+      childId: args.childId,
+      ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+    });
+  });
+}
+
+export const runRemoveImport = (args: RemoveImportArgs) =>
+  runMcpEffect(runRemoveImportEffect(args));
+
+type RemoveArgs = DocRefInput & {
+  id: string;
+  parentId?: string | undefined;
+};
+
+export function runRemoveElementEffect(
+  args: RemoveArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    return yield* runMutation(ref.ref, {
+      type: "remove_element",
+      id: args.id,
+      ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+    });
+  });
+}
+
+export const runRemoveElement = (args: RemoveArgs) =>
+  runMcpEffect(runRemoveElementEffect(args));
+
+export function runRemoveRelationEffect(
+  args: RemoveArgs,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    return yield* runMutation(ref.ref, {
+      type: "remove_relation",
+      id: args.id,
+      ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
+    });
+  });
+}
+
+export const runRemoveRelation = (args: RemoveArgs) =>
+  runMcpEffect(runRemoveRelationEffect(args));
+
+export function runListElementsEffect(
+  args: DocRefInput,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    const sourceResult = yield* loadDocumentSourceEffect(ref.ref).pipe(
+      Effect.match({
+        onFailure: ioErrorResult,
+        onSuccess: (source) => source,
+      }),
+    );
+    if ("content" in sourceResult) return sourceResult;
+    const parsed = yield* parseCandidate(sourceResult.source).pipe(
+      Effect.match({
+        onFailure: loadErrorResult,
+        onSuccess: (document) => document,
+      }),
+    );
+    if ("content" in parsed) return parsed;
+    return jsonResult({ ok: true, elements: listElementsFromDoc(parsed) });
+  });
+}
+
+export const runListElements = (args: DocRefInput) =>
+  runMcpEffect(runListElementsEffect(args));
+
+export function runValidateEffect(
+  args: DocRefInput,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    const sourceResult = yield* loadDocumentSourceEffect(ref.ref).pipe(
+      Effect.match({
+        onFailure: ioErrorResult,
+        onSuccess: (source) => source,
+      }),
+    );
+    if ("content" in sourceResult) return sourceResult;
+    return yield* load(sourceResult.source).pipe(
+      Effect.match({
+        onFailure: loadErrorResult,
+        onSuccess: () => jsonResult({ ok: true }),
+      }),
+    );
+  });
+}
+
+export const runValidate = (args: DocRefInput) =>
+  runMcpEffect(runValidateEffect(args));
+
+export function runSolveEffect(
+  args: DocRefInput,
+): Effect.Effect<McpResult, never> {
+  return Effect.gen(function* () {
+    const ref = normalizeDocRef(args);
+    if (!ref.ok) return jsonResult({ ok: false, errors: ref.errors }, true);
+    const sourceResult = yield* loadDocumentSourceEffect(ref.ref).pipe(
+      Effect.match({
+        onFailure: ioErrorResult,
+        onSuccess: (source) => source,
+      }),
+    );
+    if ("content" in sourceResult) return sourceResult;
+    const loaded = yield* load(sourceResult.source).pipe(
+      Effect.match({
+        onFailure: loadErrorResult,
+        onSuccess: (document) => document,
+      }),
+    );
+    if ("content" in loaded) return loaded;
+    return jsonResult({ ok: true, ...serializeSolveResult(solve(loaded)) });
+  });
+}
+
+export const runSolve = (args: DocRefInput) =>
+  runMcpEffect(runSolveEffect(args));
 
 function listElementsFromDoc(
   doc: CandidateDocument,
@@ -189,378 +582,41 @@ function listElementsFromComponent(
   component: CandidateSolverComponent,
 ): Record<string, unknown>[] {
   const elements: Record<string, unknown>[] = [];
-  for (const el of component.elements) {
-    if (el.kind === "statement") {
+  for (const element of component.elements) {
+    if (element.kind === "statement") {
       elements.push({
         kind: "statement",
-        id: el.id,
-        ...(el.text !== undefined ? { text: el.text } : {}),
+        id: element.id,
+        ...(element.text !== undefined ? { text: element.text } : {}),
       });
-    } else if (el.kind === "argument") {
+    } else if (element.kind === "argument") {
       elements.push({
         kind: "argument",
-        id: el.id,
-        ...(el.description !== undefined
-          ? { description: el.description }
+        id: element.id,
+        ...(element.description !== undefined
+          ? { description: element.description }
           : {}),
       });
-      for (const inf of el.inferences) {
-        elements.push({ kind: "inference", id: inf.id });
+      for (const inference of element.inferences) {
+        elements.push({ kind: "inference", id: inference.id });
       }
-    } else if (el.kind === "solver") {
+    } else if (element.kind === "solver") {
       elements.push({
         kind: "solver",
-        id: el.id,
-        solver: el.solver,
-        elements: listElementsFromComponent(el),
+        id: element.id,
+        solver: element.solver,
+        elements: listElementsFromComponent(element),
       });
     } else {
-      elements.push({ kind: el.kind, id: el.id, from: el.from, to: el.to });
+      elements.push({
+        kind: element.kind,
+        id: element.id,
+        from: element.from,
+        to: element.to,
+      });
     }
   }
   return elements;
-}
-
-export async function runCreateDocument(
-  args: DocRefInput & {
-    solver?: string | undefined;
-    documentId?: string | undefined;
-    rootId?: string | undefined;
-  },
-): Promise<McpResult> {
-  const refResult = normalizeCreateDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  const solver = args.solver ?? GROUNDED_SOLVER_TAG;
-  if (!isSolverTag(solver)) {
-    return jsonResult({
-      ok: false,
-      errors: [{
-        code: "mcp/invalid-solver",
-        message: `Unsupported solver tag: ${solver}`,
-      }],
-    }, true);
-  }
-  const documentId = args.documentId ?? "document";
-  const rootId = args.rootId ?? "root";
-  const invalidId = [documentId, rootId].find((id) => !isEdnKeywordName(id));
-  if (invalidId !== undefined) {
-    return jsonResult({
-      ok: false,
-      errors: [{
-        code: "mcp/invalid-id",
-        message: `"${invalidId}" is not a valid EDN keyword`,
-      }],
-    }, true);
-  }
-  const result = await createDocumentRef(
-    refResult.ref,
-    solver,
-    documentId,
-    rootId,
-  );
-  if (!result.ok) {
-    return jsonResult(
-      { ok: false, errors: result.errors },
-      result.isError ?? false,
-    );
-  }
-  if ("path" in result) return jsonResult({ ok: true, path: result.path });
-  return jsonResult({ ok: true, source: result.text });
-}
-
-export async function runAddStatement(
-  args: DocRefInput & {
-    id: string;
-    text?: string | undefined;
-    tags?: readonly string[] | undefined;
-    parentId?: string | undefined;
-  },
-): Promise<McpResult> {
-  const refResult = normalizeStatementDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  const edit: DocumentEdit = {
-    type: "add_statement",
-    id: args.id,
-    ...(refResult.statementText !== undefined
-      ? { text: refResult.statementText }
-      : {}),
-    ...(args.tags !== undefined ? { tags: args.tags } : {}),
-    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
-  };
-  return applyMutation(refResult.ref, edit);
-}
-
-export async function runUpdateStatement(
-  args: DocRefInput & {
-    id: string;
-    text?: string | undefined;
-    tags?: readonly string[] | undefined;
-    parentId?: string | undefined;
-  },
-): Promise<McpResult> {
-  const refResult = normalizeStatementDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  const edit: DocumentEdit = {
-    type: "update_statement",
-    id: args.id,
-    ...(refResult.statementText !== undefined
-      ? { text: refResult.statementText }
-      : {}),
-    ...(args.tags !== undefined ? { tags: args.tags } : {}),
-    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
-  };
-  return applyMutation(refResult.ref, edit);
-}
-
-export async function runAddArgument(
-  args: DocRefInput & {
-    id: string;
-    description?: string | undefined;
-    tags?: readonly string[] | undefined;
-    parentId?: string | undefined;
-  },
-): Promise<McpResult> {
-  const refResult = normalizeDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  const edit: DocumentEdit = {
-    type: "add_argument",
-    id: args.id,
-    ...(args.description !== undefined
-      ? { description: args.description }
-      : {}),
-    ...(args.tags !== undefined ? { tags: args.tags } : {}),
-    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
-  };
-  return applyMutation(refResult.ref, edit);
-}
-
-export async function runAddInference(
-  args: DocRefInput & {
-    argumentId: string;
-    id: string;
-    premises: readonly string[];
-    conclusion: string;
-    rules?: readonly string[] | undefined;
-    parentId?: string | undefined;
-  },
-): Promise<McpResult> {
-  const refResult = normalizeDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  const edit: DocumentEdit = {
-    type: "add_inference",
-    argumentId: args.argumentId,
-    id: args.id,
-    premises: args.premises,
-    conclusion: args.conclusion,
-    ...(args.rules !== undefined ? { rules: args.rules } : {}),
-    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
-  };
-  return applyMutation(refResult.ref, edit);
-}
-
-export async function runAddRelation(
-  args: DocRefInput & {
-    id: string;
-    kind: RelationKind;
-    from: string;
-    to: string;
-    parentId?: string | undefined;
-  },
-): Promise<McpResult> {
-  const refResult = normalizeDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  const edit: DocumentEdit = {
-    type: "add_relation",
-    id: args.id,
-    kind: args.kind,
-    from: args.from,
-    to: args.to,
-    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
-  };
-  return applyMutation(refResult.ref, edit);
-}
-
-export async function runAddSolver(
-  args: DocRefInput & {
-    id: string;
-    solver: string;
-    parentId?: string | undefined;
-  },
-): Promise<McpResult> {
-  const refResult = normalizeDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  if (!isSolverTag(args.solver)) {
-    return jsonResult({
-      ok: false,
-      refused: {
-        code: "builder/unsupported-solver",
-        message: `Unsupported solver tag "${args.solver}"`,
-      },
-      warnings: [],
-      diff: [],
-    });
-  }
-  const edit: DocumentEdit = {
-    type: "add_solver",
-    id: args.id,
-    solver: args.solver,
-    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
-  };
-  return applyMutation(refResult.ref, edit);
-}
-
-export async function runSetImport(
-  args: DocRefInput & {
-    childId: string;
-    outAtMost: number;
-    inAtLeast: number;
-    parentId?: string | undefined;
-  },
-): Promise<McpResult> {
-  const refResult = normalizeDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  const edit: DocumentEdit = {
-    type: "set_import",
-    childId: args.childId,
-    outAtMost: args.outAtMost,
-    inAtLeast: args.inAtLeast,
-    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
-  };
-  return applyMutation(refResult.ref, edit);
-}
-
-export async function runRemoveImport(
-  args: DocRefInput & {
-    childId: string;
-    parentId?: string | undefined;
-  },
-): Promise<McpResult> {
-  const refResult = normalizeDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  const edit: DocumentEdit = {
-    type: "remove_import",
-    childId: args.childId,
-    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
-  };
-  return applyMutation(refResult.ref, edit);
-}
-
-export async function runRemoveElement(
-  args: DocRefInput & { id: string; parentId?: string | undefined },
-): Promise<McpResult> {
-  const refResult = normalizeDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  return applyMutation(refResult.ref, {
-    type: "remove_element",
-    id: args.id,
-    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
-  });
-}
-
-export async function runRemoveRelation(
-  args: DocRefInput & { id: string; parentId?: string | undefined },
-): Promise<McpResult> {
-  const refResult = normalizeDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  const edit: DocumentEdit = {
-    type: "remove_relation",
-    id: args.id,
-    ...(args.parentId !== undefined ? { parentId: args.parentId } : {}),
-  };
-  return applyMutation(refResult.ref, edit);
-}
-
-export async function runListElements(args: DocRefInput): Promise<McpResult> {
-  const refResult = normalizeDocRef(args);
-  if (!refResult.ok) {
-    return jsonResult({ ok: false, errors: refResult.errors }, true);
-  }
-  const loaded = await loadDocumentRef(refResult.ref);
-  if (!loaded.ok) {
-    return jsonResult(
-      { ok: false, errors: loaded.errors },
-      loaded.isError ?? false,
-    );
-  }
-  return jsonResult({
-    ok: true,
-    elements: listElementsFromDoc(loaded.document),
-  });
-}
-
-export async function runValidate(args: DocRefInput): Promise<McpResult> {
-  const sourceResult = await readSource(args);
-  if (!sourceResult.ok) {
-    return jsonResult(
-      { ok: false, errors: sourceResult.errors },
-      sourceResult.isError ?? false,
-    );
-  }
-  const result = Effect.runSync(
-    Effect.match(load(sourceResult.source), {
-      onFailure: (err) => ({
-        ok: false as const,
-        errors: err._tag === "RootCount" || err._tag === "ReadError"
-          ? [err.diagnostic]
-          : err.diagnostics,
-      }),
-      onSuccess: (document) => ({ ok: true as const, document }),
-    }),
-  );
-  if (!result.ok) {
-    return jsonResult({ ok: false, errors: result.errors });
-  }
-  return jsonResult({ ok: true });
-}
-
-export async function runSolve(args: DocRefInput): Promise<McpResult> {
-  const sourceResult = await readSource(args);
-  if (!sourceResult.ok) {
-    return jsonResult(
-      { ok: false, errors: sourceResult.errors },
-      sourceResult.isError ?? false,
-    );
-  }
-  const result = Effect.runSync(
-    Effect.match(load(sourceResult.source), {
-      onFailure: (err) => ({
-        ok: false as const,
-        errors: err._tag === "RootCount" || err._tag === "ReadError"
-          ? [err.diagnostic]
-          : err.diagnostics,
-      }),
-      onSuccess: (document) => ({ ok: true as const, document }),
-    }),
-  );
-  if (!result.ok) {
-    return jsonResult({ ok: false, errors: result.errors });
-  }
-  return jsonResult({
-    ok: true,
-    ...serializeSolveResult(solve(result.document)),
-  });
 }
 
 function serializeSolveResult(

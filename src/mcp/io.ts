@@ -25,15 +25,6 @@ export type DocumentRef = { path: string; text?: undefined } | {
   path?: undefined;
 };
 
-export type LoadDocResult =
-  | { ok: true; document: CandidateDocument; ref: DocumentRef }
-  | { ok: false; errors: readonly Diagnostic[]; isError?: boolean };
-
-export type SaveDocResult =
-  | { ok: true; path: string }
-  | { ok: true; text: string }
-  | { ok: false; errors: readonly Diagnostic[]; isError?: boolean };
-
 function isPathRef(ref: DocumentRef): ref is { path: string } {
   return (
     typeof (ref as { path?: string }).path === "string" &&
@@ -103,7 +94,7 @@ export function loadDocumentSourceEffect(
   });
 }
 
-/** Combined read+parse for `loadDocumentRef`. */
+/** Combined read+parse of a document reference. */
 export function loadDocumentRefEffect(
   ref: DocumentRef,
 ): Effect.Effect<
@@ -165,76 +156,4 @@ export function createDocumentRefEffect(
     ref,
     emptyDocument(solver, documentId, rootId),
   );
-}
-
-function saveOutcomeToSaveDocResult(
-  outcome:
-    | { ok: true; value: { readonly path: string } | { readonly text: string } }
-    | { ok: false; err: McpIoError },
-): SaveDocResult {
-  if (!outcome.ok) {
-    return {
-      ok: false,
-      errors: [outcome.err.diagnostic],
-      isError: outcome.err._tag === "Write",
-    };
-  }
-  if ("text" in outcome.value) return { ok: true, text: outcome.value.text };
-  return { ok: true, path: outcome.value.path };
-}
-
-/**
- * Legacy Promise wrapper that re-routes through the new Effect helpers.
- * Preserves the existing `LoadDocResult` / `SaveDocResult` shape so
- * `src/mcp/tools.ts` keeps compiling until Task 7 deletes it.
- */
-export async function loadDocumentRef(
-  ref: DocumentRef,
-): Promise<LoadDocResult> {
-  const outcome = await Effect.runPromise(
-    Effect.match(loadDocumentRefEffect(ref), {
-      onFailure: (err) => ({ ok: false as const, err }),
-      onSuccess: (value) => ({ ok: true as const, value }),
-    }),
-  );
-  if (!outcome.ok) {
-    return {
-      ok: false,
-      errors: [outcome.err.diagnostic],
-      isError: outcome.err._tag === "Read",
-    };
-  }
-  return { ok: true, document: outcome.value.document, ref: outcome.value.ref };
-}
-
-export async function saveDocumentRef(
-  ref: DocumentRef,
-  document: CandidateDocument,
-): Promise<SaveDocResult> {
-  const outcome = await Effect.runPromise(
-    Effect.match(saveDocumentRefEffect(ref, document), {
-      onFailure: (err) => ({ ok: false as const, err }),
-      onSuccess: (value) => ({ ok: true as const, value }),
-    }),
-  );
-  return saveOutcomeToSaveDocResult(outcome);
-}
-
-/** Create a new empty file for path refs, or return empty EDN text. */
-export async function createDocumentRef(
-  ref: DocumentRef,
-  solver: SolverTag = GROUNDED_SOLVER_TAG,
-  documentId = "document",
-  rootId = "root",
-): Promise<SaveDocResult> {
-  const outcome = await Effect.runPromise(
-    Effect.match(
-      createDocumentRefEffect(ref, solver, documentId, rootId),
-      {
-        onFailure: (err) => ({ ok: false as const, err }),
-        onSuccess: (value) => ({ ok: true as const, value }),
-      },
-    ),
-  );
-  return saveOutcomeToSaveDocResult(outcome);
 }
