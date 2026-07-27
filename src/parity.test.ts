@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
-import { load, solve } from "./index.js";
+import { solve } from "./index.js";
 import type { EntityId } from "./model.js";
+import { runLoad } from "./test-support.js";
 
 const id = (value: string) => value as EntityId;
 
@@ -15,11 +16,11 @@ const source = readFileSync(
 
 describe("Argdown 1.x censorship parity", () => {
   it("loads the canonical example", () => {
-    expect(load(source).ok).toBe(true);
+    expect(runLoad(source).ok).toBe(true);
   });
 
   it("preserves the reconstructed argument and metadata", () => {
-    const loaded = load(source);
+    const loaded = runLoad(source);
     if (!loaded.ok) throw new Error("fixture did not load");
     const freedom = loaded.document.root.elements.find(
       (element) =>
@@ -39,7 +40,7 @@ describe("Argdown 1.x censorship parity", () => {
   });
 
   it("matches the pure-attack grounded labels", () => {
-    const loaded = load(source);
+    const loaded = runLoad(source);
     if (!loaded.ok) throw new Error("fixture did not load");
     const result = solve(loaded.document);
     expect(result.native.kind).toBe("labels");

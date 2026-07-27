@@ -1,7 +1,7 @@
 import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
-import { load, solve } from "./index.js";
+import { solve } from "./index.js";
 import {
   BIPOLAR_SOLVER_TAG,
   COMPLETE_SOLVER_TAG,
@@ -10,6 +10,7 @@ import {
   PREFERRED_SOLVER_TAG,
   STABLE_SOLVER_TAG,
 } from "./model.js";
+import { runLoad } from "./test-support.js";
 
 const graph = (
   solver: string,
@@ -61,7 +62,7 @@ describe("solver component dispatch", () => {
         ? ""
         : `#casualtheorics.argdown2.argdown/support
            {:id :support-a-b :from :a :to :b}`;
-      const loaded = load(graph(
+      const loaded = runLoad(graph(
         solver,
         `${support}
          #casualtheorics.argdown2.argdown/attack
@@ -77,9 +78,9 @@ describe("solver component dispatch", () => {
   }
 
   it("solves preferred, stable, and complete leaf components", () => {
-    const preferred = load(graph(PREFERRED_SOLVER_TAG, threeCycleRelations));
-    const stable = load(graph(STABLE_SOLVER_TAG, threeCycleRelations));
-    const complete = load(graph(COMPLETE_SOLVER_TAG, threeCycleRelations));
+    const preferred = runLoad(graph(PREFERRED_SOLVER_TAG, threeCycleRelations));
+    const stable = runLoad(graph(STABLE_SOLVER_TAG, threeCycleRelations));
+    const complete = runLoad(graph(COMPLETE_SOLVER_TAG, threeCycleRelations));
     expect(preferred.ok && stable.ok && complete.ok).toBe(true);
     if (!preferred.ok || !stable.ok || !complete.ok) return;
 
@@ -108,7 +109,7 @@ describe("solver component dispatch", () => {
   });
 
   it("rejects unsupported solver tags", () => {
-    expect(load("#other/solver []")).toMatchObject({
+    expect(runLoad("#other/solver []")).toMatchObject({
       ok: false,
       errors: [{ code: "schema/missing-document-tag" }],
     });

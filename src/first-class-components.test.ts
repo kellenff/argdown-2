@@ -2,9 +2,10 @@ import { expect } from "@std/expect";
 import { describe, it } from "@std/testing/bdd";
 
 import { evaluateComponent } from "./component-eval.js";
-import { load, solve } from "./index.js";
+import { solve } from "./index.js";
 import type { EntityId, SolverComponent } from "./model.js";
 import { AGGREGATE_IDENTITY_TAG, GROUNDED_SOLVER_TAG } from "./model.js";
+import { runLoad } from "./test-support.js";
 
 const statement = (id: string): string =>
   `#casualtheorics.argdown2.argdown/statement {:id :${id}}`;
@@ -31,7 +32,7 @@ const document = (
 
 describe("first-class solver component wire", () => {
   it("loads an identified document and root solver map", () => {
-    const result = load(document(statement("claim")));
+    const result = runLoad(document(statement("claim")));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
@@ -47,7 +48,7 @@ describe("first-class solver component wire", () => {
   });
 
   it("rejects the legacy bare solver-vector root", () => {
-    const result = load(`
+    const result = runLoad(`
       #casualtheorics.argdown2.solver/grounded [
         ${statement("claim")}
       ]
@@ -58,7 +59,7 @@ describe("first-class solver component wire", () => {
   });
 
   it("requires relation ids", () => {
-    const result = load(document(
+    const result = runLoad(document(
       `
       ${statement("a")}
       ${statement("b")}
@@ -75,7 +76,7 @@ describe("first-class solver component wire", () => {
   });
 
   it("accepts an identified mixed-semantics child solver", () => {
-    const result = load(document(`
+    const result = runLoad(document(`
       ${statement("claim")}
       #casualtheorics.argdown2.solver/bipolar
       {:id :child
@@ -113,7 +114,7 @@ describe("first-class component solve result", () => {
   });
 
   it("returns native, aggregate, and boundary layers", () => {
-    const loaded = load(document(statement("claim")));
+    const loaded = runLoad(document(statement("claim")));
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
 

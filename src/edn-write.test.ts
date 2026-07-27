@@ -9,7 +9,7 @@ import { describe, it } from "@std/testing/bdd";
 import { apply, emptyDocument } from "./builder/apply.js";
 import { parseCandidate } from "./builder/parse-candidate.js";
 import { writeEdn } from "./edn-write.js";
-import { load } from "./index.js";
+import { runLoad } from "./test-support.js";
 
 const fixtureDir = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -39,7 +39,7 @@ describe("writeEdn", () => {
       to: "b",
     }).document;
     const edn = writeEdn(doc);
-    const loaded = load(edn);
+    const loaded = runLoad(edn);
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
     expect(loaded.document.root.elements).toHaveLength(3);
@@ -50,7 +50,7 @@ describe("writeEdn", () => {
       join(fixtureDir, "two-statements-attack.edn"),
       "utf8",
     );
-    expect(load(source).ok).toBe(true);
+    expect(runLoad(source).ok).toBe(true);
   });
 
   it("round-trips unresolved prose refs through parseCandidate", () => {
@@ -110,7 +110,7 @@ describe("writeEdn", () => {
       rules: ["modus-ponens"],
     }).document;
     const edn = writeEdn(doc);
-    const loaded = load(edn);
+    const loaded = runLoad(edn);
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
     expect(loaded.document.root.elements).toHaveLength(4);
