@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { Effect } from "effect";
 
 import { apply } from "../builder/apply.js";
-import type { DocumentEdit } from "../builder/types.js";
+import type { ApplyResult, DiffOp, DocumentEdit } from "../builder/types.js";
 import { load, solve } from "../index.js";
 import type {
   CandidateDocument,
@@ -138,7 +138,21 @@ async function applyMutation(
     );
   }
 
-  const applied = apply(loaded.document, edit);
+  const applied: ApplyResult = Effect.runSync(
+    Effect.match(apply(loaded.document, edit), {
+      onFailure: (err) => ({
+        document: loaded.document,
+        warnings: err.warnings,
+        refused: { code: err.code, message: err.message },
+        diff: [] as readonly DiffOp[],
+      }),
+      onSuccess: (value) => ({
+        document: value.document,
+        warnings: value.warnings,
+        diff: value.diff as readonly DiffOp[],
+      }),
+    }),
+  );
   if (applied.refused) {
     return jsonResult({
       ok: false,
