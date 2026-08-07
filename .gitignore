@@ -16,6 +16,9 @@ docs/snowball/decisions/
 .claude/grfp/
 .worktrees/
 
+# Yarn 1.x cache leftovers from the alpha2 era (no yarn.lock or .yarnrc* in tree)
+.yarn/
+
 ### JetBrains template
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839

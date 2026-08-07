@@ -138,7 +138,7 @@ A solver is an identified element in its parent's local scope. Child internals r
    {:id :child-attacks-target :from :child :to :target}]}}
 ```
 
-`Effect.runSync(solve(document)).native` is per-solver. `.aggregate` is the parent's view. `.boundary` is the typed confidence projection. `.children` is the per-child evaluation record. `.warnings` collects non-fatal diagnostics. Grounded boundaries map `IN` to `1`, `OUT` to `0`, and `UNDEC` to `nil`. Grounded parents import these as ordinary, intrinsically defeated, or self-attacking proxy nodes. See the [data design](docs/snowball/specs/2026-07-19-first-class-solver-components-design.md) and [formal companion](docs/snowball/specs/2026-07-19-first-class-solver-components-category-theory.md).
+`Effect.runSync(solve(document)).native` is per-solver. `.aggregate` is the parent's view. `.boundary` is the typed confidence projection. `.children` is the per-child evaluation record. `.warnings` collects non-fatal diagnostics. Grounded boundaries map `IN` to `1`, `OUT` to `0`, and `UNDEC` to `nil`. Grounded parents import these as ordinary, intrinsically defeated, or self-attacking proxy nodes. See [`src/schema.ts`](src/schema.ts) and [`src/component-eval.ts`](src/component-eval.ts) for the data and evaluation pipeline; the historical design notes under `docs/snowball/` were removed in `Unreleased`.
 
 ## MCP server
 
