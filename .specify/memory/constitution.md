@@ -158,7 +158,7 @@ mutation; UX drift here silently corrupts downstream graphs.
 ## Technology Constraints & Distribution
 
 - **Runtime.** Deno is the only day-to-day runtime. Version is pinned in
-  `scripts/deno-version` (currently `2.4.5`) and consumed by both
+  `scripts/deno-version` (currently `2.9.2`) and consumed by both
   `setup-deno@v2` and the host-target compile script
   (`scripts/compile-mcp.sh`). The MCP binary is compiled directly from
   `src/mcp/cli.ts`; **no bundler step** (no esbuild, no tsdown, no

@@ -106,7 +106,7 @@ describe("Pi package", () => {
   });
 });
 
-// StdioClientTransport.close() races a 2s setTimeout; Deno 2.4.5 sanitizeOps
+// StdioClientTransport.close() races a 2s setTimeout; Deno 2.4.5–2.9.2 sanitizeOps
 // treats that timer as a leak even when .unref()'d. Isolate the subprocess
 // bridge test so shape checks stay strict.
 describe({
