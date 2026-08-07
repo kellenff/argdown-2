@@ -13,6 +13,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0-alpha5] - 2026-08-07
+
 ### Added
 
 - `interactive-argument` skill: collaborative prose/EDN argument workshopping
@@ -70,6 +72,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
   handlers remain Promise-returning via a single `runMcpEffect` adapter.
 - Effect-native builder refusals (`BuilderError`) and MCP I/O (`McpIoError`
   via `Effect.tryPromise`).
+- License: Unlicense (was unlicensed/private). See `LICENSE` at repo root.
 
 ### Removed
 
@@ -237,4 +240,5 @@ backward-compatibility promises yet — the language surface is frozen (see
 [0.2.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha1
 [0.2.0-alpha2]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha2
 [0.2.0-alpha4]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha4
+[0.2.0-alpha5]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha5
 [0.2.0-alpha3]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha3

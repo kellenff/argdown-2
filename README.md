@@ -245,7 +245,7 @@ Use `validate(value)` when EDN has already been read with `edn-parser-js` and yo
 
 What is here: strict EDN loader, Zod schema validation, cross-reference validator, six label solvers (grounded, bipolar, evidential) and three multi-extension solvers (preferred, stable, complete), first-class nested solver composition, builder MCP server, atomic-write I/O layer, Claude Code plugin marketplace, GitHub Actions CI and release workflows.
 
-What is not here: a custom `.argdown` language or parser, a source AST, a Mermaid or DOT renderer, a CLI binary (the MCP server is the only shipped binary), ASPIC+ or CLS 2013 full evidential labeling, a public license (the license will be chosen before the first public release).
+What is not here: a custom `.argdown` language or parser, a source AST, a Mermaid or DOT renderer, a CLI binary (the MCP server is the only shipped binary), ASPIC+ or CLS 2013 full evidential labeling.
 
 Distribution: the library is published to [JSR](https://jsr.io/@casualtheorics/argdown-2) (`jsr:@casualtheorics/argdown-2`); every merge to `main` publishes a `*-dev.{utcTimestamp}` prerelease. Native MCP binaries ship via GitHub Releases (`.github/workflows/release.yml`).
 
@@ -300,4 +300,4 @@ PR-time validation runs in `.github/workflows/ci.yml`; release-time runs in `.gi
 
 ## License
 
-Private. The license will be chosen before the first public release.
+[Unlicense](https://unlicense.org/). This is free and unencumbered software released into the public domain. See [`LICENSE`](LICENSE) for the full text.
