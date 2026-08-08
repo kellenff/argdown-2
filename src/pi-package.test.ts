@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,6 +20,24 @@ function readText(relativePath: string): string {
   return Deno.readTextFileSync(join(root, relativePath));
 }
 
+function findLocalMcpBinary(): string | null {
+  const dir = join(root, "dist", "mcp-bin");
+  if (!existsSync(dir)) return null;
+  for (const name of readdirSync(dir)) {
+    if (!name.startsWith("argdown-2-mcp-")) continue;
+    const full = join(dir, name);
+    try {
+      const stat = Deno.statSync(full);
+      if (!stat.isFile) continue;
+      // Accept when mode is unavailable (some platforms) or executable.
+      if (stat.mode === null || (stat.mode & 0o111) !== 0) return full;
+    } catch {
+      // ignore unreadable entries
+    }
+  }
+  return null;
+}
+
 const SKILLS = [
   "build-graph",
   "validate-debug",
@@ -32,11 +50,14 @@ const TOOL_NAMES = [
   "add_argument",
   "add_inference",
   "add_relation",
+  "add_solver",
   "add_statement",
   "create_document",
   "list_elements",
   "remove_element",
+  "remove_import",
   "remove_relation",
+  "set_import",
   "solve",
   "update_statement",
   "validate",
@@ -119,13 +140,21 @@ describe({
         "../pi/extensions/argdown-2-mcp.ts",
         import.meta.url,
       ).href;
-      const session = await connectArgdownMcp(extensionUrl);
+      // Prefer a host binary under dist/mcp-bin/ so this test does not
+      // depend on a tagged GitHub Release for the pinned version. CI
+      // compiles before Test; locally run `deno task compile:mcp` first.
+      const local = findLocalMcpBinary();
+      const extraEnv = local !== null
+        ? ({ ARGDOWN2_MCP_BIN: local } as Record<string, string>)
+        : undefined;
 
+      let session;
       try {
+        session = await connectArgdownMcp(extensionUrl, { extraEnv });
         expect(session.tools.map((t: { name: string }) => t.name).sort())
           .toEqual(TOOL_NAMES);
       } finally {
-        await session.close();
+        await session?.close();
       }
     });
   },

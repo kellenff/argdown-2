@@ -15,8 +15,20 @@ export type ArgdownMcpSession = {
   close: () => Promise<void>;
 };
 
+export type ArgdownMcpOptions = {
+  /**
+   * Extra environment variables to forward to the MCP subprocess.
+   * Useful in tests to point the launcher at a locally-compiled binary
+   * (via `ARGDOWN2_MCP_BIN`) without modifying the global process env,
+   * and to work around the MCP SDK stdio env allowlist that does not
+   * include `ARGDOWN2_MCP_BIN` by default.
+   */
+  extraEnv?: Readonly<Record<string, string>>;
+};
+
 export async function connectArgdownMcp(
   extensionModuleUrl: string,
+  options: ArgdownMcpOptions = {},
 ): Promise<ArgdownMcpSession> {
   const launcher = resolveLauncherPath(extensionModuleUrl);
   const client = new Client({
@@ -28,6 +40,11 @@ export async function connectArgdownMcp(
     args: [launcher],
     // Avoid an unread PassThrough when stderr is "pipe".
     stderr: "ignore",
+    // Forward extras on top of the SDK default env (HOME, PATH, ...).
+    // The SDK's allowlist otherwise drops unknown vars like
+    // ARGDOWN2_MCP_BIN that the launcher uses to bypass GitHub release
+    // fetches.
+    ...(options.extraEnv ? { env: { ...options.extraEnv } } : {}),
   });
 
   await client.connect(transport);
