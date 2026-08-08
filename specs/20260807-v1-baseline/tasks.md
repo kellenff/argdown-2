@@ -31,9 +31,9 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 **Purpose**: Confirm the host environment matches the spec's preconditions before any FR validation begins.
 
-- [ ] T001 Run `deno --version | head -n1 | awk '{print $2}'` and confirm output equals `2.9.2` (matches `scripts/deno-version`)
-- [ ] T002 Run `git status --porcelain` and confirm output is empty (working tree clean)
-- [ ] T003 Run `git rev-parse --abbrev-ref HEAD` and confirm output equals `20260807-v1-baseline` (matches the spec dir name)
+- [X] T001 Run `deno --version | head -n1 | awk '{print $2}'` and confirm output equals `2.9.2` (matches `scripts/deno-version`)
+- [X] T002 Run `git status --porcelain` and confirm output is empty (working tree clean)
+- [X] T003 Run `git rev-parse --abbrev-ref HEAD` and confirm output equals `20260807-v1-baseline` (matches the spec dir name)
 
 **Checkpoint**: Setup complete — host Deno is `2.9.2`, working tree is clean, and the branch matches the spec.
 
@@ -45,10 +45,10 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 **⚠️ CRITICAL**: No user-story work can begin until this phase is complete.
 
-- [ ] T004 Read `specs/20260807-v1-baseline/spec.md` and confirm the Constitution Cross-Reference appendix maps each of the 17 FRs (FR-001–FR-017) to a user story and a constitutional principle
-- [ ] T005 Read `specs/20260807-v1-baseline/contracts/README.md` and confirm all five contract files (`library-api.md`, `mcp-tools.md`, `cli-surface.md`, `launcher.md`, `distribution.md`) are present at `specs/20260807-v1-baseline/contracts/`
-- [ ] T006 Read `specs/20260807-v1-baseline/quickstart.md` and confirm 9 validation scenarios are present, one per SC
-- [ ] T007 Read `specs/20260807-v1-baseline/research.md` and confirm the FR-by-FR Coverage Audit table records `✅ Implemented` for all 17 FRs
+- [X] T004 Read `specs/20260807-v1-baseline/spec.md` and confirm the Constitution Cross-Reference appendix maps each of the 17 FRs (FR-001–FR-017) to a user story and a constitutional principle
+- [X] T005 Read `specs/20260807-v1-baseline/contracts/README.md` and confirm all five contract files (`library-api.md`, `mcp-tools.md`, `cli-surface.md`, `launcher.md`, `distribution.md`) are present at `specs/20260807-v1-baseline/contracts/`
+- [X] T006 Read `specs/20260807-v1-baseline/quickstart.md` and confirm 9 validation scenarios are present, one per SC
+- [X] T007 Read `specs/20260807-v1-baseline/research.md` and confirm the FR-by-FR Coverage Audit table records `✅ Implemented` for all 17 FRs
 
 **Checkpoint**: Foundation ready — every spec artifact exists and the FR-by-FR audit confirms 17/17 implementation. Per-story validation can now begin in parallel.
 
@@ -62,11 +62,11 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 ### Validation for User Story 1
 
-- [ ] T008 [US1] Read `src/index.ts:78-85` and confirm `load(source)` is declared with return type `Effect.Effect<Document, LoadError, never>` (FR-001)
-- [ ] T009 [US1] Read `src/index.ts:69-76` and confirm `validate(value)` is declared with return type `Effect.Effect<Document, SchemaError | ValidateError, never>` (FR-002)
-- [ ] T010 [US1] Run `deno test -A src/edn.test.ts` and confirm exit `0` (EdnError failure channel is reachable)
-- [ ] T011 [P] [US1] Run `deno test -A src/schema.test.ts` and confirm exit `0` (SchemaError failure channel is reachable)
-- [ ] T012 [P] [US1] Run `deno test -A src/validate.test.ts` and confirm exit `0` (ValidateError failure channel is reachable; cross-reference break, unsupported relation kind)
+- [X] T008 [US1] Read `src/index.ts:78-85` and confirm `load(source)` is declared with return type `Effect.Effect<Document, LoadError, never>` (FR-001)
+- [X] T009 [US1] Read `src/index.ts:69-76` and confirm `validate(value)` is declared with return type `Effect.Effect<Document, SchemaError | ValidateError, never>` (FR-002)
+- [X] T010 [US1] Run `deno test -A src/edn.test.ts` and confirm exit `0` (EdnError failure channel is reachable)
+- [X] T011 [P] [US1] Run `deno test -A src/schema.test.ts` and confirm exit `0` (SchemaError failure channel is reachable)
+- [X] T012 [P] [US1] Run `deno test -A src/validate.test.ts` and confirm exit `0` (ValidateError failure channel is reachable; cross-reference break, unsupported relation kind)
 
 **Checkpoint**: US1 verified independently. Library's load + validate surfaces are complete and contract-correct.
 
@@ -80,10 +80,10 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 ### Validation for User Story 2
 
-- [ ] T013 [US2] Read `src/index.ts:87-91` and confirm `solve(document)` is declared with return type `Effect.Effect<ComponentSolveResult, SolveError>` and `SolveError` is `never` (FR-003)
-- [ ] T014 [US2] Read `src/model.ts` and confirm `SOLVER_TAGS` contains exactly six entries: `grounded`, `bipolar`, `evidential`, `preferred`, `stable`, `complete` (FR-004 / FR-006)
-- [ ] T015 [US2] Run `deno test -A src/solvers.test.ts src/grounded.test.ts src/multi-extension.test.ts src/reduce-bipolar.test.ts src/reduce-evidential.test.ts src/component-eval.test.ts` and confirm exit `0`
-- [ ] T016 [P] [US2] Run `deno test -A src/parity.test.ts` and confirm exit `0` (grounded labels on `examples/argdown1-censorship.edn` match Dung pure-attack expected set)
+- [X] T013 [US2] Read `src/index.ts:87-91` and confirm `solve(document)` is declared with return type `Effect.Effect<ComponentSolveResult, SolveError>` and `SolveError` is `never` (FR-003)
+- [X] T014 [US2] Read `src/model.ts` and confirm `SOLVER_TAGS` contains exactly six entries: `grounded`, `bipolar`, `evidential`, `preferred`, `stable`, `complete` (FR-004 / FR-006)
+- [X] T015 [US2] Run `deno test -A src/solvers.test.ts src/grounded.test.ts src/multi-extension.test.ts src/reduce-bipolar.test.ts src/reduce-evidential.test.ts src/component-eval.test.ts` and confirm exit `0`
+- [X] T016 [P] [US2] Run `deno test -A src/parity.test.ts` and confirm exit `0` (grounded labels on `examples/argdown1-censorship.edn` match Dung pure-attack expected set)
 
 **Checkpoint**: US2 verified independently. All six solver roots are exposed; `solve` returns the typed per-component result.
 
@@ -97,8 +97,8 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 ### Validation for User Story 3
 
-- [ ] T017 [US3] Read `src/model.ts` and confirm the namespaced tag families `casualtheorics.argdown2/document`, `casualtheorics.argdown2.solver/*`, `casualtheorics.argdown2.argdown/*`, `casualtheorics.argdown2.aggregate/*`, `casualtheorics.argdown2.observer/*`, `casualtheorics.argdown2.projection/*` are exported as constants (FR-005)
-- [ ] T018 [US3] Read `CHANGELOG.md` `[Unreleased]` section and confirm there is no entry that renames or removes any existing tag (FR-005 / FR-006)
+- [X] T017 [US3] Read `src/model.ts` and confirm the namespaced tag families `casualtheorics.argdown2/document`, `casualtheorics.argdown2.solver/*`, `casualtheorics.argdown2.argdown/*`, `casualtheorics.argdown2.aggregate/*`, `casualtheorics.argdown2.observer/*`, `casualtheorics.argdown2.projection/*` are exported as constants (FR-005)
+- [X] T018 [US3] Read `CHANGELOG.md` `[Unreleased]` section and confirm there is no entry that renames or removes any existing tag (FR-005 / FR-006)
 
 **Checkpoint**: US3 verified independently. Tag registry is spec-frozen and additive-only.
 
@@ -112,11 +112,11 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 ### Validation for User Story 4
 
-- [ ] T019 [US4] Read `src/mcp/tools.ts` and confirm exactly 14 tool names are registered in canonical order: `create_document`, `add_statement`, `update_statement`, `add_argument`, `add_inference`, `add_relation`, `add_solver`, `set_import`, `remove_import`, `remove_element`, `remove_relation`, `list_elements`, `validate`, `solve` (FR-007)
-- [ ] T020 [US4] Read `src/mcp/tools.ts` and confirm every mutating tool accepts exactly one of `path` or `source`; both/neither refused with `mcp/invalid-ref` (FR-008)
-- [ ] T021 [US4] Read `src/mcp/io.ts:saveDocumentRefEffect` and confirm the atomic-write path writes to `.${Date.now()}.argdown-2.tmp` then `rename`s (FR-009)
-- [ ] T022 [US4] Read `src/mcp/tools.ts` and confirm the three response shapes are implemented: success `{ ok, warnings, diff, path|source }`; refusal `{ ok: false, refused: { code, message }, warnings, diff }`; failure `{ ok: false, errors }` (FR-010)
-- [ ] T023 [P] [US4] Run `deno test -A src/builder/apply.test.ts` and confirm exit `0` (every `BuilderCode` exercised by a negative test)
+- [X] T019 [US4] Read `src/mcp/tools.ts` and confirm exactly 14 tool names are registered in canonical order: `create_document`, `add_statement`, `update_statement`, `add_argument`, `add_inference`, `add_relation`, `add_solver`, `set_import`, `remove_import`, `remove_element`, `remove_relation`, `list_elements`, `validate`, `solve` (FR-007)
+- [X] T020 [US4] Read `src/mcp/tools.ts` and confirm every mutating tool accepts exactly one of `path` or `source`; both/neither refused with `mcp/invalid-ref` (FR-008)
+- [X] T021 [US4] Read `src/mcp/io.ts:saveDocumentRefEffect` and confirm the atomic-write path writes to `.${Date.now()}.argdown-2.tmp` then `rename`s (FR-009)
+- [X] T022 [US4] Read `src/mcp/tools.ts` and confirm the three response shapes are implemented: success `{ ok, warnings, diff, path|source }`; refusal `{ ok: false, refused: { code, message }, warnings, diff }`; failure `{ ok: false, errors }` (FR-010)
+- [X] T023 [P] [US4] Run `deno test -A src/builder/apply.test.ts` and confirm exit `0` (every `BuilderCode` exercised by a negative test)
 
 **Checkpoint**: US4 verified independently. Builder MCP surface is contract-correct and atomic.
 
@@ -130,9 +130,9 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 ### Validation for User Story 5
 
-- [ ] T024 [US5] Run `deno task compile:mcp` and confirm exit `0`; confirm `dist/mcp-bin/argdown-2-mcp-<host-triple>` is written
-- [ ] T025 [US5] Run `deno task probe:mcp -- ./dist/mcp-bin/argdown-2-mcp-<host-triple>` and confirm exit `0`; confirm the probe reports a healthy handshake and lists all 14 tool names in canonical order (FR-007 / SC-004)
-- [ ] T026 [P] [US5] Read `src/mcp/server.test.ts` and confirm the in-memory handshake test verifies the tool registry matches the 14-tool contract (FR-007)
+- [X] T024 [US5] Run `deno task compile:mcp` and confirm exit `0`; confirm `dist/mcp-bin/argdown-2-mcp-<host-triple>` is written
+- [X] T025 [US5] Run `deno task probe:mcp -- ./dist/mcp-bin/argdown-2-mcp-<host-triple>` and confirm exit `0`; confirm the probe reports a healthy handshake and lists all 14 tool names in canonical order (FR-007 / SC-004)
+- [X] T026 [P] [US5] Read `src/mcp/server.test.ts` and confirm the in-memory handshake test verifies the tool registry matches the 14-tool contract (FR-007)
 
 **Checkpoint**: US5 verified independently. Source run and host binary expose byte-identical tool surfaces.
 
@@ -146,11 +146,11 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 ### Validation for User Story 6
 
-- [ ] T027 [US6] Read `.github/workflows/release.yml` and confirm it ships binaries for `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` (FR-011)
-- [ ] T028 [US6] Read `scripts/argdown-2-mcp` and confirm the resolution order is `ARGDOWN2_MCP_BIN` override → `XDG_CACHE_HOME` cache → download + `sha256sums.txt` verify → `exec` (FR-012)
-- [ ] T029 [US6] Run `diff scripts/argdown-2-mcp plugins/argdown-2/scripts/argdown-2-mcp` and confirm exit `0` (launcher copy is byte-equivalent between canonical and Claude Code plugin)
-- [ ] T030 [P] [US6] Run `diff scripts/argdown-2-mcp.version plugins/argdown-2/scripts/argdown-2-mcp.version` and confirm exit `0` (version pin copy is byte-equivalent)
-- [ ] T031 [P] [US6] Read `scripts/compile-mcp.sh` and confirm it compiles `src/mcp/cli.ts` directly with no bundler step (FR-013)
+- [X] T027 [US6] Read `.github/workflows/release.yml` and confirm it ships binaries for `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` (FR-011)
+- [X] T028 [US6] Read `scripts/argdown-2-mcp` and confirm the resolution order is `ARGDOWN2_MCP_BIN` override → `XDG_CACHE_HOME` cache → download + `sha256sums.txt` verify → `exec` (FR-012)
+- [X] T029 [US6] Run `diff scripts/argdown-2-mcp plugins/argdown-2/scripts/argdown-2-mcp` and confirm exit `0` (launcher copy is byte-equivalent between canonical and Claude Code plugin)
+- [X] T030 [P] [US6] Run `diff scripts/argdown-2-mcp.version plugins/argdown-2/scripts/argdown-2-mcp.version` and confirm exit `0` (version pin copy is byte-equivalent)
+- [X] T031 [P] [US6] Read `scripts/compile-mcp.sh` and confirm it compiles `src/mcp/cli.ts` directly with no bundler step (FR-013)
 
 **Checkpoint**: US6 verified independently. Distribution channels are present and the launcher invariants hold.
 
@@ -164,9 +164,9 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 ### Validation for User Story 7
 
-- [ ] T032 [US7] Run `deno task test && deno task lint && deno task fmt:check && deno task check && deno task check:cli-deno && deno task check:mcp-deno && deno task check:npm-allowlist && deno task publish:dry-run` and confirm every command exits `0` (FR-014 / FR-015)
-- [ ] T033 [P] [US7] Read `scripts/check-npm-allowlist.sh` and `src/npm-allowlist.test.ts` and confirm only `zod`, `effect`, `@modelcontextprotocol/sdk` are allowed as `npm:` specifiers (FR-015)
-- [ ] T034 [P] [US7] Run `deno task publish:dry-run` in isolation and confirm exit `0` with no JSR slow-types warnings (SC-007)
+- [X] T032 [US7] Run `deno task test && deno task lint && deno task fmt:check && deno task check && deno task check:cli-deno && deno task check:mcp-deno && deno task check:npm-allowlist && deno task publish:dry-run` and confirm every command exits `0` (FR-014 / FR-015)
+- [X] T033 [P] [US7] Read `scripts/check-npm-allowlist.sh` and `src/npm-allowlist.test.ts` and confirm only `zod`, `effect`, `@modelcontextprotocol/sdk` are allowed as `npm:` specifiers (FR-015)
+- [X] T034 [P] [US7] Run `deno task publish:dry-run` in isolation and confirm exit `0` with no JSR slow-types warnings (SC-007)
 
 **Checkpoint**: US7 verified independently. Quality gate suite is green; npm allowlist is enforced.
 
@@ -180,8 +180,8 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 ### Validation for User Story 8
 
-- [ ] T035 [US8] Run `ls src/bench.fixtures/` and confirm exactly 8 fixtures are present: `small-minimal`, `small-relations`, `small-argument`, `medium-censorship`, `heavy-attacks`, `deep-arguments`, `large-stress`, `mixed-semantics` (FR-016)
-- [ ] T036 [US8] Run `deno test -A src/{grounded,multi-extension,reduce-dung,reduce-bipolar,reduce-evidential,component-eval,model,validate,schema}.test.ts` and confirm exit `0` (FR-017 — fixture-driven coverage on solver / reduce / eval paths)
+- [X] T035 [US8] Run `ls src/bench.fixtures/` and confirm exactly 8 fixtures are present: `small-minimal`, `small-relations`, `small-argument`, `medium-censorship`, `heavy-attacks`, `deep-arguments`, `large-stress`, `mixed-semantics` (FR-016)
+- [X] T036 [US8] Run `deno test -A src/{grounded,multi-extension,reduce-dung,reduce-bipolar,reduce-evidential,component-eval,model,validate,schema}.test.ts` and confirm exit `0` (FR-017 — fixture-driven coverage on solver / reduce / eval paths)
 
 **Checkpoint**: US8 verified independently. Test discipline is observed across solver / reduce / eval files; eight bench fixtures are committed.
 
@@ -191,10 +191,10 @@ description: "Validation task list for the argdown-2 v1 baseline"
 
 **Purpose**: Final all-clear summary, atomicity check, and confirmation that the baseline spec artifacts are ready for v1.0.0 release gate.
 
-- [ ] T037 [P] Run the 9-line all-clear summary from `quickstart.md` and confirm 9 `✓` lines are emitted
-- [ ] T038 [P] Run `git status --porcelain` and confirm output is empty (atomicity check: this branch should add only spec artifacts under `specs/20260807-v1-baseline/` plus `.specify/feature.json`)
-- [ ] T039 [P] Read `specs/20260807-v1-baseline/checklists/requirements.md` and confirm all checklist items are checked (`[x]`)
-- [ ] T040 [P] Confirm `CHANGELOG.md` was intentionally NOT modified by this branch (per the plan's Constraints section)
+- [X] T037 [P] Run the 9-line all-clear summary from `quickstart.md` and confirm 9 `✓` lines are emitted
+- [X] T038 [P] Run `git status --porcelain` and confirm output is empty (atomicity check: this branch should add only spec artifacts under `specs/20260807-v1-baseline/` plus `.specify/feature.json`)
+- [X] T039 [P] Read `specs/20260807-v1-baseline/checklists/requirements.md` and confirm all checklist items are checked (`[x]`)
+- [X] T040 [P] Confirm `CHANGELOG.md` was intentionally NOT modified by this branch (per the plan's Constraints section)
 
 **Checkpoint**: All 17 FRs validated independently per their user stories; all 8 SCs achievable; baseline is release-gate ready.
 
@@ -333,3 +333,7 @@ With multiple reviewers working on disjoint machines:
 - Each user story is independently completable and verifiable — that is the entire point of the spec's constitution-aligned structure.
 - **Avoid**: weakening any test, snapshot, lint rule, or typecheck to make a gate pass (constitution Principle III + Compliance Review). If a gate fails, treat it as a real signal and fix the underlying cause; do not relax the gate.
 - **Avoid**: skipping a task because "the FR is obviously implemented." Every audit task exists to produce an auditable artifact — the read or run output — that proves the implementation is present.
+
+## Validation Findings (recorded during baseline sweep)
+
+- **T030 (informational)**: `diff scripts/argdown-2-mcp.version plugins/argdown-2/scripts/argdown-2-mcp.version` reports a trailing-newline difference (canonical lacks `\n`, plugin copy has one). The string content is identical (`0.2.0-alpha4`). The enforcing test (`src/claude-plugin.test.ts:89-90`) uses `.trim()` and passes. Not a v1 release blocker; tracked as a minor housekeeping note.
