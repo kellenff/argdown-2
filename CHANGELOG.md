@@ -13,13 +13,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-> The `0.2.0-alpha5` entry below was rolled back into `Unreleased` after the
-> version bump landed ahead of a GitHub Release for the native MCP binary. The
-> Pi package bridge test launches `scripts/argdown-2-mcp`, which downloads the
-> pinned binary from `v0.2.0-alpha4` on GitHub Releases. Releasing `0.2.0-alpha5`
-> requires cutting a matching GitHub Release with the host-native binaries
-> first; the bump was reverted to keep `deno task test` green and will be
-> re-applied together with the release cut.
+## [1.0.0] - 2026-08-07
 
 ### Added
 
@@ -259,3 +253,4 @@ backward-compatibility promises yet — the language surface is frozen (see
 [0.2.0-alpha2]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha2
 [0.2.0-alpha3]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha3
 [0.2.0-alpha4]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha4
+[1.0.0]: https://github.com/kellenff/argdown-2/releases/tag/v1.0.0
