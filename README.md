@@ -49,7 +49,7 @@ if (!result.ok) {
 }
 ```
 
-`load`, `validate`, `parseCandidate`, and `solve` return `Effect` values — unwrap at the edge with `Effect.match` + `Effect.runSync` (or `yield*` inside `Effect.gen`). Failures are tagged (`EdnError` | `SchemaError` | `ValidateError`); `solve` uses `SolveError` (`never` in v1). The library never throws and never produces a partial document on failure.
+`load`, `validate`, `parseCandidate`, and `solve` return `Effect` values — unwrap at the edge with `Effect.match` + `Effect.runSync` (or `yield*` inside `Effect.gen`). Failures are tagged unions: `LoadError = EdnError | SchemaError | ValidateError`; builder mutations use `BuilderError` (codes: `builder/invalid-id`, `builder/duplicate-id`, `builder/missing-id`, `builder/unsupported-relation-kind`, `builder/unsupported-solver`, `builder/invalid-projection-bounds`); MCP I/O uses `McpIoError` (`Read`, `Write`, `Parse`). `SolveError` is `never` in v1 by design. The alias reserves the failure channel without committing to typed failures. The library never throws and never produces a partial document on failure.
 
 Three install paths:
 
@@ -250,6 +250,8 @@ What is not here: a custom `.argdown` language or parser, a source AST, a Mermai
 Distribution: the library is published to [JSR](https://jsr.io/@casualtheorics/argdown-2) (`jsr:@casualtheorics/argdown-2`); every merge to `main` publishes a `*-dev.{utcTimestamp}` prerelease. Native MCP binaries ship via GitHub Releases (`.github/workflows/release.yml`).
 
 The namespaced EDN theory tags are spec-frozen. New solver roots (such as evidential) are additive via `SOLVER_TAGS`. Downstream consumers cannot invent theory tags without forking. This is a deliberate scoping decision.
+
+Governance: see [`.specify/memory/constitution.md`](.specify/memory/constitution.md) for the five principles (Pipeline Purity, Wire Stability, Test-First / Effect-Composition, End-to-End MCP Coverage, Builder-as-Authoring) that govern this project.
 
 ## Install (library)
 
