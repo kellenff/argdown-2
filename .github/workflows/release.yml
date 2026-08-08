@@ -57,11 +57,18 @@ jobs:
       - name: Typecheck
         run: deno task check
 
-      - name: Test
-        run: deno task test
-
       - name: Check MCP Deno entry
         run: deno task check:mcp-deno
+
+      - name: Compile host MCP binary
+        # Compile before Test so the Pi MCP bridge test can exercise the
+        # launcher's ARGDOWN2_MCP_BIN path without depending on a tagged
+        # GitHub Release for the pinned version (needed on version bumps:
+        # stable-release creates the tag only after gates pass).
+        run: deno task compile:mcp
+
+      - name: Test
+        run: deno task test
 
   publish-jsr-dev:
     name: Publish JSR dev prerelease
