@@ -18,7 +18,8 @@
       "node_modules",
       "package.json",
       "package-lock.json",
-      "pi"
+      "pi",
+      "repos"
     ]
   },
   "tasks": {

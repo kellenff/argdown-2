@@ -86,8 +86,9 @@ describe("Claude Code plugin MCP config", () => {
     expect(readText("plugins/argdown-2/scripts/argdown-2-mcp")).toBe(
       readText("scripts/argdown-2-mcp"),
     );
-    expect(readText("plugins/argdown-2/scripts/argdown-2-mcp.version").trim())
-      .toBe(readText("scripts/argdown-2-mcp.version").trim());
+    expect(readText("plugins/argdown-2/scripts/argdown-2-mcp.version")).toBe(
+      readText("scripts/argdown-2-mcp.version"),
+    );
   });
 
   it("ships skills that forbid hand-editing EDN", () => {

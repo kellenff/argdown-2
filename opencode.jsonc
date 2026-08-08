@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "idea": {
+      "enabled": true,
+      "type": "remote",
+      "url": "http://127.0.0.1:64342/stream",
+      "headers": {
+        "IJ_MCP_SERVER_PROJECT_PATH": "/Users/kellen/Projects/argdown-2"
+      }
+    }
+  }
+}

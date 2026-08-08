@@ -1,4 +1,4 @@
-> **Superseded:** This custom Argdown Extended design is historical. The current format is the EDN-only design in [`docs/snowball/specs/2026-07-17-edn-canonical-representation-design.md`](snowball/specs/2026-07-17-edn-canonical-representation-design.md).
+> **Superseded:** This custom Argdown Extended design is historical. The current format is EDN-only and lives in the source itself — see [`src/schema.ts`](src/schema.ts) for the canonical wire shape, [`src/edn.ts`](src/edn.ts) for the EDN reader, and the CHANGELOG for design rationale. The historical snowball design specs were removed in `Unreleased`.
 
 # Argdown Extended: Datalog-lite Design Specification
 

@@ -13,6 +13,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+> The `0.2.0-alpha5` entry below was rolled back into `Unreleased` after the
+> version bump landed ahead of a GitHub Release for the native MCP binary. The
+> Pi package bridge test launches `scripts/argdown-2-mcp`, which downloads the
+> pinned binary from `v0.2.0-alpha4` on GitHub Releases. Releasing `0.2.0-alpha5`
+> requires cutting a matching GitHub Release with the host-native binaries
+> first; the bump was reverted to keep `deno task test` green and will be
+> re-applied together with the release cut.
+
 ### Added
 
 - `interactive-argument` skill: collaborative prose/EDN argument workshopping
@@ -70,6 +78,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
   handlers remain Promise-returning via a single `runMcpEffect` adapter.
 - Effect-native builder refusals (`BuilderError`) and MCP I/O (`McpIoError`
   via `Effect.tryPromise`).
+- License: Unlicense (was unlicensed/private). See `LICENSE` at repo root.
+- Constitution (`docs/.../constitution.md` and `.specify/memory/constitution.md`)
+  ratifies `v1.0.0` principles: EDN-only wire format, Effect-native public API,
+  strict typing, library-plus-MCP surface, and namespaced theory tags frozen
+  at v1.
+- Opencode IDE integration: JSON schema support for `opencode.jsonc` /
+  `.opencode/config.json` (IDE-side, not shipped via JSR).
 
 ### Removed
 
@@ -82,6 +97,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `LoadResult`, `ValidationResult`, `SoftParseResult`, and the
   `loadEffect` / `decodeWireEffect` / `softParse` names. Use the
   Effect compositions instead.
+- Historical `docs/snowball/specs/` and `docs/snowball/plans/` directories
+  removed (snowball plan/spec scaffolding from the 0.1.0→0.2.0 reset era).
+  The two `it("design spec exists", ...)` cases that referenced the
+  removed `2026-07-24-*-skill-design.md` specs are deleted; the skills
+  themselves remain covered by their remaining shape and content
+  assertions.
 
 ## [0.2.0-alpha4] - 2026-07-19
 
@@ -236,5 +257,5 @@ backward-compatibility promises yet — the language surface is frozen (see
 [0.1.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.1.0-alpha1
 [0.2.0-alpha1]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha1
 [0.2.0-alpha2]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha2
-[0.2.0-alpha4]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha4
 [0.2.0-alpha3]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha3
+[0.2.0-alpha4]: https://github.com/kellenff/argdown-2/releases/tag/v0.2.0-alpha4

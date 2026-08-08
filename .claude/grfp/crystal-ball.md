@@ -1,121 +1,205 @@
-# Crystal Ball Report — `argdown-2`
+# Crystal-Ball Report — argdown-2
 
-**Stage:** 2 of 5 (Crystal Ball) — fresh run, 2026-07-19
-**Codebase HEAD:** `main`, version `0.2.0-alpha4` + significant Unreleased work
-**Graph tools:** partial — Serena cache present but `find_symbol` / `search_for_pattern` return empty. Used `rg`/`fd` + `wc` for content search and complexity profiling.
-**Reviewing:** `.claude/grfp/deep-dive.md` (this run, 2026-07-19)
-**Note on prior 2026-07-18 crystal-ball:** described alpha1 state where preferred/stable/complete/Bipolar/ASPIC+ solvers were deleted. Those have since been **reintroduced** (multi-extension.ts, reduce-bipolar.ts, reduce-evidential.ts), and **first-class solver components** are new. Roadmap below updated to match.
+**Date:** 2026-08-07 (refresh)
+**Project version:** `0.2.0-alpha4` (branch `001-upgrade-deno`)
+**Graph tools:** Yes — `codebase-memory-mcp` (6,577 nodes, 18,236 edges)
+**Method:** graph-augmented (Cypher queries for dead-code + complexity + loop depth, `trace_path` for attack-surface, `get_code_snippet` to verify each dead-code candidate) + Bash/Read for TODO scan, secrets scan, file-size survey, alpha/snowball leftover scan.
 
----
-
-## 1. Dead code (content-confirmed scan, lower confidence than graph-backed)
-
-| Symbol / Surface | Location | Inbound references | Confidence | Action |
-| --- | --- | --- | --- | --- |
-| `EXTENSION_PROPORTION_OBSERVER_TAG` | `src/model.ts:5` | 0 — exported but no caller in src/ | Medium (string search only) | **Audit**: either intentional observer tag waiting for a solver, or dead. Grep `.claude-plugin`, `plugins/` next |
-| `ExtensionNativeResult` type | `src/index.ts:24` | exported via re-export | Low | Keep — public API surface for multi-extension solvers |
-| `soft-parse` (`src/builder/soft-parse.ts`) | referenced in `edn-write.test.ts:9` | at least 1 test | Keep |
-| `reduce-dung.ts` (3 exports) | `src/component-eval.ts:25` + `src/index.ts` | ≥ 3 callers | Keep (used by `grounded`/`preferred`/`stable`/`complete`) |
-| `reduce-bipolar.ts`, `reduce-evidential.ts` | `src/component-eval.ts:24,26` | 1 caller each (dispatcher) | Keep |
-| `apply` (builder) | `src/builder/apply.ts:703` — largest file | ≥ 7 callers (tests + mcp/tools) | Keep; complexity hotspot (see §2) |
-| `MCP_RELATIONS_KIND` constants | `src/mcp/server.ts` | n/a | Likely keep |
-| Cursor plugin remnants | removed in unreleased per CHANGELOG | 0 | Confirmed gone |
-
-**TODO/FIXME/HACK in production:** 0 in `src/`, `scripts/`, `plugins/`. Test fixtures only contain the word "token" in EDN test inputs ("invalid numeric token").
-
-## 2. Complexity hotspots
-
-| File | LOC | Concern |
-| --- | --- | --- |
-| `src/schema.ts` | 877 | Zod schema for full EDN value tree; recursive `z.lazy`. Right size for the surface |
-| `src/builder/apply.ts` | 703 | Switch over builder op kinds — biggest single complexity source. Pure apply function, easy to test |
-| `src/validate.ts` | 422 | Endpoint/reference/relation-kind validation. Clean separation |
-| `src/edn-write.ts` | 307 | EDN serializer (mirror of edn.ts). Stable shape |
-| `src/multi-extension.ts` | 263 | residue-based finders for preferred/stable/complete (memory: SCC-based is wrong → use argument-level Modgil via `defenseClosure(new Set(), map)`) |
-| `src/mcp/tools.ts` | unknown (≈200) | 14 tool handlers — by construction, must mirror the schema |
-| `src/model.ts` | 252 | Tag + type definitions. Many exports by design (public API) |
-
-**Single biggest hotspot:** `src/builder/apply.ts:703`. 14 MCP tools all funnel through this one switch. It's the right design (one pure function for one canonical mutation), but it's the natural place for future refactor if edit complexity grows.
-
-## 3. Attack-surface review
-
-### Library
-- **Inputs:** only EDN strings. Zod schema and `validate.ts` reject anything malformed before `solve` ever sees it. **Safe by construction.**
-- **No filesystem I/O.** Library is pure.
-
-### MCP server
-- **`path` argument.** `src/mcp/io.ts` uses temp+rename atomic write. `saveDocumentRef` rejects paths that escape the working directory? (verify) — if not, add `path.resolve` + cwd check.
-- **Soft warnings vs hard refuses.** `builder/unresolved-ref` is a soft warning (document still mutates); `builder/duplicate-id`, `builder/missing-id`, `builder/unsupported-relation-kind` hard-refuse. This split is intentional and well-scoped.
-- **Concurrency:** stdio single-client. No lock needed. If HTTP transport ships (Roadmap §7 #4), locking story needs design.
-- **No network.** No outbound calls. Pure local tool.
-
-## 4. Ecosystem fit
-
-**Adjacent / next-door projects:**
-
-- **edn-parser-js** — only runtime parser dep. Vendored at `./vendor/edn-parser-js/`. Patch protocol dependency declared in alpha2 (now deno.json npm specifier). Single point of failure for EDN correctness — track upstream.
-- **Zod 4.4.3** — recursive `z.lazy` powers EDN's open type system. Track Zod 5/6 changes.
-- **@modelcontextprotocol/sdk 1.29.0** — stdio transport. MCP spec moving (HTTP transport, OAuth, structured outputs).
-- **Argdown 1.x (`@argdown/core`)** — prior language. `examples/argdown1-censorship.edn` is the manual port demonstrating the mapping gap. **No migration tool ships** — by design.
-- **Argdown 1.x CLI/parser/Mermaid** — deleted in alpha1 reset, intentionally out of scope.
-- **Academic neighbors (Carneades, ASPIC+, abstract argumentation libs)** — current solvers cover grounded/preferred/stable/complete (Dung 1995) + bipolar/evidential (Cayrol & Lagasquie-Schiex 2005). ASPIC+ is roadmap.
-
-## 5. Audience segments that could benefit
-
-1. **LLM agent authors** building argumentation tools. The MCP builder server is the cheap path: 14 tools, soft-warning mutations for incremental authoring, hard-error `validate`/`solve` for the production gate.
-2. **Formal-reasoning engineers** who want grounded Dung over a typed AST instead of a Python or Java abstract framework.
-3. **Argument-mining / RAG pipelines** that already speak EDN. Drop-in strict validator and grounded-labeler.
-4. **The project's own future self** — adding a new solver tag (`#casualtheorics.argdown2.solver/<name>`) requires only the tag + a parallel `reduceToX` + solver result fn. Pipeline unchanged.
-5. **Editor plugin authors** (VS Code, Obsidian) — MCP server speaks the protocol; a plugin can drive it directly. Roadmap candidate.
-6. **Claude Code users** — one-click install via the marketplace plugin. Three skills (`build-graph`, `interpret-solve`, `validate-debug`) ship with the plugin.
-7. **Argdown 1.x migration tooling authors** — `examples/argdown1-censorship.edn` is the manual port. A sibling `argdown-1to2` package is a community opportunity, not a project commitment.
-
-## 6. Roadmap candidates (ranked for alpha4 + Unreleased state)
-
-| # | Title | Effort | Impact | Why now |
-| --- | --- | --- | --- | --- |
-| 1 | **Document the first-class solver components story** | XS | H | It's the headline new feature (Unreleased), formally grounded in a category-theory companion doc, and most readers won't know what "nested solvers" means. README gap |
-| 2 | **Branded `AttackMap` direction marker** | S | S | Memory-deferred. Cosmetic. Skip until a second consumer appears |
-| 3 | **HTTP transport for MCP server** | M | M | Today is stdio-only. Unlocks multi-user deployments. Blocked on per-document locking story |
-| 4 | **Split `apply` into per-edit-type pure functions** | S | M | 14-fan-out switch is biggest single-file complexity. Splitting lowers coupling; each edit becomes independently testable |
-| 5 | **Incremental solve (memoize `reduceToDung`)** | S | M | `large-stress` fixture is slow. If a tool mutates the document once and re-solves 10x, reduction is the same — memoize per (relation-set hash) |
-| 6 | **Renderer (D2 / DOT / Mermaid-from-EDN)** | M | M | Standalone package that consumes `solve(document).native` and emits a graph. Builds on the censorship parity example |
-| 7 | **CLI for `load` / `solve`** | S | M | Today only MCP and library. A `npx argdown-2 solve doc.edn` would unlock batch / CI use without an MCP client |
-| 8 | **ASPIC+ solver** | L | H | Roadmap-deferred. Requires `preference:` attributes; EDN tags already support via `metadata`. Wait until a real consumer asks |
-| 9 | **Cross-document reference (multi-file theories)** | L | H | Today every document is single-rooted. A multi-root solver tag could combine multiple `.edn` files. Blocked on MCP server concurrency work |
-| 10 | **Editor plugin (VS Code)** | L | H | MCP server makes this 100 LOC + a manifest. Distribution channel for the library |
-| 11 | **Argdown 1.x → EDN translator** (`argdown-1to2`) | M | M | Unblocks adoption. **Belongs in a sibling package**, not in this repo — keep `argdown-2` tight |
-| 12 | **Public 1.0 + license choice** | XS | H | README explicitly says "license will be chosen before the first public release." `deno.json` says Unlicense. Reconcile, then ship 1.0 |
-
-## 7. Vision (the "could be" picture)
-
-`argdown-2` is currently a *strict EDN loader + 6-solver argumentation engine (grounded / bipolar / evidential / preferred / stable / complete) + first-class nested components + builder MCP server*. The natural arc:
-
-```
-[ EDN document ] -----> [ load → validate → solve ]
-       |                          |
-       |                          +--> labels (in/out/undec)
-       |                          +--> extensions (preferred/stable/complete)
-       |                          +--> nested solver boundaries
-       |
-       +--> [ MCP builder server ] <--- agent tool calls (14 tools)
-       |
-       +--> [ visualization ] (D2 / DOT / Mermaid-from-EDN) — future
-       |
-       +--> [ multi-document ] (multi-root solver tags) — future
-       |
-       +--> [ editor plugin ] (VS Code / Obsidian) — future
-```
-
-In one year this could be a **focused toolkit** (2–3 packages under `@casualtheorics/argdown-*`) covering read, write, build, solve, and visualize — with `argdown-2` itself as the foundational strict validator and multi-solver engine. The current architecture (one strict pipeline + one builder layer + one MCP surface, all EDN-in / typed-object-out) is the right shape for that.
-
-The three highest-leverage README improvements, ranked:
-1. **Lead with first-class nested solvers** — it's the most novel feature and the README currently buries it.
-2. **Lead with "no throws, no partial docs"** — the strongest correctness claim, already in the README but under-emphasized.
-3. **Split install paths for Claude Code users vs library users vs generic MCP consumers** — the README currently mixes all three audiences.
-
-**Net drift vs prior 2026-07-18 crystal-ball:** Preferred/stable/complete solvers are back. Evidential is new. First-class nested solvers are the new headline. Roadmap is now in *documentation* mode rather than *core features* mode — the engine is complete, the README is the gap.
+**Note on prior 2026-07-20 crystal-ball:** superseded by this refresh — the prior report described pre-Effect-native state and pre-constitution posture; this one captures the post-migration, post-constitution reality.
 
 ---
 
-**Next stage:** `/claudikins-grfp:brain-jam` — collaborate on README voice + angle for the alpha4 + Unreleased state.
+## 1. Dead-code candidates (graph-derived, snippet-verified)
+
+Graph query: `in_degree = 0 AND out_degree = 0 AND is_exported = true AND starts_with('src.')`. Filter out obvious BDD fixtures passed as `Effect.match` arguments (they're not connected via `CALLS` edges because they're function references, not calls).
+
+| Symbol | File:Line | Lines | Confidence | Verdict |
+|---|---|---|---|---|
+| `src.mcp.io.try` | src/mcp/io.ts:130 | 6 | LOW | **Likely false positive.** Atomic-write helper `tmp + rename` for `saveDocumentRefEffect`. Probably called inside `Effect.tryPromise(try, ...)`, which doesn't register as a `CALLS` edge. Confirm by reading `src/mcp/io.ts:120-150`. |
+| `src.reduce-dung.isSyntheticEntity` | src/reduce-dung.ts:56 | 3 | MEDIUM | **Verify.** `\0argdown:` prefix check. Could be used by `multi-extension` (which synthesizes proxy entities for nested solvers) via dynamic dispatch or string-based detection. If unused, candidate for removal. |
+| `src.validate.onFailure` | src/validate.ts:396 | 4 | LOW | **False positive.** BDD fixture passed to `Effect.match` inside `validateComponent`. |
+| `src.test-support.onSuccess` | src/test-support.ts | 1 | LOW | **False positive.** Exported BDD helper. |
+
+All other graph-zero-candidates are `*.test.onFailure` / `*.test.onSuccess` BDD fixtures — false positives (passed as arguments to `Effect.match`, not called).
+
+**Action items for follow-up commits:**
+- Read `src/mcp/io.ts` around line 130 to confirm `try` is wired into `saveDocumentRefEffect`.
+- Grep for `isSyntheticEntity` and `\0argdown:` across `src/` to confirm whether it's referenced anywhere.
+
+---
+
+## 2. Complexity hotspots (top 20 by cyclomatic complexity)
+
+| Function | Complexity | Cognitive | Lines | File |
+|---|---|---|---|---|
+| `apply` | **50** | **140** | **445** | src/builder/apply.ts |
+| `printWire` | 14 | 14 | 56 | src/edn-write.ts |
+| `canonicalEdn` | 12 | 12 | 35 | src/schema.ts |
+| `decodeElement` | 12 | 20 | 45 | src/schema.ts |
+| `evaluateComponentTree` | 10 | 16 | 31 | src/component-eval.ts |
+| `resolveInComponent` | 10 | 16 | 50 | src/builder/resolve-ref.ts |
+| `decodeInterface` | 10 | 12 | 91 | src/schema.ts |
+| `findStableExtensions` | 9 | 19 | 33 | src/multi-extension.ts |
+| `validateCollectionUniqueness` | 9 | 11 | 59 | src/schema.ts |
+| `decodeWire` | 9 | 10 | 68 | src/schema.ts |
+| `findPreferredExtensions` | 8 | 18 | 33 | src/multi-extension.ts |
+| `decodeSolverComponent` | 8 | 10 | 58 | src/schema.ts |
+| `supportedRelationKinds` | 7 | 13 | 14 | src/model.ts |
+| `reduceToDung` | 7 | 11 | 41 | src/reduce-dung.ts |
+| `reduceToBipolar` | 7 | 14 | 33 | src/reduce-bipolar.ts |
+| `printArgument` | 7 | 8 | 41 | src/edn-write.ts |
+| `reduceToEvidential` | 7 | 14 | 33 | src/reduce-evidential.ts |
+| `validateRelationReferences` | 7 | 7 | 62 | src/validate.ts |
+| `validateImports` | 7 | 12 | 67 | src/validate.ts |
+| `validateComponent` | 7 | 16 | 77 | src/validate.ts |
+
+**Observations:**
+- **`apply` is the single dominant hotspot** — cognitive complexity 140 (2× the next highest), 19 callees, 445 lines. All 11 mutating MCP tools route through it. Refactor risk = data-loss risk if regressions land.
+- **Schema cluster** — `canonicalEdn`, `decodeElement`, `decodeInterface`, `validateCollectionUniqueness`, `decodeWire`, `decodeSolverComponent` are 6 of the top 12. Zod-based decode is the densest area after `apply`.
+- **Multi-extension trio** — `findPreferredExtensions`, `findStableExtensions`, `findCompleteExtensions` are structurally identical (same complexity, same line count, same callees). Strong candidate for shared scaffolding.
+- **File size distribution** — `src/schema.ts` (889 lines), `src/builder/apply.ts` (735), `src/validate.ts` (466), `src/multi-extension.ts` (263). Total ~2,353 LOC across the four hotspots; the rest of `src/` is much smaller.
+
+---
+
+## 3. Loop-depth / perf hotspots
+
+| Function | trans_loop_depth | loop_depth | loop_count | File |
+|---|---|---|---|---|
+| `evaluateComponentTree` | 7 | 1 | 1 | src/component-eval.ts |
+| `evaluateComponent` | 7 | 0 | 0 | src/component-eval.ts |
+| `solve` | 7 | 0 | 0 | src/index.ts |
+| `runSolveEffect` | 7 | 0 | 0 | src/mcp/tools.ts |
+| `runSolve` | 7 | 0 | 0 | src/mcp/tools.ts |
+| `evaluateMultiComponent` | 6 | 0 | 0 | src/component-eval.ts |
+| `findPreferredExtensions` | 6 | 2 | 3 | src/multi-extension.ts |
+| `findStableExtensions` | 6 | 2 | 3 | src/multi-extension.ts |
+| `findCompleteExtensions` | 6 | 2 | 2 | src/multi-extension.ts |
+| `isStable` | 5 | 1 | 1 | src/multi-extension.ts |
+
+The `trans_loop_depth=7` on `solve` / `runSolve` is recursion through nested solver components (intentional — first-class solver components allow arbitrary nesting depth). `linear_scan_in_loop` = 0 across the board — no hidden O(n²) traps. `multi-extension` is the expected worst case (3-nested loop over candidate extensions), but bounded by problem size.
+
+---
+
+## 4. Attack surface (traced from public entries)
+
+### Library entry points (already in deep-dive)
+- `load`, `validate`, `parseCandidate`, `solve`, `apply`, `emptyDocument`.
+
+### `solve` — depth 3 reach
+```
+src.solve
+  └─ component-eval.evaluateComponent
+      └─ component-eval.evaluateComponentTree
+          ├─ component-eval.childComponents
+          ├─ component-eval.evaluateLabelComponent
+          └─ component-eval.evaluateMultiComponent
+```
+Only two external callers: `mcp.tools.runSolveEffect` (async) and `mcp.tools.runSolve` (sync, deprecated by Effect migration).
+
+### `apply` — the chokepoint
+```
+src.builder.apply.apply  ← called by ALL 11 mutating MCP tools (×2 each, Effect + Promise variants)
+  ├─ model.isSolverTag, model.supportedRelationKinds
+  ├─ apply.stripColon, collectIds, refuse, withComponent, withInitialInterface
+  ├─ apply.repairInterface, invalidId, invalidIdList
+  ├─ apply.resolveRefOrRaw, resolveInferenceRefOrRaw, parentIdOf
+  ├─ apply.failed, succeed
+  ├─ apply.findComponent, replaceComponent, interfaceFor
+  ├─ model.isEdnKeywordName
+  ├─ resolve-ref.resolveRef, softRefId, resolveInferenceRef, resolveInComponent, stripKeywordColon
+```
+**22 direct + transitive callees inside `apply`'s reach.** Every MCP mutation flows through this one function — refactor here affects every mutation. **The constitution's typed-refusals contract (`BuilderCode` union) depends on this surface staying clean.**
+
+### `io.ts` — atomic write + Effect→Promise boundary
+- `saveDocumentRefEffect` uses `Effect.tryPromise(try, ...)` — the helper that graph flagged as 0-caller. This is the **only** file-write path for path-mode MCP mutations.
+- Constitution V mandates atomic temp+rename — any regression here is a data-loss bug.
+
+---
+
+## 5. Content hygiene
+
+| Check | Result |
+|---|---|
+| Hardcoded secrets / API keys / passwords / tokens in `src/` or `scripts/` | **None found.** |
+| Stale TODO / FIXME / XXX / HACK comments | **2 TODOs**, both in CLI formatters: `format-mermaid.ts:32` (render relations), `format-json.ts:37` (wire diagnostics). Both are gated on `solve()` exposing more data — natural follow-ups. |
+| Stale `alpha5` / `snowball` references in `src/`, `CHANGELOG.md`, `README.md`, `deno.json` | **Only in historical sections** (CHANGELOG Unreleased note, README mention). All consistent with the rollback. No active `alpha5` references in `deno.json` or `scripts/`. |
+| `scripts/argdown-2-mcp.version` pin vs `deno.json` version | **Match** — both `0.2.0-alpha4`. CI enforces this. |
+| Outdated dependency versions in `deno.json` | **None obviously stale.** `effect@^4.0.0-beta.101` (still beta but pinned), `zod@4.4.3` (current), `@modelcontextprotocol/sdk@1.29.0` (current), `@optique/{core,run}@^1.2.0` (current). |
+
+---
+
+## 6. Worktree + vendored scope (informational, not dead)
+
+| Directory | Status | Notes |
+|---|---|---|
+| `repos/optique/` (2,140 nodes) | Vendored | Used by CLI parser; pinned copy of `@optique/core` + `@optique/run`. Not dead — intentional vendoring. |
+| `vendor/edn-parser-js/` | Vendored | EDN parser; `deno.json` imports from `./vendor/edn-parser-js/lib/index.js`. Pinned, not dead. |
+| `vendor/effect/` | Vendored | Effect runtime; intentional. |
+| `.worktrees/` × 6 (claude-code-plugin-marketplace, deno-native-package, deno-pivot, fix-jsr-publish-ci, mcp-builder-server, pi-agent-extension) | Historical branches | All already merged to main. Could be deleted by `git worktree prune` for hygiene. |
+
+---
+
+## 7. Ecosystem position (where argdown-2 fits)
+
+### Adjacent libraries / projects
+- **Argdown 1.x** — predecessor; the `0.2.0-alpha4` reset replaced its custom DSL with EDN. The `examples/argdown1-censorship.edn` fixture preserves the Argdown 1.x tutorial as a parity anchor.
+- **Dung-style argumentation frameworks** — academic literature is rich; `reduce-dung.ts`, `reduce-bipolar.ts`, `reduce-evidential.ts` map to Cayrol & Lagasquie-Schiex 2005 (bipolar) and 2005 §3.3 (evidential necessary-support).
+- **Effect-native libraries** — peers include `effect-ts` ecosystem. The `runMcpEffect` adapter is a reference for collapsing Effect→Promise at boundaries.
+- **MCP authoring servers** — `argdown-2-mcp` is one of the early "canonical-format builder" MCP servers (vs read-only / wrapper MCPs). The 14-tool builder pattern + `BuilderCode` refusal union is a template for "agent-authorable data" surfaces.
+
+### Audience segments (current)
+1. **TypeScript / Deno library consumers** who want a strict argumentation solver.
+2. **LLM agents in Claude Code / Pi** that build and solve argument graphs.
+
+### Audience segments (potential)
+3. **Academic argumentation researchers** — Dung semantics users in formal argumentation, non-monotonic reasoning, AI-and-law. Current exposure is via the README + the Cayrol/Lagasquie-Schiex reference in the evidential solver.
+4. **Multi-agent AI orchestration builders** — the prose-to-argdown-2 + interactive-argument skills are early primitives for "structured deliberation" between agents. Could grow into a reference implementation.
+5. **Deno + Effect ecosystem consumers** — the Effect-native library pattern is transferable.
+6. **Formal verification adjacent** — the `SolveError = never` alias + typed-failure-channel discipline (Constitution III) is a model for "design the failure surface as a first-class API."
+
+---
+
+## 8. Roadmap candidates
+
+### Near-term (next minor / next alpha)
+1. **`apply` refactor / decomposition** — complexity 50, cognitive 140. Split into per-edit-kind functions (`applyAdd`, `applyRemove`, `applyUpdate`, `applySetImport`, etc.) behind a single dispatcher. Lowers blast radius of MCP tool regressions.
+2. **Resolve the 2 CLI TODOs** — `format-mermaid.ts` edge rendering + `format-json.ts` diagnostic wiring. Both gated on `solve()` exposing more.
+3. **Confirm `isSyntheticEntity` use** — verify or remove. One-line change either way.
+4. **Cleanup `.worktrees/`** — `git worktree prune` for branches already merged.
+5. **Cut `0.2.0-alpha5` properly** — version bump + GitHub Release with host-native binaries (blocked on release process, not code).
+
+### Medium-term (1.x prep)
+6. **Schema cluster simplification** — `src/schema.ts` holds 6 of the top-12 complexity hotspots. The Zod-based decode is intrinsically branchy, but `decodeWire` (the entry point) could become a flat table-driven decoder instead of nested if/switch.
+7. **Multi-extension shared scaffolding** — `findPreferredExtensions` / `findStableExtensions` / `findCompleteExtensions` are structurally identical. Extract the candidate-enumeration loop, parameterize the admissibility predicate.
+8. **Benchmark suite growth** — `src/bench.fixtures/` has 7 fixtures; the multi-extension trio is the most expensive. Add a per-solver micro-benchmark to guard against regressions in `evaluateComponentTree` (trans_loop_depth=7).
+9. **Cross-AI skill portability** — the Claude Code + Pi skill sharing is novel. Could grow into a "write once, run in 3 agents" pattern (Claude Code, Pi, Cursor). The current `prose-to-argdown-2` + `interactive-argument` skills are the v1 reference.
+
+### Long-term (1.x → 2.x vision)
+10. **Weighted / probabilistic argumentation** — bipolar + evidential are v1 of "non-classical" support. Next could be weighted (e.g., Probabilistic Argumentation by Hunter), still via first-class solver components.
+11. **Visualization surface** — the README removed the Mermaid renderer (it was in Argdown 1.x, not in argdown-2). The TODO in `format-mermaid.ts` and the existing `argdown1-censorship.mapping.md` hint at where this could live — but as a **separate** tool/CLI, not as part of the solver library (Constitution II: solver stays pure).
+12. **Reference catalog** — beyond `argdown1-censorship`, ship 5–10 canonical examples covering each solver + each reduction. The prose-to-argdown-2 skill already produces fixtures + shape tests; that pattern is the template.
+13. **MCP builder pattern as a reference** — the 14-tool builder + typed `BuilderCode` refusals + atomic-write contract is a transferable pattern for any "agent-authorable canonical format." Document it as a pattern (not just an implementation), independent of argdown-2.
+
+### Audience-expansion bets
+14. **AI-and-law / computational argumentation community** — submit a paper / talk at ArgMAS (Argumentation in Multi-Agent Systems) workshop. The EDN + Effect + MCP angle is novel.
+15. **Multi-agent debate framework** — package the prose-to-argdown-2 + interactive-argument skills as a reusable "structured deliberation" primitive. Could be its own JSR package.
+16. **Effect-native data-format library pattern** — write up the `runMcpEffect` + `BuilderError` + `SolveError=never` pattern as a reusable Effect-native authoring pattern.
+
+---
+
+## 9. What is NOT in scope (constitutional guardrails)
+
+Per `.specify/memory/constitution.md`:
+
+- **No new solver without `SOLVER_TAGS` extension** — adding solvers requires updating the tuple in `src/model.ts` and the `supportedRelationKinds` mapping.
+- **No hand-editing of `.edn`** in user docs / skills — the builder is the sanctioned authoring surface.
+- **No silent omission of unsupported relation kinds** — they fail validation and the builder refuses them.
+- **No separate MCP code path** — every MCP tool routes through the library.
+- **No bundler step** for the MCP binary — compiled directly from `src/mcp/cli.ts`.
+- **No MAJOR-version rename of any EDN theory tag** without a migration entry in `CHANGELOG.md`.
+
+These are not aspirations — they're governance. Any roadmap item that conflicts with the constitution is out of scope.
+
+---
+
+**Next stage:** Stage 3 (Brain Jam) — collaborate with Gemini on the README angle (voice + strategy), using the deep-dive baseline + crystal-ball candidates as input.

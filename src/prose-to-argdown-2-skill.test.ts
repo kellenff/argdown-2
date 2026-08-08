@@ -122,15 +122,6 @@ describe("prose-to-argdown-2 skill", () => {
     expect(pi).toMatch(/"prose-to-argdown-2"/);
   });
 
-  it("design spec exists for the EDN/MCP skill", () => {
-    const spec = readText(
-      "docs/snowball/specs/2026-07-24-prose-to-argdown-2-skill-design.md",
-    );
-    expect(spec).toMatch(/prose-to-argdown-2/);
-    expect(spec).toMatch(/MCP builder/);
-    expect(spec).toMatch(/never hand-edit/i);
-  });
-
   it("MANUAL.md covers MCP-only smoke steps", () => {
     const manual = readFileSync(join(skillDir, "MANUAL.md"), "utf8");
     expect(manual).toMatch(/lead-essay/);

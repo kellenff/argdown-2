@@ -75,16 +75,6 @@ describe("interactive-argument skill", () => {
     expect(pi).toMatch(/"interactive-argument"/);
   });
 
-  it("design spec exists", () => {
-    const spec = readText(
-      "docs/snowball/specs/2026-07-24-interactive-argument-skill-design.md",
-    );
-    expect(spec).toMatch(/interactive-argument/);
-    expect(spec).toMatch(/research/i);
-    expect(spec).toMatch(/confirm/i);
-    expect(spec).toMatch(/never hand-edit/i);
-  });
-
   it("MANUAL.md covers prose-start, path-start, and research gate", () => {
     const manual = readFileSync(join(skillDir, "MANUAL.md"), "utf8");
     expect(manual).toMatch(/prose/i);

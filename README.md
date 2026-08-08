@@ -49,7 +49,7 @@ if (!result.ok) {
 }
 ```
 
-`load`, `validate`, `parseCandidate`, and `solve` return `Effect` values — unwrap at the edge with `Effect.match` + `Effect.runSync` (or `yield*` inside `Effect.gen`). Failures are tagged (`EdnError` | `SchemaError` | `ValidateError`); `solve` uses `SolveError` (`never` in v1). The library never throws and never produces a partial document on failure.
+`load`, `validate`, `parseCandidate`, and `solve` return `Effect` values — unwrap at the edge with `Effect.match` + `Effect.runSync` (or `yield*` inside `Effect.gen`). Failures are tagged unions: `LoadError = EdnError | SchemaError | ValidateError`; builder mutations use `BuilderError` (codes: `builder/invalid-id`, `builder/duplicate-id`, `builder/missing-id`, `builder/unsupported-relation-kind`, `builder/unsupported-solver`, `builder/invalid-projection-bounds`); MCP I/O uses `McpIoError` (`Read`, `Write`, `Parse`). `SolveError` is `never` in v1 by design. The alias reserves the failure channel without committing to typed failures. The library never throws and never produces a partial document on failure.
 
 Three install paths:
 
@@ -138,7 +138,7 @@ A solver is an identified element in its parent's local scope. Child internals r
    {:id :child-attacks-target :from :child :to :target}]}}
 ```
 
-`Effect.runSync(solve(document)).native` is per-solver. `.aggregate` is the parent's view. `.boundary` is the typed confidence projection. `.children` is the per-child evaluation record. `.warnings` collects non-fatal diagnostics. Grounded boundaries map `IN` to `1`, `OUT` to `0`, and `UNDEC` to `nil`. Grounded parents import these as ordinary, intrinsically defeated, or self-attacking proxy nodes. See the [data design](docs/snowball/specs/2026-07-19-first-class-solver-components-design.md) and [formal companion](docs/snowball/specs/2026-07-19-first-class-solver-components-category-theory.md).
+`Effect.runSync(solve(document)).native` is per-solver. `.aggregate` is the parent's view. `.boundary` is the typed confidence projection. `.children` is the per-child evaluation record. `.warnings` collects non-fatal diagnostics. Grounded boundaries map `IN` to `1`, `OUT` to `0`, and `UNDEC` to `nil`. Grounded parents import these as ordinary, intrinsically defeated, or self-attacking proxy nodes. See [`src/schema.ts`](src/schema.ts) and [`src/component-eval.ts`](src/component-eval.ts) for the data and evaluation pipeline; the historical design notes under `docs/snowball/` were removed in `Unreleased`.
 
 ## MCP server
 
@@ -245,11 +245,13 @@ Use `validate(value)` when EDN has already been read with `edn-parser-js` and yo
 
 What is here: strict EDN loader, Zod schema validation, cross-reference validator, six label solvers (grounded, bipolar, evidential) and three multi-extension solvers (preferred, stable, complete), first-class nested solver composition, builder MCP server, atomic-write I/O layer, Claude Code plugin marketplace, GitHub Actions CI and release workflows.
 
-What is not here: a custom `.argdown` language or parser, a source AST, a Mermaid or DOT renderer, a CLI binary (the MCP server is the only shipped binary), ASPIC+ or CLS 2013 full evidential labeling, a public license (the license will be chosen before the first public release).
+What is not here: a custom `.argdown` language or parser, a source AST, a Mermaid or DOT renderer, a CLI binary (the MCP server is the only shipped binary), ASPIC+ or CLS 2013 full evidential labeling.
 
 Distribution: the library is published to [JSR](https://jsr.io/@casualtheorics/argdown-2) (`jsr:@casualtheorics/argdown-2`); every merge to `main` publishes a `*-dev.{utcTimestamp}` prerelease. Native MCP binaries ship via GitHub Releases (`.github/workflows/release.yml`).
 
 The namespaced EDN theory tags are spec-frozen. New solver roots (such as evidential) are additive via `SOLVER_TAGS`. Downstream consumers cannot invent theory tags without forking. This is a deliberate scoping decision.
+
+Governance: see [`.specify/memory/constitution.md`](.specify/memory/constitution.md) for the five principles (Pipeline Purity, Wire Stability, Test-First / Effect-Composition, End-to-End MCP Coverage, Builder-as-Authoring) that govern this project.
 
 ## Install (library)
 
@@ -300,4 +302,4 @@ PR-time validation runs in `.github/workflows/ci.yml`; release-time runs in `.gi
 
 ## License
 
-Private. The license will be chosen before the first public release.
+[Unlicense](https://unlicense.org/). This is free and unencumbered software released into the public domain. See [`LICENSE`](LICENSE) for the full text.
